@@ -3,6 +3,7 @@ name = "wisp-index"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+authors.workspace = true
 description = "Pluggable embedding codecs and vector index backends (§14 extension API)"
 
 [dependencies]

@@ -3,6 +3,7 @@ name = "wisp-sub-tokens"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+authors.workspace = true
 description = "Token-count subscriber (§14.4)."
 
 [dependencies]

@@ -3,6 +3,7 @@ name = "wisp-store"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+authors.workspace = true
 description = "Ledger database, hot-tier database with FTS5, payload files, refs"
 
 [dependencies]

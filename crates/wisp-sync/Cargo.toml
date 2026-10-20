@@ -3,6 +3,7 @@ name = "wisp-sync"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+authors.workspace = true
 description = "Replica protocol over stdio, local path, or SSH (§11.6)."
 
 [dependencies]

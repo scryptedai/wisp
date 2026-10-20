@@ -3,6 +3,7 @@ name = "wisp-invariants"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+authors.workspace = true
 description = "Corpus-driven invariant and integration tests for wisp (§17)"
 publish = false
 

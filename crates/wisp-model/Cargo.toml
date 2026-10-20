@@ -3,6 +3,7 @@ name = "wisp-model"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+authors.workspace = true
 description = "Core types for wisp: IDs, actors, operations, changes, changesets, canonical encoding"
 
 [dependencies]

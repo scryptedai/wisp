@@ -3,6 +3,7 @@ name = "wisp-feed"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+authors.workspace = true
 description = "Change feed, cursors, subscriber host (§14). The feed itself lives in the engine; the external subscriber host is scheduled for M5."
 
 [dependencies]

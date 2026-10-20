@@ -3,6 +3,7 @@ name = "wisp-parse"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+authors.workspace = true
 description = "Lossless frontmatter entries, markdown sectioning, section anchors, link and footnote extraction"
 
 [dependencies]

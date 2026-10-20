@@ -1,10 +1,14 @@
-# wisp
+# wisp 0.1.0 — Community Release
 
 A local-first, differential knowledge store for [Open Knowledge Format](https://cloud.google.com/) (OKF) bundles.
 
+This repository is **Scrypted’s GPLv2 Community Release** of wisp: source is here for use, study, modification, and redistribution under [LICENSE](LICENSE). Scrypted may offer other editions or licenses separately; **this tree is the community edition**.
+
+Copyright © 2026 Scrypted. Author: Tim Cotten (tcotten@scryptedinc.com).
+
 wisp stores a bundle as an append-only log of **section-level** changes with encrypted, destroyable payloads, and materializes a conformant OKF directory on demand. It is built for fleets of agents: many writers commit without locks, every change carries provenance, and any section, concept, or group can be provably erased while the integrity chain still verifies.
 
-This is the v1 implementation of the design in `docs/references/Differential OKF Store — v1 Proposal.pdf` (Scrypted, Oct 17 2026). See [Status](#status), [DECISIONS.md](DECISIONS.md), [EXTENSIONS.md](docs/EXTENSIONS.md), and [MERGE.md](docs/MERGE.md).
+Release **0.1.0** implements the **v1 technical design** in `docs/references/Differential OKF Store — v1 Proposal.pdf` (Oct 17 2026). See [Status](#status), [DECISIONS.md](DECISIONS.md), [EXTENSIONS.md](docs/EXTENSIONS.md), and [MERGE.md](docs/MERGE.md).
 
 ## Build
 
@@ -99,4 +103,4 @@ A one-page skill that teaches Claude Code to use wisp as shared memory is in `co
 
 ## License
 
-Apache-2.0. Made by Scrypted.
+**Community Release — GNU General Public License v2** (same copyleft family as [Git](https://git-scm.com/)). See [LICENSE](LICENSE) and [NOTICE](NOTICE).

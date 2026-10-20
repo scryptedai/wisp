@@ -3,6 +3,7 @@ name = "wisp-sub-embed"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+authors.workspace = true
 description = "Embedding subscriber and vector index (§14.4). Scheduled for M5."
 
 [dependencies]

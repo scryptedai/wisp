@@ -82,7 +82,7 @@ Deviations from *Differential OKF Store — v1 Technical Design* (Oct 17, 2026),
 
 ## §14 Feed, subscribers, codecs
 
-- Built-in subscribers (`tokens`, `links`, `views`) run inline during commit/checkout; `wisp index` advances built-in cursors and runs manifest `command` subscribers via `wisp-feed` (JSON lines on stdin, `{"ack": seq}` on stdout). The `embed` subscriber is not implemented; `search --mode vector|hybrid` falls back to keyword (and says so in `mode`) until an embedding codec is configured.
+- Built-in subscribers (`tokens`, `links`, `views`) run inline during commit/checkout; `wisp index` advances built-in cursors and runs manifest `command` subscribers via `wisp-feed` (JSON lines on stdin, `{"ack": seq}` on stdout). Vector search uses codec `emb:hash:64` (deterministic bag-of-words hash, stored under `.wisp/cache/vectors/`); the index is synced from hot on each `search` call. No external embedding model or sqlite-vec extension yet. Repos initialized on 0.2 set `default_embedding` to `emb:hash:64`; without a configured codec, `vector`/`hybrid` still fall back to keyword (`mode` in JSON reflects the path taken).
 - One tokenizer codec ships: `tok:approx:chars4` (one token per four characters). `pack --budget` and `tokens` use it. `tiktoken`/`hf` codecs are M5.
 
 ## §16 CLI

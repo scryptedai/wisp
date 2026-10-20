@@ -1364,6 +1364,7 @@ dependencies = [
  "wisp-parse",
  "wisp-profile",
  "wisp-store",
+ "wisp-sub-embed",
 ]
 
 [[package]]
@@ -1473,8 +1474,12 @@ dependencies = [
 name = "wisp-sub-embed"
 version = "0.1.0"
 dependencies = [
+ "rusqlite",
  "serde_json",
+ "sha2",
+ "tempfile",
  "wisp-model",
+ "wisp-store",
 ]
 
 [[package]]

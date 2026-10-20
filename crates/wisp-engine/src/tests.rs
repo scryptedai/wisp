@@ -847,6 +847,7 @@ fn search_pack_and_feed() {
     let mut repo = open(&f.root);
     rec(&mut repo, "human:alex");
     let s = crate::query::search(&mut repo, MAIN_REF, "append-only rows", "hybrid", 5).unwrap();
+    assert_eq!(s["mode"], "hybrid");
     assert_eq!(s["results"][0]["heading"], "Behavior");
     let p =
         crate::query::pack(&mut repo, MAIN_REF, &["tables/orders.md".into()], Some(20)).unwrap();

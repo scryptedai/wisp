@@ -12,6 +12,7 @@ wisp-crypto.workspace = true
 wisp-parse.workspace = true
 wisp-match.workspace = true
 wisp-profile.workspace = true
+wisp-sub-embed.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 serde_yaml.workspace = true

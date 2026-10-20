@@ -247,26 +247,117 @@ pub fn search(
     mode: &str,
     k: usize,
 ) -> Result<Value> {
-    let has_embedding = repo.manifest.codecs.default_embedding.is_some();
+    let codec = repo.manifest.codecs.default_embedding.clone();
+    let wisp_dir = repo.wisp_dir.clone();
     let hot = repo.hot(ref_name)?;
-    let mode_used = match mode {
-        "keyword" => "keyword",
-        "vector" | "hybrid" => {
-            if has_embedding {
-                return Err(WispError::not_implemented(
-                    "vector search (no embedding provider in this build)",
-                ));
+    let kw_hits = Hot::search_keyword(hot.conn(), query, k)?;
+
+    let (mode_used, results) = match mode {
+        "keyword" => {
+            let results = kw_hits
+                .into_iter()
+                .map(|h| search_hit_json(&h))
+                .collect();
+            ("keyword", results)
+        }
+        "vector" | "hybrid" => match codec.as_deref() {
+            Some(c) if wisp_sub_embed::is_supported(c) => {
+                let path = wisp_sub_embed::index_path(&wisp_dir, c);
+                let mut idx = wisp_sub_embed::VectorIndex::open(&path, c)?;
+                idx.sync_from_hot(hot.conn())?;
+                let qv = wisp_sub_embed::embed_text(query, wisp_sub_embed::DIM);
+                let vhits = idx.search(&qv, k)?;
+                if mode == "vector" {
+                    let results = vhits
+                        .into_iter()
+                        .map(|h| {
+                            json!({
+                                "concept": h.concept.to_string(),
+                                "path": h.path,
+                                "section": h.section.to_string(),
+                                "heading": h.heading,
+                                "score": h.score,
+                                "tokens": count_tokens(&h.body),
+                            })
+                        })
+                        .collect();
+                    ("vector", results)
+                } else {
+                    let results = hybrid_merge(kw_hits, vhits, k);
+                    ("hybrid", results)
+                }
             }
-            "keyword"
+            Some(c) => {
+                return Err(WispError::usage(format!(
+                    "embedding codec {c} is not supported in this build"
+                )));
+            }
+            None => {
+                let results = kw_hits.into_iter().map(|h| search_hit_json(&h)).collect();
+                ("keyword", results)
+            }
         }
         other => return Err(WispError::usage(format!("unknown search mode {other:?}"))),
     };
-    let hits = Hot::search_keyword(hot.conn(), query, k)?;
-    let results: Vec<Value> = hits
-        .into_iter()
-        .map(|h| json!({ "concept": h.concept.to_string(), "path": h.path, "section": h.section.to_string(), "heading": h.heading, "score": h.score, "tokens": count_tokens(&h.body) }))
-        .collect();
     Ok(json!({ "mode": mode_used, "requested_mode": mode, "query": query, "results": results }))
+}
+
+fn search_hit_json(h: &wisp_store::SearchHit) -> Value {
+    json!({
+        "concept": h.concept.to_string(),
+        "path": h.path,
+        "section": h.section.to_string(),
+        "heading": h.heading,
+        "score": h.score,
+        "tokens": count_tokens(&h.body),
+    })
+}
+
+fn hybrid_merge(
+    kw: Vec<wisp_store::SearchHit>,
+    vec: Vec<wisp_sub_embed::VectorHit>,
+    k: usize,
+) -> Vec<Value> {
+    use std::collections::HashMap;
+    let mut scores: HashMap<String, (f64, wisp_store::SearchHit)> = HashMap::new();
+    for (i, h) in kw.into_iter().enumerate() {
+        let key = h.section.to_string();
+        let rrf = 1.0 / (60.0 + i as f64);
+        scores.insert(key, (rrf, h));
+    }
+    for (i, v) in vec.into_iter().enumerate() {
+        let key = v.section.to_string();
+        let rrf = 1.0 / (60.0 + i as f64);
+        if let Some((s, _)) = scores.get_mut(&key) {
+            *s += rrf;
+        } else {
+            scores.insert(
+                key,
+                (
+                    rrf,
+                    wisp_store::SearchHit {
+                        concept: v.concept,
+                        section: v.section,
+                        path: v.path,
+                        heading: v.heading,
+                        score: v.score as f64,
+                        body: v.body,
+                    },
+                ),
+            );
+        }
+    }
+    let mut ranked: Vec<_> = scores.into_iter().collect();
+    ranked.sort_by(|a, b| b.1.0.partial_cmp(&a.1.0).unwrap_or(std::cmp::Ordering::Equal));
+    ranked
+        .into_iter()
+        .take(k)
+        .map(|(_, (score, h))| {
+            let mut o = search_hit_json(&h);
+            o.as_object_mut().unwrap().insert("score".into(), json!(score));
+            o
+        })
+        .collect()
 }
 
 /// `wisp pack [<path>...] [--budget <tokens>]` (§14.5).

@@ -84,7 +84,7 @@ The keystore unlocks from, in order: `WISP_MASTER_KEY` (64 hex chars; CI), `--pa
 | M2 Cold tier and crypto (ledger, payload envelope, keystore, staging) | done |
 | M3 Hot tier, optimistic commits, record, checkout, views, okf-0.2 | done |
 | M4 Lifecycle and erase (retract/restore, groups, erase, fsck, policies, revert, backup) | done |
-| M5 Feed and search | feed, keyword search, pack, tokens (approx codec), external subscriber host done; embeddings pending |
+| M5 Feed and search | feed, keyword/vector/hybrid search (`emb:hash:64`), pack, tokens (approx codec), external subscriber host done; external embed models pending |
 | M6 Profiles and migration | okf-0.1 profile, 0.1→0.2 migration plan, down-export (`export --profile 0.1`) done |
 | M7 Concurrency and branches | headless writes, read assertions, branches, switch, worktrees, merge (fast-forward, disjoint replay, `--resolutions`, `--abort`) done; full §11.5 rule table still partial |
 | M8 Sync, git interop, release | trusted local push/pull, `export --git` (single-commit), `serve --stdio` skeleton done; `import --git` deferred (`import <dir>` and `export --archive` render whole bundles today) |

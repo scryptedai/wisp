@@ -1,0 +1,23 @@
+[package]
+name = "wisp-cli"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "wisp: a local-first, differential knowledge store for OKF bundles"
+
+[[bin]]
+name = "wisp"
+path = "src/main.rs"
+
+[dependencies]
+wisp-model.workspace = true
+wisp-engine.workspace = true
+wisp-feed.workspace = true
+wisp-git.workspace = true
+wisp-sync.workspace = true
+wisp-merge.workspace = true
+clap.workspace = true
+serde_json.workspace = true
+serde.workspace = true
+walkdir.workspace = true
+wisp-store.workspace = true

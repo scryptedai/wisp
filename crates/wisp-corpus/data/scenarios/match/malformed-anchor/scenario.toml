@@ -1,0 +1,7 @@
+id = "malformed-anchor"
+description = "Malformed anchor is ignored; section is unmatched then added"
+input = "input.md"
+
+[[expect]]
+index = 1
+rule_contains = "new section"

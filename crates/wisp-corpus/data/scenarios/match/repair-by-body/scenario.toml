@@ -1,0 +1,14 @@
+id = "repair-by-body"
+description = "Repair when anchor stripped but heading+body match prior (§7.5.6a)"
+input = "input.md"
+
+[[prior]]
+id = "01JAB7Q3M8N5Z6K2P9R0000022"
+level = 2
+heading = "Old title"
+heading_line = "## Old title\n"
+body = "unchanged body\n\n"
+
+[[expect]]
+index = 1
+rule_contains = "repaired"

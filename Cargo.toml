@@ -1,0 +1,71 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/wisp-corpus",
+    "crates/wisp-invariants",
+    "crates/wisp-cli",
+    "crates/wisp-engine",
+    "crates/wisp-model",
+    "crates/wisp-store",
+    "crates/wisp-crypto",
+    "crates/wisp-parse",
+    "crates/wisp-match",
+    "crates/wisp-profile",
+    "crates/wisp-merge",
+    "crates/wisp-sync",
+    "crates/wisp-feed",
+    "crates/wisp-sub-embed",
+    "crates/wisp-sub-tokens",
+    "crates/wisp-git",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "Apache-2.0"
+repository = "https://github.com/scrypted/wisp"
+rust-version = "1.80"
+
+[workspace.dependencies]
+wisp-model = { path = "crates/wisp-model" }
+wisp-store = { path = "crates/wisp-store" }
+wisp-crypto = { path = "crates/wisp-crypto" }
+wisp-parse = { path = "crates/wisp-parse" }
+wisp-match = { path = "crates/wisp-match" }
+wisp-profile = { path = "crates/wisp-profile" }
+wisp-merge = { path = "crates/wisp-merge" }
+wisp-sync = { path = "crates/wisp-sync" }
+wisp-feed = { path = "crates/wisp-feed" }
+wisp-sub-embed = { path = "crates/wisp-sub-embed" }
+wisp-sub-tokens = { path = "crates/wisp-sub-tokens" }
+wisp-git = { path = "crates/wisp-git" }
+wisp-engine = { path = "crates/wisp-engine" }
+wisp-corpus = { path = "crates/wisp-corpus" }
+wisp-invariants = { path = "crates/wisp-invariants" }
+
+ulid = { version = "1", features = ["serde"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+serde_yaml = "0.9"
+thiserror = "2"
+rusqlite = { version = "0.32", features = ["bundled", "backup"] }
+chacha20poly1305 = "0.10"
+hkdf = "0.12"
+hmac = "0.12"
+sha2 = "0.10"
+argon2 = "0.5"
+rand = "0.8"
+zeroize = { version = "1", features = ["zeroize_derive"] }
+pulldown-cmark = "0.12"
+clap = { version = "4", features = ["derive"] }
+toml = "0.8"
+time = { version = "0.3", features = ["formatting", "parsing", "macros"] }
+hex = "0.4"
+walkdir = "2"
+tempfile = "3"
+globset = "0.4"
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+strip = true

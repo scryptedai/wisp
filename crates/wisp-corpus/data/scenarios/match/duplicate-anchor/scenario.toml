@@ -1,0 +1,18 @@
+id = "duplicate-anchor"
+description = "Same anchor twice in one file → copy (§7.5.3)"
+input = "input.md"
+
+[[prior]]
+id = "01JAB7Q3M8N5Z6K2P9R0000001"
+level = 2
+heading = "A"
+heading_line = "## A\n"
+body = "x\n"
+
+[[expect]]
+index = 1
+rule_contains = "7.5.1"
+
+[[expect]]
+index = 2
+rule_contains = "copy"

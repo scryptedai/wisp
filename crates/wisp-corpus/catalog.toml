@@ -1,0 +1,182 @@
+# Machine-readable index of the wisp OKF test corpus (§17).
+# Add a bundle/concept/scenario here before adding files under data/.
+
+[[bundle]]
+id = "okf-minimal"
+path = "bundles/okf-minimal"
+profile = "0.2"
+description = "Single Note concept; smoke test for init → record → validate"
+invariants = ["I3", "I8"]
+record = true
+lossless_strip = true
+
+[[bundle]]
+id = "warehouse"
+path = "bundles/warehouse"
+profile = "0.2"
+description = "Two BigQuery Table concepts with cross-links (integration workhorse)"
+invariants = ["I3", "I7", "I8"]
+record = true
+lossless_strip = true
+
+[[bundle]]
+id = "frontmatter-edges"
+path = "bundles/frontmatter-edges"
+profile = "0.2"
+description = "Frontmatter CST edge cases in one bundle"
+invariants = ["I3", "I8"]
+record = true
+lossless_strip = true
+
+[[bundle]]
+id = "markdown-edges"
+path = "bundles/markdown-edges"
+profile = "0.2"
+description = "Sectioning: ATX, setext, fences, footnotes, links"
+invariants = ["I3", "I8"]
+record = true
+lossless_strip = true
+
+[[bundle]]
+id = "links-and-sources"
+path = "bundles/links-and-sources"
+profile = "0.2"
+description = "sources[] frontmatter and per-section footnote refs"
+invariants = ["I8"]
+record = true
+lossless_strip = false
+
+[[bundle]]
+id = "v01-migration"
+path = "bundles/v01-migration"
+profile = "0.1"
+description = "OKF v0.1 timestamp + Citations section (migration golden input)"
+invariants = ["I8"]
+record = true
+lossless_strip = false
+
+[[bundle]]
+id = "policy-attested"
+path = "bundles/policy-attested"
+profile = "0.2"
+description = "Attested Computation concept for default write policies (I12)"
+invariants = ["I12"]
+record = true
+lossless_strip = false
+
+[[bundle]]
+id = "adversarial-suite"
+path = "bundles/adversarial-suite"
+profile = "0.2"
+description = "Adversarial OKF: anchors, YAML, fences, unicode, CRLF, links"
+invariants = ["I8", "I23"]
+record = true
+lossless_strip = false
+
+[[bundle]]
+id = "identity-gauntlet"
+path = "bundles/identity-gauntlet"
+profile = "0.2"
+description = "Multi-section doc for identity torture tests (anchors pre-seeded)"
+invariants = ["I7", "I23"]
+record = true
+lossless_strip = false
+
+[[bundle]]
+id = "spy-options"
+path = "bundles/spy-options"
+profile = "0.2"
+description = "SPY 0-2 DTE calls from news signals — desk docs, observations, journal, risk"
+invariants = ["I7", "I8", "I16", "I17", "I19"]
+record = true
+lossless_strip = false
+
+[[bundle]]
+id = "adversarial-lossless"
+path = "bundles/adversarial-lossless"
+profile = "0.2"
+description = "Small bundle held to strict I3 strip round-trip (YAML indent traps elsewhere)"
+invariants = ["I3"]
+record = true
+lossless_strip = true
+
+[[concept]]
+id = "parse.no-frontmatter"
+path = "concepts/no-frontmatter.md"
+tags = ["parse", "nonconformant"]
+expect_frontmatter = false
+
+[[concept]]
+id = "parse.opaque-frontmatter"
+path = "concepts/opaque-frontmatter.md"
+tags = ["parse", "nonconformant"]
+expect_frontmatter = true
+expect_opaque_frontmatter = true
+
+[[concept]]
+id = "parse.bom-utf8"
+path = "concepts/bom-utf8.md"
+tags = ["parse", "adversarial"]
+expect_frontmatter = true
+
+[[concept]]
+id = "parse.reference-links"
+path = "concepts/reference-links.md"
+tags = ["parse", "links"]
+expect_min_sections = 2
+
+[[concept]]
+id = "parse.tabs-frontmatter"
+path = "concepts/tabs-in-frontmatter.md"
+tags = ["parse", "frontmatter", "adversarial"]
+
+[[concept]]
+id = "parse.preamble-only"
+path = "concepts/preamble-only.md"
+tags = ["parse"]
+expect_min_sections = 1
+expect_max_sections = 1
+
+[[concept]]
+id = "parse.erasure-marker"
+path = "concepts/erasure-marker-line.md"
+tags = ["parse", "adversarial"]
+expect_erasure_markers = 1
+
+[[concept]]
+id = "parse.stray-anchor"
+path = "concepts/stray-anchor-in-body.md"
+tags = ["parse", "adversarial"]
+expect_warning_contains = ["anchor"]
+
+[[scenario]]
+id = "match.split-new-heading"
+path = "scenarios/match/split-new-heading"
+
+[[scenario]]
+id = "match.repair-stripped-anchor"
+path = "scenarios/match/repair-stripped-anchor"
+
+[[scenario]]
+id = "match.merge-sections"
+path = "scenarios/match/merge-sections"
+
+[[scenario]]
+id = "match.duplicate-anchor"
+path = "scenarios/match/duplicate-anchor"
+
+[[scenario]]
+id = "match.adopt-unknown"
+path = "scenarios/match/adopt-unknown"
+
+[[scenario]]
+id = "match.remint-erased"
+path = "scenarios/match/remint-erased"
+
+[[scenario]]
+id = "match.repair-by-body"
+path = "scenarios/match/repair-by-body"
+
+[[scenario]]
+id = "match.malformed-anchor"
+path = "scenarios/match/malformed-anchor"

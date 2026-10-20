@@ -1,0 +1,10 @@
+[package]
+name = "wisp-match"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Anchor-based section identity, anchor injection, deterministic split and merge detection"
+
+[dependencies]
+wisp-model.workspace = true
+wisp-parse.workspace = true

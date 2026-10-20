@@ -1,0 +1,21 @@
+id = "merge-sections"
+description = "Two sections merged into one body (§7.5.7)"
+input = "input.md"
+
+[[prior]]
+id = "01JAB7Q3M8N5Z6K2P9R0000001"
+level = 2
+heading = "A"
+heading_line = "## A\n"
+body = "first part\n"
+
+[[prior]]
+id = "01JAB7Q3M8N5Z6K2P9R0000002"
+level = 3
+heading = "B"
+heading_line = "### B\n"
+body = "second part\n"
+
+[[expect]]
+index = 1
+rule_contains = "7.5.1"

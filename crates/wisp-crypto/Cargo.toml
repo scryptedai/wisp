@@ -1,0 +1,22 @@
+[package]
+name = "wisp-crypto"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Scope keys, payload encryption, commitments, signatures, keystore"
+
+[dependencies]
+wisp-model.workspace = true
+chacha20poly1305.workspace = true
+hkdf.workspace = true
+hmac.workspace = true
+sha2.workspace = true
+argon2.workspace = true
+rand.workspace = true
+zeroize.workspace = true
+rusqlite.workspace = true
+hex.workspace = true
+ed25519-dalek = { version = "2", features = ["rand_core"] }
+
+[dev-dependencies]
+tempfile.workspace = true

@@ -1,0 +1,25 @@
+# Rust / Cargo
+/target/
+**/*.rs.bk
+*.pdb
+
+# SQLite
+*.db
+*.sqlite
+*.sqlite3
+*.db-wal
+*.db-shm
+*.db-journal
+
+# wisp repositories created while trying things out
+.wisp/
+.wispignore
+
+# VS Code
+.vscode/
+
+# Cursor
+.cursor/
+
+# Local reference material (not for version control)
+docs/references/

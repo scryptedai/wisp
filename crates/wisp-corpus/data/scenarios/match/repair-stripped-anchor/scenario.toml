@@ -1,0 +1,14 @@
+id = "repair-stripped-anchor"
+description = "Editor removed anchor; heading+body repair reattaches ID (§7.5.6a)"
+input = "input.md"
+
+[[prior]]
+id = "01JAB7Q3M8N5Z6K2P9R0000002"
+level = 2
+heading = "Schema"
+heading_line = "## Schema\n"
+body = "id INT64\n"
+
+[[expect]]
+index = 1
+rule_contains = "repaired"

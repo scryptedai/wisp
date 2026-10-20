@@ -1,0 +1,13 @@
+[package]
+name = "wisp-corpus"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "OKF v0.2 test bundles, concepts, and scenarios for wisp (§17 test corpus)"
+publish = false
+
+[dependencies]
+serde = { workspace = true, features = ["derive"] }
+toml = { workspace = true }
+walkdir = { workspace = true }
+thiserror = { workspace = true }

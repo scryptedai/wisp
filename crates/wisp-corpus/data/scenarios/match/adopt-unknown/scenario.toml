@@ -1,0 +1,7 @@
+id = "adopt-unknown"
+description = "Well-formed unknown anchor is adopted (§7.5.5)"
+input = "input.md"
+
+[[expect]]
+index = 1
+rule_contains = "adopted"

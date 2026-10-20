@@ -1,0 +1,13 @@
+[package]
+name = "wisp-parse"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Lossless frontmatter entries, markdown sectioning, section anchors, link and footnote extraction"
+
+[dependencies]
+wisp-model.workspace = true
+pulldown-cmark.workspace = true
+serde_yaml.workspace = true
+serde.workspace = true
+serde_json.workspace = true

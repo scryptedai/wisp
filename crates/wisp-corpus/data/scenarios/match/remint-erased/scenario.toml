@@ -1,0 +1,10 @@
+id = "remint-erased"
+description = "Erased scope anchor must never be reused (§7.5.4)"
+input = "input.md"
+
+[ctx]
+erased_sections = ["01JAB7Q3M8N5Z6K2P9R0000021"]
+
+[[expect]]
+index = 1
+rule_contains = "erased"

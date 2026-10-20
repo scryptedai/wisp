@@ -1,0 +1,10 @@
+[package]
+name = "wisp-merge"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Three-way merge over changesets (§11.5). Scheduled for M7."
+
+[dependencies]
+wisp-model.workspace = true
+serde_json.workspace = true

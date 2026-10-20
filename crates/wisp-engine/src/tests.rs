@@ -929,6 +929,9 @@ fn branches_and_apply_batches_with_asserts_and_inputs() {
     assert!(read(&f.root, "tables/door.md").contains("squeaks"));
     crate::query::switch(&mut repo, MAIN_REF, false).unwrap();
     assert!(!read(&f.root, "tables/door.md").contains("squeaks"));
+    let merged = crate::merge::merge_refs(&mut repo, "task/door", MAIN_REF, None, false).unwrap();
+    assert_eq!(merged["status"], "fast_forward");
+    assert!(read(&f.root, "tables/door.md").contains("squeaks"));
     assert!(crate::query::fsck(&mut repo).is_ok());
 }
 

@@ -1,9 +1,9 @@
 //! `wisp-merge`: three-way merge over changesets (§11.5).
-//!
-//! Not implemented in this build (milestone M7). The merge rules table from §11.5 is reproduced in
-//! `RULES` so the implementation and its tests can be written against it.
 
-use wisp_model::{Result, WispError};
+use wisp_engine::merge::merge_refs;
+use wisp_engine::Repository;
+use wisp_model::Result;
+use wisp_model::WispError;
 
 /// §11.5 merge rules: (both sides changed, result).
 pub const RULES: &[(&str, &str)] = &[
@@ -33,6 +33,17 @@ pub const RULES: &[(&str, &str)] = &[
     ),
 ];
 
-pub fn merge() -> Result<serde_json::Value> {
+pub fn merge(
+    repo: &mut Repository,
+    source: &str,
+    into: &str,
+    resolutions: Option<&std::path::Path>,
+    abort: bool,
+) -> Result<serde_json::Value> {
+    merge_refs(repo, source, into, resolutions, abort)
+}
+
+/// Legacy stub entry (tests); prefer `merge(repo, ...)`.
+pub fn merge_stub() -> Result<serde_json::Value> {
     Err(WispError::not_implemented("merge (M7)"))
 }

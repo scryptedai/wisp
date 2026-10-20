@@ -5,6 +5,7 @@ pub mod checkout;
 pub mod commit;
 pub mod erase;
 pub mod headless;
+pub mod merge;
 pub mod manifest;
 pub mod payloads;
 pub mod query;

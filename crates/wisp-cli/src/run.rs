@@ -679,7 +679,26 @@ pub fn run(cli: Cli) -> CliResult {
             let mut repo = open(&cli)?;
             Ok(Output::json(query::switch(&mut repo, name, *discard)?))
         }
-        Command::Merge { .. } => wisp_merge::merge().map(Output::json),
+        Command::Merge {
+            source,
+            into,
+            resolutions,
+            abort,
+        } => {
+            let mut repo = open(&cli)?;
+            let into_name = into
+                .clone()
+                .unwrap_or_else(|| query::current_ref(&repo));
+            Ok(Output::json(
+                wisp_merge::merge(
+                    &mut repo,
+                    source,
+                    &into_name,
+                    resolutions.as_deref(),
+                    *abort,
+                )?,
+            ))
+        }
         Command::Worktree { .. } => Err(WispError::not_implemented("worktree (M7)")),
         Command::Remote { cmd } => {
             let mut repo = open(&cli)?;

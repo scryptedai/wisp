@@ -6,5 +6,6 @@ license.workspace = true
 description = "Three-way merge over changesets (§11.5). Scheduled for M7."
 
 [dependencies]
+wisp-engine.workspace = true
 wisp-model.workspace = true
 serde_json.workspace = true

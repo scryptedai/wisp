@@ -24,9 +24,9 @@ members = [
 [workspace.package]
 version = "0.1.0"
 edition = "2021"
-authors = ["Tim Cotten <tcotten@scryptedinc.com>"]
+authors = ["Tim Cotten <tcotten@scrypted.ai>"]
 license = "GPL-2.0-only"
-repository = "https://github.com/scrypted/wisp"
+repository = "https://github.com/scryptedai/wisp"
 rust-version = "1.80"
 
 [workspace.dependencies]

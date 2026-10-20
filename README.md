@@ -4,7 +4,7 @@ A local-first, differential knowledge store for [Open Knowledge Format](https://
 
 This repository is **Scrypted’s GPLv2 Community Release** of wisp: source is here for use, study, modification, and redistribution under [LICENSE](LICENSE). Scrypted may offer other editions or licenses separately; **this tree is the community edition**.
 
-Copyright © 2026 Scrypted. Author: Tim Cotten (tcotten@scryptedinc.com).
+Copyright © 2026 Scrypted. Author: Tim Cotten (tcotten@scrypted.ai).
 
 wisp stores a bundle as an append-only log of **section-level** changes with encrypted, destroyable payloads, and materializes a conformant OKF directory on demand. It is built for fleets of agents: many writers commit without locks, every change carries provenance, and any section, concept, or group can be provably erased while the integrity chain still verifies.
 

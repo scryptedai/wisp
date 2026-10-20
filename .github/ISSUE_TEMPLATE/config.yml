@@ -1,5 +1,5 @@
 blank_issues_enabled: true
 contact_links:
   - name: Contributing guide
-    url: https://github.com/scrypted/wisp/blob/main/CONTRIBUTING.md
+    url: https://github.com/scryptedai/wisp/blob/main/CONTRIBUTING.md
     about: Patches, git worktrees, and CI expectations

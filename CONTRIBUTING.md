@@ -11,7 +11,7 @@ Thank you for helping improve wisp. This project is **Scrypted’s GPLv2 Communi
 ## Development setup
 
 ```sh
-git clone <upstream-or-your-fork-url>
+git clone https://github.com/scryptedai/wisp.git
 cd wisp
 rustc --version   # 1.80+
 cargo build

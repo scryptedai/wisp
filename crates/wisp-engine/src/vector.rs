@@ -31,13 +31,33 @@ pub fn open_index(
                 wisp_sub_embed::SqliteVectorBackend::open(wisp_dir, codec, path_override)?,
             ))
         }
-        VectorDriver::Postgres | VectorDriver::ExternalCommand => Err(WispError::not_implemented(
-            "postgres/command vector backends: implement wisp_index::VectorIndexBackend in your product crate",
+        VectorDriver::Postgres => {
+            let url_env = cfg
+                .url_env
+                .as_deref()
+                .unwrap_or("WISP_VECTOR_DSN");
+            #[cfg(feature = "postgres-vector")]
+            {
+                return wisp_vector_pg::open_from_env(codec, url_env);
+            }
+            #[cfg(not(feature = "postgres-vector"))]
+            {
+                let _ = url_env;
+                return Err(WispError::not_implemented(
+                    "postgres vector backend: build wisp with --features postgres-vector",
+                ));
+            }
+        }
+        VectorDriver::ExternalCommand => Err(WispError::not_implemented(
+            "command vector backend: implement wisp_index::VectorIndexBackend in your product crate",
         )),
     }
 }
 
-pub fn purge_vectors_for_sections(repo: &Repository, sections: &[wisp_model::SectionId]) -> Result<()> {
+pub fn purge_vectors_for_sections(
+    repo: &Repository,
+    sections: &[wisp_model::SectionId],
+) -> Result<()> {
     if sections.is_empty() {
         return Ok(());
     }
@@ -47,6 +67,10 @@ pub fn purge_vectors_for_sections(repo: &Repository, sections: &[wisp_model::Sec
         .default_embedding
         .as_deref()
         .unwrap_or(wisp_sub_embed::HASH_CODEC);
-    wisp_sub_embed::purge_sections(&repo.wisp_dir, codec, sections)?;
+    let wisp_dir = repo.wisp_dir.clone();
+    let vector_index = repo.manifest.vector_index.clone();
+    let mut idx = open_index(&wisp_dir, &vector_index, codec)?;
+    idx.delete_sections(sections)?;
+    idx.checkpoint()?;
     Ok(())
 }

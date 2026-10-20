@@ -78,6 +78,9 @@ pub enum Command {
         r#ref: Option<String>,
         #[arg(long)]
         squash: bool,
+        /// Import each git commit as a separate wisp changeset (oldest first)
+        #[arg(long)]
+        history: bool,
     },
     /// Changed, new, missing, and non-conformant files; pending erasures
     Status,
@@ -277,10 +280,13 @@ pub enum Command {
         remote: String,
         r#ref: Option<String>,
     },
-    /// Serve a replica over stdio
+    /// Serve a replica (stdio push handler or dumb HTTP pack)
     Serve {
         #[arg(long)]
         stdio: bool,
+        /// Bind address for GET/PUT /wisp/v1/pack.zst (e.g. 127.0.0.1:8731)
+        #[arg(long)]
+        http: Option<String>,
     },
     /// Profile findings for the ref (or one path)
     Validate {

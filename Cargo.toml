@@ -16,6 +16,7 @@ members = [
     "crates/wisp-feed",
     "crates/wisp-sub-embed",
     "crates/wisp-index",
+    "crates/wisp-vector-pg",
     "crates/wisp-sub-tokens",
     "crates/wisp-git",
 ]
@@ -39,6 +40,7 @@ wisp-sync = { path = "crates/wisp-sync" }
 wisp-feed = { path = "crates/wisp-feed" }
 wisp-sub-embed = { path = "crates/wisp-sub-embed" }
 wisp-index = { path = "crates/wisp-index" }
+wisp-vector-pg = { path = "crates/wisp-vector-pg" }
 wisp-sub-tokens = { path = "crates/wisp-sub-tokens" }
 wisp-git = { path = "crates/wisp-git" }
 wisp-engine = { path = "crates/wisp-engine" }

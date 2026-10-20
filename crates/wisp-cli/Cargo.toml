@@ -21,3 +21,7 @@ serde_json.workspace = true
 serde.workspace = true
 walkdir.workspace = true
 wisp-store.workspace = true
+
+[features]
+default = []
+postgres-vector = ["wisp-engine/postgres-vector"]

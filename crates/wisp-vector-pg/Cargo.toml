@@ -1,0 +1,15 @@
+[package]
+name = "wisp-vector-pg"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Postgres/pgvector backend for wisp_index::VectorIndexBackend (extension crate)"
+
+[features]
+default = []
+postgres = ["dep:postgres"]
+
+[dependencies]
+wisp-model.workspace = true
+wisp-index.workspace = true
+postgres = { version = "0.19", optional = true }

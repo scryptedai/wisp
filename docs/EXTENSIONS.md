@@ -45,7 +45,7 @@ url_env = "WISP_VECTOR_DSN"
 | `driver` | Status in reference binary |
 |----------|----------------------------|
 | `sqlite` | Implemented (`wisp-sub-embed`) |
-| `postgres` / `pgvector` | Extension point — ship e.g. `wisp-vector-pg` in your product |
+| `postgres` / `pgvector` | `crates/wisp-vector-pg` — build `wisp` with `--features postgres-vector` |
 | `command` | Extension point — JSON-lines helper on stdin/stdout |
 
 ## Erase / vector purge
@@ -67,7 +67,8 @@ HTTP expects your product to serve or accept the pack at that path (similar to g
 | Command | Behaviour |
 |---------|-----------|
 | `export --archive out.tar.zst` | Render ref → tar.zst (like `git archive`) |
-| `import --git <repo>` | `git archive` snapshot → working tree → `record` |
+| `import --git <repo>` | Snapshot via `git archive`, or `--history` for one changeset per commit + `.wisp/meta/git-map.json` |
+| `wisp serve --http ADDR` | Dumb `GET`/`PUT` `/wisp/v1/pack.zst` for HTTPS remotes |
 | `export --git <dir>` | Single-commit git repo |
 
 Per-commit git history import remains a product extension; snapshot import is built in.

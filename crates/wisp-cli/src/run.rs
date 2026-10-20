@@ -212,6 +212,7 @@ pub fn run(cli: Cli) -> CliResult {
             path,
             r#ref,
             squash,
+            history,
         } => {
             if let Some(git_dir) = git {
                 let mut repo = open(&cli)?;
@@ -226,6 +227,7 @@ pub fn run(cli: Cli) -> CliResult {
                         } else {
                             None
                         },
+                        history: *history,
                     },
                 )?;
                 return Ok(Output::json(out));
@@ -801,12 +803,21 @@ pub fn run(cli: Cli) -> CliResult {
                 &unlock(&cli),
             )?))
         }
-        Command::Serve { stdio } => {
+        Command::Serve { stdio, http } => {
+            let unlock = unlock(&cli);
+            if let Some(bind) = http {
+                let repo = open(&cli)?;
+                wisp_sync::serve_http(&bind, &repo.root, &unlock)?;
+                return Ok(Output::text(
+                    json!({ "serve": "http", "bind": bind, "pack": "/wisp/v1/pack.zst" }),
+                    format!("HTTP pack server stopped ({bind})"),
+                ));
+            }
             if !stdio {
-                return Err(WispError::usage("serve requires --stdio (M8 skeleton)"));
+                return Err(WispError::usage("serve requires --stdio or --http <addr>"));
             }
             let mut repo = open(&cli)?;
-            Ok(Output::json(wisp_sync::serve_stdio(&mut repo, &unlock(&cli))?))
+            Ok(Output::json(wisp_sync::serve_stdio(&mut repo, &unlock)?))
         }
         Command::Validate {
             path,

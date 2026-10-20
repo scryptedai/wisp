@@ -1,5 +1,11 @@
 //! Ref merge (§11.5): fast-forward and divergent conflict detection.
 
+mod detect;
+mod replay;
+
+pub use detect::{analyze_divergence, changes_same_commitment, DivergenceAnalysis, ScopeKey};
+pub use replay::ordered_changeset_ids;
+
 use crate::checkout;
 use crate::commit::record_merge;
 use crate::query;
@@ -140,9 +146,8 @@ pub fn merge_refs(
         .ok_or_else(|| WispError::conflict("no common ancestor", json!([])))?;
     let into_cs = changesets_since(conn, into_head, base);
     let source_cs = changesets_since(conn, source_head, base);
-    let into_keys = scope_keys_for_changesets(conn, &into_cs)?;
-    let source_keys = scope_keys_for_changesets(conn, &source_cs)?;
-    let conflicts = divergent_conflicts(conn, &into_keys, &source_keys)?;
+    let analysis = detect::analyze_divergence(conn, &into_cs, &source_cs)?;
+    let conflicts = analysis.conflicts;
     if !conflicts.is_empty() {
         if resolutions.is_none() {
             write_merge_state(repo, source, into, base, into_head, source_head, &conflicts)?;
@@ -175,9 +180,17 @@ pub fn merge_refs(
     }
 
     let merge_id = record_merge(repo, into, into_head, source_head)?;
-    clear_merge_skips(repo, into)?;
+    if !analysis.erase_skips.is_empty() {
+        persist_merge_skips(repo, into, merge_id, &analysis.erase_skips)?;
+    } else {
+        clear_merge_skips(repo, into)?;
+    }
     repo.hots.remove(into);
-    crate::apply::rebuild_hot(repo, into)?;
+    if analysis.erase_skips.is_empty() {
+        crate::apply::rebuild_hot(repo, into)?;
+    } else {
+        crate::apply::rebuild_hot_skipping(repo, into, &analysis.erase_skips)?;
+    }
     finish_merge_checkout(repo, into)?;
     clear_merge_state(repo)?;
     Ok(json!({
@@ -188,6 +201,7 @@ pub fn merge_refs(
         "merge": merge_id.to_string(),
         "head": merge_id.to_string(),
         "changesets_replayed": source_cs.len(),
+        "erase_wins": analysis.erase_reports,
     }))
 }
 
@@ -339,7 +353,7 @@ pub fn is_ancestor(
     Ok(false)
 }
 
-fn merge_base(
+pub fn merge_base(
     conn: &rusqlite::Connection,
     a: ChangesetId,
     b: ChangesetId,
@@ -402,86 +416,4 @@ pub fn changesets_since(
     }
     path.reverse();
     path
-}
-
-#[derive(Clone, Debug, Hash, PartialEq, Eq)]
-enum ScopeKey {
-    Section(ConceptId, SectionId),
-    Frontmatter(ConceptId, String),
-    ConceptPath(ConceptId),
-    Source(ConceptId, String),
-    Asset(AssetId),
-    Other(String),
-}
-
-fn scope_key(c: &Change) -> ScopeKey {
-    match &c.target {
-        Target::Section { concept, section } => ScopeKey::Section(*concept, *section),
-        Target::FrontmatterKey {
-            concept,
-            key_commit,
-        } => ScopeKey::Frontmatter(*concept, hex::encode(key_commit.0)),
-        Target::Concept { concept } => ScopeKey::ConceptPath(*concept),
-        Target::Source { concept, source } => ScopeKey::Source(*concept, source.clone()),
-        Target::Asset { asset } => ScopeKey::Asset(*asset),
-        other => ScopeKey::Other(format!("{other:?}")),
-    }
-}
-
-fn scope_keys_for_changesets(
-    conn: &rusqlite::Connection,
-    ids: &[ChangesetId],
-) -> Result<HashMap<ScopeKey, ChangeId>> {
-    let mut map = HashMap::new();
-    for cs in ids {
-        for c in Ledger::changes_of(conn, *cs)? {
-            if c.op == Op::Verify {
-                continue;
-            }
-            let key = scope_key(&c);
-            map.insert(key, c.id);
-        }
-    }
-    Ok(map)
-}
-
-fn divergent_conflicts(
-    conn: &rusqlite::Connection,
-    into: &HashMap<ScopeKey, ChangeId>,
-    source: &HashMap<ScopeKey, ChangeId>,
-) -> Result<Vec<Value>> {
-    let mut out = Vec::new();
-    for (key, theirs) in source {
-        if let Some(ours) = into.get(key) {
-            if ours != theirs && !changes_same_commitment(conn, *ours, *theirs)? {
-                out.push(json!({
-                    "type": "scope_conflict",
-                    "scope": format!("{key:?}"),
-                    "ours": ours.to_string(),
-                    "theirs": theirs.to_string(),
-                }));
-            }
-        }
-    }
-    Ok(out)
-}
-
-/// §11.5: same section/frontmatter with the same payload commitment is not a conflict.
-fn changes_same_commitment(
-    conn: &rusqlite::Connection,
-    ours: ChangeId,
-    theirs: ChangeId,
-) -> Result<bool> {
-    let a = Ledger::get_change(conn, ours)?
-        .ok_or_else(|| WispError::internal("merge conflict scan: missing change"))?;
-    let b = Ledger::get_change(conn, theirs)?
-        .ok_or_else(|| WispError::internal("merge conflict scan: missing change"))?;
-    if a.op != b.op || a.target != b.target {
-        return Ok(false);
-    }
-    Ok(match (&a.payload, &b.payload) {
-        (Some(pa), Some(pb)) => pa.commit == pb.commit,
-        (None, None) => true,
-        _ => false,
-    })
 }

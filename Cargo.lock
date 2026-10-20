@@ -4237,6 +4237,7 @@ dependencies = [
  "wisp-corpus",
  "wisp-engine",
  "wisp-match",
+ "wisp-merge",
  "wisp-model",
  "wisp-parse",
  "wisp-profile",

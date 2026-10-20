@@ -438,12 +438,17 @@ pub fn hot_check(repo: &mut Repository, ref_name: &str) -> Result<Value> {
     std::fs::create_dir_all(&scratch_dir)?;
     let mut scratch = Hot::open(&scratch_dir.join("hot.db"))?;
     let head = repo.head(ref_name)?;
-    let chain = history_chain(&repo.ledger, head)?;
     let skip = head.and_then(|h| crate::merge::merge_skips_for_head(repo, ref_name, h));
     {
         let reader = repo.reader();
         let tx = scratch.begin()?;
-        for row in &chain {
+        let ids = match head {
+            Some(h) => crate::merge::ordered_changeset_ids(reader.conn, h)?,
+            None => Vec::new(),
+        };
+        for cs_id in ids {
+            let row = Ledger::get_changeset(reader.conn, cs_id)?
+                .ok_or_else(|| WispError::internal("hot_check: missing changeset"))?;
             let changes = Ledger::changes_of(reader.conn, row.changeset.id)?;
             let changes: Vec<wisp_model::Change> = match &skip {
                 Some(skip) => changes

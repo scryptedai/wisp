@@ -9,6 +9,8 @@ use rusqlite::{params, Connection, OptionalExtension, Transaction};
 use std::path::{Path, PathBuf};
 use wisp_model::*;
 
+type ErasureMarkerRow = (SectionId, ConceptId, Option<SectionId>, Reason);
+
 pub const SCHEMA: &str = r#"
 PRAGMA foreign_keys = ON;
 
@@ -1200,9 +1202,7 @@ impl Ledger {
         .map_err(sql_err)?;
         Ok(())
     }
-    pub fn erasure_markers(
-        conn: &Connection,
-    ) -> Result<Vec<(SectionId, ConceptId, Option<SectionId>, Reason)>> {
+    pub fn erasure_markers(conn: &Connection) -> Result<Vec<ErasureMarkerRow>> {
         let mut st = conn
             .prepare("SELECT section, concept, after_section, reason FROM erasure_markers")
             .map_err(sql_err)?;

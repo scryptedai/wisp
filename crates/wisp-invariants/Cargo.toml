@@ -20,6 +20,7 @@ wisp-match = { workspace = true }
 wisp-profile = { workspace = true }
 wisp-store = { workspace = true }
 wisp-sync = { workspace = true }
+wisp-merge = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 tempfile = { workspace = true }

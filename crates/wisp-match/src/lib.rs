@@ -162,7 +162,7 @@ pub fn match_sections(
             Anchor::Valid(id) => *id,
             Anchor::Malformed(m) => {
                 res.reports
-                    .push(format!("section {}: malformed anchor {:?} ignored", i, m));
+                    .push(format!("section {i}: malformed anchor {m:?} ignored"));
                 continue;
             }
         };
@@ -178,8 +178,7 @@ pub fn match_sections(
                 from_section: id,
             };
             res.reports.push(format!(
-                "section {}: duplicate anchor {} treated as copy",
-                i, id
+                "section {i}: duplicate anchor {id} treated as copy"
             ));
             decisions[i] = Some(d);
             continue;
@@ -188,8 +187,7 @@ pub fn match_sections(
         // Rule 4: erased.
         if ctx.is_erased(id) {
             res.reports.push(format!(
-                "section {}: anchor {} belongs to an erased scope; minted a new ID",
-                i, id
+                "section {i}: anchor {id} belongs to an erased scope; minted a new ID"
             ));
             decisions[i] = Some(Decision::Reminted {
                 new_id: SectionId::new(),
@@ -207,8 +205,7 @@ pub fn match_sections(
         if let Some(owner) = ctx.owner_of(id) {
             if ctx.owner_still_has(id) {
                 res.reports.push(format!(
-                    "section {}: anchor {} is owned by another concept that still has it; copied",
-                    i, id
+                    "section {i}: anchor {id} is owned by another concept that still has it; copied"
                 ));
                 decisions[i] = Some(Decision::Copied {
                     new_id: SectionId::new(),

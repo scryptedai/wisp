@@ -12,7 +12,7 @@ pub fn seed_path(wisp_dir: &Path, actor: ActorId) -> PathBuf {
     wisp_dir
         .join("keys")
         .join("signing")
-        .join(format!("{}.seed", actor))
+        .join(format!("{actor}.seed"))
 }
 
 fn parse_seed_hex(text: &str) -> Result<[u8; 32]> {

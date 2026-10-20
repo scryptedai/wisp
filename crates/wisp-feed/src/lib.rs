@@ -83,7 +83,7 @@ pub fn run_external_subscribers(repo: &mut Repository) -> Result<Value> {
             let ev_seq = ev
                 .get("seq")
                 .and_then(|v| v.as_i64())
-                .ok_or_else(|| WispError::internal(format!("feed event missing seq")))?;
+                .ok_or_else(|| WispError::internal("feed event missing seq".to_string()))?;
             let seq = ack
                 .get("ack")
                 .and_then(|v| v.as_i64())

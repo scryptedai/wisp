@@ -169,10 +169,10 @@ fn run_mode(
     neural: bool,
 ) -> HashMap<String, CatStats> {
     let mut by_cat: HashMap<String, CatStats> = HashMap::new();
-    println!("\n=== mode: {} ===", mode);
+    println!("\n=== mode: {mode} ===");
     println!(
-        "{:<8} {:<22} {:<12} {:<6} {:<8} {}",
-        "id", "category", "expect", "rank", "score@1", "top path"
+        "{:<8} {:<22} {:<12} {:<6} {:<8} top path",
+        "id", "category", "expect", "rank", "score@1"
     );
     for c in cases {
         let v = search(repo, MAIN_REF, &c.query, mode, k).expect("search");
@@ -202,7 +202,7 @@ fn run_mode(
         if !results.is_empty() && c.id == "T4.1" {
             let oom_ranks = ranks_for_query(&results, "sec-oom");
             if let Some(r) = oom_ranks.first() {
-                println!("         (sec-oom also in top-{} at rank {})", k, r);
+                println!("         (sec-oom also in top-{k} at rank {r})");
             }
         }
         let stats = by_cat
@@ -278,7 +278,7 @@ fn should_assert(mode: &str, c: &Case) -> bool {
 }
 
 fn print_summary(mode: &str, k: usize, by_cat: &HashMap<String, CatStats>) {
-    println!("\n--- Search evaluation summary ({}) ---", mode);
+    println!("\n--- Search evaluation summary ({mode}) ---");
     let mut cats: Vec<_> = by_cat.keys().collect();
     cats.sort();
     for cat in cats {

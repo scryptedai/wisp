@@ -1272,7 +1272,7 @@ impl Hot {
 
     /// Does any plaintext in this hot tier contain `needle`? (Used by tests and `fsck`.)
     pub fn contains_text(conn: &Connection, needle: &str) -> Result<bool> {
-        let pat = format!("%{}%", needle);
+        let pat = format!("%{needle}%");
         let n: i64 = conn
             .query_row(
                 "SELECT (SELECT COUNT(*) FROM state_sections WHERE body LIKE ?1 OR heading LIKE ?1)

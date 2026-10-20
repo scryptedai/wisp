@@ -32,7 +32,7 @@ fn adversarial_record_is_idempotent_on_clean_tree() {
     let root = dir.path().join("bundle");
     let mut repo = init_and_record_bundle(spec, &root, &unlock()).unwrap();
     let r1 = rec(&mut repo, "human:corpus");
-    assert_eq!(r1.ops, 0, "second record on clean tree: {:?}", r1);
+    assert_eq!(r1.ops, 0, "second record on clean tree: {r1:?}");
     let r2 = rec(&mut repo, "human:corpus");
     assert_eq!(r2.ops, 0);
 }
@@ -76,12 +76,14 @@ fn adversarial_strip_wisp_id_at_same_path_is_repair_not_fork() {
     let alpha_before = secs
         .iter()
         .find(|s| s.body.contains("alpha body"))
-        .expect(&format!(
-            "alpha section; headings={:?}",
-            secs.iter()
-                .map(|s| (&s.heading, s.level))
-                .collect::<Vec<_>>()
-        ));
+        .unwrap_or_else(|| {
+            panic!(
+                "alpha section; headings={:?}",
+                secs.iter()
+                    .map(|s| (&s.heading, s.level))
+                    .collect::<Vec<_>>()
+            )
+        });
     let file = root.join("notes/chaos.md");
     let mut text = std::fs::read_to_string(&file).unwrap();
     assert!(text.contains("wisp_id:"));

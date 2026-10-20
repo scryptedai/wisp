@@ -611,7 +611,7 @@ fn write_tree_with(
                     Some((at, repo.actor_display(actor), reason)),
                     export_profile,
                 )?;
-                let rel = format!("{}.md", path);
+                let rel = format!("{path}.md");
                 let p = dir.join(&rel);
                 write_atomic(&p, text.as_bytes())?;
                 written.insert(p);

@@ -40,7 +40,7 @@ fn erase_purges_search_indexes() {
     erase(
         &mut repo,
         MAIN_REF,
-        &EraseTarget::Path(format!("{}#{}", path, section)),
+        &EraseTarget::Path(format!("{path}#{section}")),
         Reason::Policy,
         true,
         "human:test",

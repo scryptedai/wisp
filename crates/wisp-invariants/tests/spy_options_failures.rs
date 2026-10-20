@@ -320,8 +320,7 @@ fn spy_fail_retract_twice() {
     .unwrap_err();
     assert!(
         err.code == ExitCode::Conflict || err.code == ExitCode::NotFound,
-        "{:?}",
-        err
+        "{err:?}"
     );
 }
 
@@ -369,8 +368,7 @@ fn spy_fail_headless_update_on_retracted_observation() {
     .unwrap_err();
     assert!(
         err.code == ExitCode::Conflict || err.code == ExitCode::NotFound,
-        "{:?}",
-        err
+        "{err:?}"
     );
 }
 

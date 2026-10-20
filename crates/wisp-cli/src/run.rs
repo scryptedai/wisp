@@ -803,7 +803,7 @@ pub fn run(cli: Cli) -> CliResult {
             let unlock = unlock(&cli);
             if let Some(bind) = http {
                 let repo = open(&cli)?;
-                wisp_sync::serve_http(&bind, &repo.root, &unlock)?;
+                wisp_sync::serve_http(bind, &repo.root, &unlock)?;
                 return Ok(Output::text(
                     json!({ "serve": "http", "bind": bind, "pack": "/wisp/v1/pack.zst" }),
                     format!("HTTP pack server stopped ({bind})"),

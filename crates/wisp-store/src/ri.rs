@@ -432,6 +432,17 @@ pub fn clear(conn: &Connection) -> Result<()> {
     Ok(())
 }
 
+pub fn vector_rows(conn: &Connection, section: SectionId) -> Result<u64> {
+    let n: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM ri_section_vectors WHERE section = ?1",
+            params![section.bytes().to_vec()],
+            |r| r.get(0),
+        )
+        .map_err(sql_err)?;
+    Ok(n as u64)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -488,15 +499,4 @@ mod tests {
             .unwrap();
         assert_eq!(n, 0);
     }
-}
-
-pub fn vector_rows(conn: &Connection, section: SectionId) -> Result<u64> {
-    let n: i64 = conn
-        .query_row(
-            "SELECT COUNT(*) FROM ri_section_vectors WHERE section = ?1",
-            params![section.bytes().to_vec()],
-            |r| r.get(0),
-        )
-        .map_err(sql_err)?;
-    Ok(n as u64)
 }

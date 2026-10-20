@@ -1,7 +1,6 @@
 //! Dumb HTTP transport for cold-tier packs (`GET`/`PUT` `/wisp/v1/pack.zst`).
 
 use crate::pack::{apply_pack_bytes, pack_bytes};
-use std::io::Read;
 use std::path::Path;
 use std::sync::{Arc, Mutex};
 use wisp_engine::apply;
@@ -20,8 +19,7 @@ pub fn serve_http(bind: &str, root: &Path, unlock: &Unlock) -> Result<()> {
     let server = tiny_http::Server::http(bind)
         .map_err(|e| WispError::internal(format!("http bind {bind}: {e}")))?;
     eprintln!(
-        "wisp http: GET/PUT http://{}{} (trusted transport; add auth in production)",
-        bind, PACK_PATH
+        "wisp http: GET/PUT http://{bind}{PACK_PATH} (trusted transport; add auth in production)"
     );
     for request in server.incoming_requests() {
         if let Err(e) = dispatch(&state, request) {

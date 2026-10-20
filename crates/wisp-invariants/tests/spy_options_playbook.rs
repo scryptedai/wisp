@@ -230,7 +230,7 @@ fn spy_options_news_signal_multi_agent_playbook() {
     .unwrap();
     let final_thesis = std::fs::read_to_string(&overview_path).unwrap();
     assert!(final_thesis.contains("desk emphasis"));
-    assert!(final_thesis.contains("sized per tightened") == false);
+    assert!(!final_thesis.contains("sized per tightened"));
 
     assert!(wisp_engine::query::fsck(&mut repo).is_ok());
     assert!(wisp_engine::query::hot_check(&mut repo, MAIN_REF).is_ok());

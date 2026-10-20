@@ -66,7 +66,7 @@ pub fn update_section_ref(
 ) -> Result<serde_json::Value, wisp_model::WispError> {
     let op = ApplyOp {
         op: "update_section".into(),
-        path: format!("{}.md", path),
+        path: format!("{path}.md"),
         section: Some(section),
         base_version: Some(base.to_string()),
         heading: None,

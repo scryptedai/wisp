@@ -107,7 +107,7 @@ fn init_record_checkout_roundtrip_and_identity() {
     assert!(read(&f.root, "tables/log.md").contains("Creation"));
     // Idempotent: recording again produces no second change (I23).
     let r2 = rec(&mut repo, "human:alex");
-    assert_eq!(r2.ops, 0, "{:?}", r2);
+    assert_eq!(r2.ops, 0, "{r2:?}");
     // I7: an OS rename keeps wisp_id, history, and inbound links; a full rewrite keeps the SectionId.
     let parsed = wisp_parse::parse_file(&text);
     let schema_id = match &parsed.sections()[1].anchor {
@@ -563,7 +563,7 @@ fn erase_whole_concept_and_group_and_actor() {
     assert!(log.contains("Erasure: an erasure occurred"));
     assert!(!log.contains("alice"));
     // I24: erase the actor; name disappears, kind-based policy still applies, fsck passes.
-    assert!(!scan_for(&f.root, "human:dpo").is_empty() || true);
+    assert!(!scan_for(&f.root, "human:dpo").is_empty());
     crate::erase::erase(
         &mut repo,
         MAIN_REF,

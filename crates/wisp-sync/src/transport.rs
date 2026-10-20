@@ -61,7 +61,7 @@ fn parse_ssh(rest: &str) -> Result<RemoteTarget> {
     Ok(RemoteTarget::Ssh(SshRemote {
         user,
         host: host.to_string(),
-        path: PathBuf::from(format!("/{}", path)),
+        path: PathBuf::from(format!("/{path}")),
     }))
 }
 

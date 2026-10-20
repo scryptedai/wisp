@@ -4,10 +4,10 @@
 
 mod schema;
 
-use wisp_index::{SectionVectorRow, VectorIndexBackend, VectorSearchHit};
-use wisp_model::{ConceptId, Result, SectionId, WispError};
+use wisp_index::VectorIndexBackend;
+use wisp_model::{Result, WispError};
 
-pub use schema::PGVECTOR_DDL;
+pub use schema::{PGVECTOR_DDL, REAL_ARRAY_DDL};
 
 pub fn open_from_env(codec_id: &str, url_env: &str) -> Result<Box<dyn VectorIndexBackend>> {
     let dsn = std::env::var(url_env)

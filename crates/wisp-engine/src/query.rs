@@ -561,10 +561,8 @@ pub fn fsck(repo: &mut Repository) -> Result<Value> {
                     }
                 }
             }
-        } else {
-            if on_disk.is_some() {
-                problems.push(json!({ "kind": "erased_payload_present", "payload": id.to_string(), "scope": scope.to_string() }));
-            }
+        } else if on_disk.is_some() {
+            problems.push(json!({ "kind": "erased_payload_present", "payload": id.to_string(), "scope": scope.to_string() }));
         }
     }
     // Tombstoned scopes fully shredded.
@@ -734,8 +732,8 @@ pub fn mv(
                         )
                     }
                 };
-                body = body.replace(&format!("]({})", l.dest), &format!("]({})", new_dest));
-                body = body.replace(&format!("]: {}", l.dest), &format!("]: {}", new_dest));
+                body = body.replace(&format!("]({})", l.dest), &format!("]({new_dest})"));
+                body = body.replace(&format!("]: {}", l.dest), &format!("]: {new_dest}"));
             }
         }
         if body != sec.body {

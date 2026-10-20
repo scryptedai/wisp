@@ -78,7 +78,7 @@ Deviations from the OKF store v1 design (ledger, parse, merge, sync, profiles), 
 ## §13 Views and git interop
 
 - Erasure markers for a section whose preceding section no longer exists are rendered after the preamble; for a concept with no sections left they follow the frontmatter.
-- `export --archive` writes a `.tar.zst` of the rendered bundle. `export --git` renders and runs `git init` + one commit. `import --git` imports a **snapshot** via `git archive` + `record` (no per-commit history mapping yet). `import <dir>` copies a plain bundle into the working tree and records it.
+- `export --archive` writes a `.tar.zst` of the rendered bundle. `export --git` renders and runs `git init` + one commit. `import --git` defaults to a **snapshot** (`git archive` + one `record`; `--squash` sets the message). `import --git --history` replays commits oldest-first (one wisp changeset per non-empty tree) and writes `meta/git-map.json` (git SHA → wisp changeset). `import <dir>` copies a plain bundle into the working tree and records it.
 
 ## §14–§16 Feed, search, CLI
 

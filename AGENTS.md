@@ -37,7 +37,7 @@ cargo test -p wisp-invariants
 cargo build --release
 ```
 
-Rust **1.80+**. If `libsqlite3-sys` bindgen fails in a sandbox, use  
+Rust **1.88+** (see workspace `rust-version`). If `libsqlite3-sys` bindgen fails in a sandbox, use  
 `CARGO_TARGET_DIR=./target cargo test --workspace`.
 
 ## TDD contract

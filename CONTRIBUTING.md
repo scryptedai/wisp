@@ -5,7 +5,7 @@ Thank you for helping improve wisp. This project is **Scrypted’s GPLv2 Communi
 ## Before you start
 
 - Read [README.md](README.md) and [AGENTS.md](AGENTS.md) (also used by review bots).
-- Behavior changes: read [DECISIONS.md](DECISIONS.md) and the v1 design PDF (maintainers).
+- Behavior changes: read [DECISIONS.md](DECISIONS.md), [docs/MERGE.md](docs/MERGE.md), and [docs/SEARCH.md](docs/SEARCH.md) / [docs/EXTENSIONS.md](docs/EXTENSIONS.md) when retrieval or hooks change.
 - Bugs and features: open an issue or discuss on the PR if the change is large.
 
 ## Development setup
@@ -13,7 +13,7 @@ Thank you for helping improve wisp. This project is **Scrypted’s GPLv2 Communi
 ```sh
 git clone https://github.com/scryptedai/wisp.git
 cd wisp
-rustc --version   # 1.80+
+rustc --version   # 1.88+ (`rust-toolchain.toml` pins the workspace minimum)
 cargo build
 cargo test --workspace
 ```

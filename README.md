@@ -22,7 +22,7 @@ cargo test                   # unit + engine invariant tests (§17)
 cargo test -p wisp-invariants  # OKF corpus + search IR (semantic on by default; first run may fetch ~128MiB model)
 ```
 
-Rust 1.80+. No services, no daemons: SQLite (bundled), XChaCha20-Poly1305, Ed25519, FTS5.
+Rust 1.88+. No services, no daemons: SQLite (bundled), XChaCha20-Poly1305, Ed25519, FTS5.
 
 ## Five-minute tour
 
@@ -96,7 +96,7 @@ The keystore unlocks from, in order: `WISP_MASTER_KEY` (64 hex chars; CI), `--pa
 | M5 Feed and search | feed, search (trigram/RI/semantic), pack, tokens (approx codec), external subscriber host done |
 | M6 Profiles and migration | okf-0.1 profile, 0.1→0.2 migration plan, down-export (`export --profile 0.1`) done |
 | M7 Concurrency and branches | headless writes, read assertions, branches, switch, worktrees, merge (fast-forward, disjoint replay, `--resolutions`, `--abort`) done; full §11.5 rule table still partial |
-| M8 Sync, git interop, release | `file://` + HTTPS pack + SSH/rsync remotes, `export --archive` tar.zst, `import --git` snapshot, `export --git`, `serve --stdio` skeleton |
+| M8 Sync, git interop, release | `file://` + HTTPS pack + SSH/rsync remotes, `export --archive` tar.zst, `import --git` (snapshot or `--history`), `export --git`, `serve --stdio` skeleton |
 
 Invariants exercised in `cargo test`: I1, I2, I3 (parse layer and strip-anchors round-trip), I4, I5, I7, I12, I13, I16, I17, I19, I21, I22, I23, I24, I25 (staging flush on open); §11.5 merge playbook and §11.6 sync roundtrip integration tests in `wisp-invariants`.
 

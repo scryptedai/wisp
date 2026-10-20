@@ -146,6 +146,96 @@ fn rule_same_section_same_commitment() {
 }
 
 #[test]
+fn rule_resolution_skips_stacked_branch_edits() {
+    let (dir, mut repo) = warehouse();
+    let branch_name = "rule/stacked-res";
+    branch(&mut repo, branch_name, None).unwrap();
+    let (sec, ver) = section_at_ref(&mut repo, branch_name, "tables/orders", "Schema");
+    update_section_ref(
+        &mut repo,
+        branch_name,
+        "process:b/1",
+        "tables/orders",
+        sec,
+        ver,
+        "| col | type |\n|---|---|\n| id | INT64 |\n| v1 | STRING |\n",
+        "branch v1",
+        vec![],
+    )
+    .unwrap();
+    let (_, ver2) = section_at_ref(&mut repo, branch_name, "tables/orders", "Schema");
+    update_section_ref(
+        &mut repo,
+        branch_name,
+        "process:b/1",
+        "tables/orders",
+        sec,
+        ver2,
+        "| col | type |\n|---|---|\n| id | INT64 |\n| v2 | STRING |\n",
+        "branch v2",
+        vec![],
+    )
+    .unwrap();
+    let (_, ver_m) = section_at(&mut repo, "tables/orders", "Schema");
+    update_section(
+        &mut repo,
+        "process:m/1",
+        "tables/orders",
+        sec,
+        ver_m,
+        "| col | type |\n|---|---|\n| id | INT64 |\n| main-final | STRING |\n",
+        "main",
+        vec![],
+    )
+    .unwrap();
+    let err = merge_refs(&mut repo, branch_name, MAIN_REF, None, false).unwrap_err();
+    assert_eq!(err.code, ExitCode::Conflict);
+    let envelope = &err.details["conflicts"];
+    let rows = envelope["conflicts"].as_array().expect("conflicts array");
+    let row = &rows[0];
+    let ours = row["ours"].as_str().unwrap();
+    let theirs = row["theirs"].as_str().unwrap();
+    assert!(
+        row["source_changes"]
+            .as_array()
+            .is_some_and(|a| !a.is_empty()),
+        "conflict should list source-side change chain"
+    );
+    let res_path = dir.path().join("resolutions.json");
+    std::fs::write(
+        &res_path,
+        format!(r#"{{"resolutions":[{{"ours":"{ours}","theirs":"{theirs}","take":"ours"}}]}}"#),
+    )
+    .unwrap();
+    merge_refs(&mut repo, branch_name, MAIN_REF, Some(&res_path), false).unwrap();
+    let body = {
+        let hot = repo.hot(MAIN_REF).unwrap();
+        wisp_store::Hot::section(hot.conn(), sec)
+            .unwrap()
+            .expect("section")
+            .body
+    };
+    assert!(body.contains("main-final"));
+    assert!(!body.contains("| v1 |"));
+    assert!(!body.contains("| v2 |"));
+    assert!(wisp_engine::query::fsck(&mut repo).is_ok());
+    assert!(wisp_engine::query::hot_check(&mut repo, MAIN_REF).is_ok());
+    let (_, ver3) = section_at(&mut repo, "tables/orders", "Schema");
+    update_section(
+        &mut repo,
+        "process:m/2",
+        "tables/orders",
+        sec,
+        ver3,
+        "| col | type |\n|---|---|\n| id | INT64 |\n| post-merge | STRING |\n",
+        "after resolved merge",
+        vec![],
+    )
+    .unwrap();
+    assert!(wisp_engine::query::hot_check(&mut repo, MAIN_REF).is_ok());
+}
+
+#[test]
 fn rule_same_section_different_content() {
     let (_dir, mut repo) = warehouse();
     let branch_name = "rule/diff";

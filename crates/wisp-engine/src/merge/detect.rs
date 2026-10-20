@@ -1,4 +1,4 @@
-//! Divergent ref merge analysis (§11.5).
+//! Divergent ref merge analysis (§11.5): scope-key conflicts, erase-wins, retract vs content.
 
 use rusqlite::Connection;
 use serde_json::{json, Value};
@@ -6,6 +6,7 @@ use std::collections::{BTreeSet, HashMap, HashSet};
 use wisp_model::*;
 use wisp_store::Ledger;
 
+/// Ledger scope target used to detect overlapping changes between refs.
 #[derive(Clone, Debug, Hash, PartialEq, Eq, PartialOrd, Ord)]
 pub enum ScopeKey {
     Section(ConceptId, SectionId),
@@ -16,6 +17,7 @@ pub enum ScopeKey {
     Other(String),
 }
 
+/// Map a committed change to its merge scope key.
 pub fn scope_key(c: &Change) -> ScopeKey {
     match &c.target {
         Target::Section { concept, section } => ScopeKey::Section(*concept, *section),
@@ -30,27 +32,36 @@ pub fn scope_key(c: &Change) -> ScopeKey {
     }
 }
 
+/// Result of comparing changes on `into` and `source` since their merge base.
 pub struct DivergenceAnalysis {
     pub conflicts: Vec<Value>,
     pub erase_skips: HashSet<ChangeId>,
     pub erase_reports: Vec<Value>,
 }
 
-fn scope_keys_for_changesets(
+fn scope_change_chains(
     conn: &Connection,
     ids: &[ChangesetId],
-) -> Result<HashMap<ScopeKey, ChangeId>> {
-    let mut map = HashMap::new();
+) -> Result<HashMap<ScopeKey, Vec<ChangeId>>> {
+    let mut map: HashMap<ScopeKey, Vec<ChangeId>> = HashMap::new();
     for cs in ids {
         for c in Ledger::changes_of(conn, *cs)? {
             if c.op == Op::Verify {
                 continue;
             }
             let key = scope_key(&c);
-            map.insert(key, c.id);
+            map.entry(key).or_default().push(c.id);
         }
     }
     Ok(map)
+}
+
+fn tip_change(chain: &[ChangeId]) -> Option<ChangeId> {
+    chain.last().copied()
+}
+
+fn chain_json(chain: &[ChangeId]) -> Value {
+    json!(chain.iter().map(|c| c.to_string()).collect::<Vec<_>>())
 }
 
 fn erased_scopes_since(conn: &Connection, ids: &[ChangesetId]) -> Result<HashSet<ScopeId>> {
@@ -68,6 +79,7 @@ fn erased_scopes_since(conn: &Connection, ids: &[ChangesetId]) -> Result<HashSet
     Ok(out)
 }
 
+/// Whether two changes are the same operation with the same payload commitment.
 pub fn changes_same_commitment(
     conn: &Connection,
     ours: ChangeId,
@@ -87,13 +99,14 @@ pub fn changes_same_commitment(
     })
 }
 
+/// Compare divergent changeset lists and classify conflicts, erase-wins, and clean merges.
 pub fn analyze_divergence(
     conn: &Connection,
     into_cs: &[ChangesetId],
     source_cs: &[ChangesetId],
 ) -> Result<DivergenceAnalysis> {
-    let into_keys = scope_keys_for_changesets(conn, into_cs)?;
-    let source_keys = scope_keys_for_changesets(conn, source_cs)?;
+    let into_keys = scope_change_chains(conn, into_cs)?;
+    let source_keys = scope_change_chains(conn, source_cs)?;
     let into_erased = erased_scopes_since(conn, into_cs)?;
     let source_erased = erased_scopes_since(conn, source_cs)?;
 
@@ -102,14 +115,16 @@ pub fn analyze_divergence(
     let mut conflicts = Vec::new();
     let all_keys: BTreeSet<&ScopeKey> = into_keys.keys().chain(source_keys.keys()).collect();
     for key in all_keys {
-        let ours = into_keys.get(key);
-        let theirs = source_keys.get(key);
+        let into_chain = into_keys.get(key).map(|v| v.as_slice()).unwrap_or(&[]);
+        let source_chain = source_keys.get(key).map(|v| v.as_slice()).unwrap_or(&[]);
+        let ours = tip_change(into_chain);
+        let theirs = tip_change(source_chain);
         match (ours, theirs) {
             (None, None) => {}
             (Some(ours), None) => {
-                let our_change = Ledger::get_change(conn, *ours)?.unwrap();
+                let our_change = Ledger::get_change(conn, ours)?.unwrap();
                 if source_erased.contains(&our_change.scope) {
-                    erase_skips.insert(*ours);
+                    erase_skips.extend(into_chain.iter().copied());
                     erase_reports.push(json!({
                         "rule": "erase_wins",
                         "dropped": ours.to_string(),
@@ -119,9 +134,9 @@ pub fn analyze_divergence(
                 }
             }
             (None, Some(theirs)) => {
-                let their_change = Ledger::get_change(conn, *theirs)?.unwrap();
+                let their_change = Ledger::get_change(conn, theirs)?.unwrap();
                 if into_erased.contains(&their_change.scope) {
-                    erase_skips.insert(*theirs);
+                    erase_skips.extend(source_chain.iter().copied());
                     erase_reports.push(json!({
                         "rule": "erase_wins",
                         "dropped": theirs.to_string(),
@@ -131,13 +146,13 @@ pub fn analyze_divergence(
                 }
             }
             (Some(ours), Some(theirs)) => {
-                if ours == theirs || changes_same_commitment(conn, *ours, *theirs)? {
+                if ours == theirs || changes_same_commitment(conn, ours, theirs)? {
                     continue;
                 }
-                let our_change = Ledger::get_change(conn, *ours)?.unwrap();
-                let their_change = Ledger::get_change(conn, *theirs)?.unwrap();
+                let our_change = Ledger::get_change(conn, ours)?.unwrap();
+                let their_change = Ledger::get_change(conn, theirs)?.unwrap();
                 if into_erased.contains(&their_change.scope) {
-                    erase_skips.insert(*theirs);
+                    erase_skips.extend(source_chain.iter().copied());
                     erase_reports.push(json!({
                         "rule": "erase_wins",
                         "dropped": theirs.to_string(),
@@ -147,7 +162,7 @@ pub fn analyze_divergence(
                     continue;
                 }
                 if source_erased.contains(&our_change.scope) {
-                    erase_skips.insert(*ours);
+                    erase_skips.extend(into_chain.iter().copied());
                     erase_reports.push(json!({
                         "rule": "erase_wins",
                         "dropped": ours.to_string(),
@@ -161,6 +176,8 @@ pub fn analyze_divergence(
                     "scope": format!("{key:?}"),
                     "ours": ours.to_string(),
                     "theirs": theirs.to_string(),
+                    "into_changes": chain_json(into_chain),
+                    "source_changes": chain_json(source_chain),
                 }));
             }
         }

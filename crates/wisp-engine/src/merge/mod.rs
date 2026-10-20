@@ -81,6 +81,7 @@ fn merge_skips_at_exact_head(
     }
 }
 
+/// Persist change ids to skip when rebuilding hot state for `head` on `ref_name`.
 pub fn persist_merge_skips(
     repo: &Repository,
     ref_name: &str,
@@ -102,6 +103,7 @@ pub fn persist_merge_skips(
     Ok(())
 }
 
+/// Remove merge skip metadata for a ref (fast-forward / clean merge).
 pub fn clear_merge_skips(repo: &Repository, ref_name: &str) -> Result<()> {
     let path = merge_skip_path(repo, ref_name);
     if path.is_file() {
@@ -297,6 +299,19 @@ struct ResolutionEntry {
     take: String,
 }
 
+fn change_ids_from_conflict(conflict: &Value, field: &str) -> Vec<ChangeId> {
+    conflict
+        .get(field)
+        .and_then(|v| v.as_array())
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|s| s.as_str())
+                .filter_map(|s| ChangeId::from_str(s).ok())
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
 fn skip_changes_from_resolutions(conflicts: &[Value], path: &Path) -> Result<HashSet<ChangeId>> {
     let text =
         fs::read_to_string(path).map_err(|e| WispError::usage(format!("read resolutions: {e}")))?;
@@ -320,8 +335,22 @@ fn skip_changes_from_resolutions(conflicts: &[Value], path: &Path) -> Result<Has
         let theirs = ChangeId::from_str(theirs_s)
             .map_err(|_| WispError::usage("invalid theirs change id in conflict"))?;
         match entry.take.as_str() {
-            "ours" => skip.insert(theirs),
-            "theirs" => skip.insert(ours),
+            "ours" => {
+                let chain = change_ids_from_conflict(c, "source_changes");
+                if chain.is_empty() {
+                    skip.insert(theirs);
+                } else {
+                    skip.extend(chain);
+                }
+            }
+            "theirs" => {
+                let chain = change_ids_from_conflict(c, "into_changes");
+                if chain.is_empty() {
+                    skip.insert(ours);
+                } else {
+                    skip.extend(chain);
+                }
+            }
             other => {
                 return Err(WispError::usage(format!(
                     "take must be \"ours\" or \"theirs\", got {other:?}"
@@ -349,6 +378,7 @@ fn fast_forward(
     Ok(())
 }
 
+/// Whether `ancestor` appears on the `based_on` / parent graph above `desc`.
 pub fn is_ancestor(
     conn: &rusqlite::Connection,
     ancestor: ChangesetId,
@@ -378,6 +408,7 @@ pub fn is_ancestor(
     Ok(false)
 }
 
+/// Greatest common ancestor of two changesets (by ledger seq).
 pub fn merge_base(
     conn: &rusqlite::Connection,
     a: ChangesetId,

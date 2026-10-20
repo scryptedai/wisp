@@ -149,7 +149,10 @@ fn spy_options_news_signal_multi_agent_playbook() {
     };
     let mut lines = text.lines().collect::<Vec<_>>();
     let thesis_start = lines.iter().position(|l| l.contains("## Thesis")).unwrap();
-    let entry_start = lines.iter().position(|l| l.contains("## Entry rules")).unwrap();
+    let entry_start = lines
+        .iter()
+        .position(|l| l.contains("## Entry rules"))
+        .unwrap();
     assert!(thesis_start < entry_start);
     let entry_block = lines.split_off(entry_start);
     let thesis_start = lines.iter().position(|l| l.contains("## Thesis")).unwrap();
@@ -172,7 +175,10 @@ fn spy_options_news_signal_multi_agent_playbook() {
     let entry_after = Hot::section(hot.conn(), entry_id).unwrap().unwrap();
     assert_eq!(thesis_after.section, thesis_id);
     assert_eq!(entry_after.section, entry_id);
-    assert!(entry_after.idx < thesis_after.idx, "Entry should sort before Thesis");
+    assert!(
+        entry_after.idx < thesis_after.idx,
+        "Entry should sort before Thesis"
+    );
 
     // Retract stale pre-CPI whisper observation (superseded by CPI print).
     wisp_engine::erase::retract(
@@ -189,10 +195,7 @@ fn spy_options_news_signal_multi_agent_playbook() {
     let before_thesis = std::fs::read_to_string(&overview_path).unwrap();
     std::fs::write(
         &overview_path,
-        before_thesis.replace(
-            "We buy **0–2 DTE",
-            "We buy **0–2 DTE** (desk emphasis:",
-        ),
+        before_thesis.replace("We buy **0–2 DTE", "We buy **0–2 DTE** (desk emphasis:"),
     )
     .unwrap();
     let (journal_sec, journal_ver) = section_at(&mut repo, "journal/trade-log", "Open positions");
@@ -208,8 +211,14 @@ fn spy_options_news_signal_multi_agent_playbook() {
     )
     .unwrap();
     let dirty = std::fs::read_to_string(&overview_path).unwrap();
-    assert!(dirty.contains("desk emphasis"), "local thesis edit preserved");
-    assert!(!dirty.contains("sized per tightened"), "journal not in strategy file");
+    assert!(
+        dirty.contains("desk emphasis"),
+        "local thesis edit preserved"
+    );
+    assert!(
+        !dirty.contains("sized per tightened"),
+        "journal not in strategy file"
+    );
     record(
         &mut repo,
         &RecordOptions {

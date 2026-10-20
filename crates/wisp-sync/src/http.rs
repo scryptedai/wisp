@@ -21,8 +21,7 @@ pub fn serve_http(bind: &str, root: &Path, unlock: &Unlock) -> Result<()> {
         .map_err(|e| WispError::internal(format!("http bind {bind}: {e}")))?;
     eprintln!(
         "wisp http: GET/PUT http://{}{} (trusted transport; add auth in production)",
-        bind,
-        PACK_PATH
+        bind, PACK_PATH
     );
     for request in server.incoming_requests() {
         if let Err(e) = dispatch(&state, request) {
@@ -51,12 +50,9 @@ fn dispatch(state: &Arc<Mutex<HttpState>>, mut request: tiny_http::Request) -> R
     if method == &tiny_http::Method::Get {
         let body = pack_bytes(&repo)?;
         request
-            .respond(
-                tiny_http::Response::from_data(body).with_header(
-                    tiny_http::Header::from_bytes(&b"Content-Type"[..], b"application/zstd")
-                        .unwrap(),
-                ),
-            )
+            .respond(tiny_http::Response::from_data(body).with_header(
+                tiny_http::Header::from_bytes(&b"Content-Type"[..], b"application/zstd").unwrap(),
+            ))
             .map_err(|e| WispError::internal(e.to_string()))?;
         return Ok(());
     }

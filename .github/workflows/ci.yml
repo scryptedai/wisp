@@ -24,4 +24,7 @@ jobs:
       - run: cargo clippy --all-targets -- -D warnings -A clippy::type_complexity -A clippy::too_many_arguments -A clippy::manual_div_ceil -A clippy::collapsible_match -A clippy::redundant_closure -A clippy::unnecessary_get_then_check -A clippy::unnecessary_unwrap
       - run: cargo test --workspace
       - run: cargo test -p wisp-invariants
+        env:
+          FASTEMBED_CACHE_DIR: ${{ runner.temp }}/fastembed-cache
       - run: cargo build --release -p wisp-cli
+      - run: cargo build --release -p wisp-cli --no-default-features

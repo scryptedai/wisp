@@ -20,9 +20,9 @@ pub fn parse_local_url(url: &str) -> Result<PathBuf> {
         } else {
             PathBuf::from(rest)
         };
-        return path.canonicalize().map_err(|e| {
-            WispError::not_found(format!("remote path {}: {e}", path.display()))
-        });
+        return path
+            .canonicalize()
+            .map_err(|e| WispError::not_found(format!("remote path {}: {e}", path.display())));
     }
     PathBuf::from(url)
         .canonicalize()
@@ -169,7 +169,10 @@ fn transfer_cold(src: &Repository, dst: &mut Repository) -> Result<TransferStats
 
     for (gid, label) in Ledger::groups(src_conn)? {
         let members = Ledger::group_members(src_conn, gid)?;
-        if Ledger::groups(dst.ledger.conn())?.iter().all(|(g, _)| *g != gid) {
+        if Ledger::groups(dst.ledger.conn())?
+            .iter()
+            .all(|(g, _)| *g != gid)
+        {
             stats.payloads += copy_payload(src, dst, &label, src.repo_scope())?;
             Ledger::insert_group(dst.ledger.conn(), gid, &label)?;
             for (m, kind) in members {
@@ -193,8 +196,7 @@ fn transfer_cold(src: &Repository, dst: &mut Repository) -> Result<TransferStats
             if Ledger::get_changeset(dst.ledger.conn(), *p)?.is_none() {
                 return Err(WispError::integrity(format!(
                     "missing parent {} when transferring {}",
-                    p,
-                    row.changeset.id
+                    p, row.changeset.id
                 )));
             }
         }
@@ -202,8 +204,7 @@ fn transfer_cold(src: &Repository, dst: &mut Repository) -> Result<TransferStats
             if Ledger::get_changeset(dst.ledger.conn(), b)?.is_none() {
                 return Err(WispError::integrity(format!(
                     "missing based_on {} when transferring {}",
-                    b,
-                    row.changeset.id
+                    b, row.changeset.id
                 )));
             }
         }
@@ -252,11 +253,7 @@ fn copy_payload(
         Some(info) => info,
         None => return Ok(0),
     };
-    let Some(ct) = Ledger::read_payload_at(
-        src.ledger.conn(),
-        &src.ledger.payloads_dir(),
-        pr.id,
-    )?
+    let Some(ct) = Ledger::read_payload_at(src.ledger.conn(), &src.ledger.payloads_dir(), pr.id)?
     else {
         return Err(WispError::integrity(format!(
             "payload {} listed in ledger but bytes missing on source",
@@ -320,4 +317,3 @@ fn is_ancestor(
     }
     Ok(false)
 }
-

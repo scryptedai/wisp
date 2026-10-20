@@ -77,9 +77,7 @@ pub fn run_external_subscribers(repo: &mut Repository) -> Result<Value> {
             let ack: Value = serde_json::from_str(ack_line.trim()).map_err(|e| {
                 WispError::internal(format!(
                     "invalid ack from {}: {} ({})",
-                    sub.name,
-                    e,
-                    ack_line
+                    sub.name, e, ack_line
                 ))
             })?;
             let ev_seq = ev
@@ -114,8 +112,7 @@ pub fn run_external_subscribers(repo: &mut Repository) -> Result<Value> {
         if !status.success() {
             return Err(WispError::internal(format!(
                 "subscriber {} exited with {}",
-                sub.name,
-                status
+                sub.name, status
             )));
         }
         ran.push(json!({

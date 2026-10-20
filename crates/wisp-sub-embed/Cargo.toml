@@ -6,13 +6,17 @@ license.workspace = true
 authors.workspace = true
 description = "Embedding subscriber and vector index (§14.4). Scheduled for M5."
 
+[features]
+default = []
+semantic = ["dep:fastembed"]
+
 [dependencies]
 wisp-model.workspace = true
 wisp-store.workspace = true
 wisp-index.workspace = true
 rusqlite.workspace = true
-sha2.workspace = true
 serde_json.workspace = true
+fastembed = { version = "4", optional = true }
 
 [dev-dependencies]
 tempfile.workspace = true

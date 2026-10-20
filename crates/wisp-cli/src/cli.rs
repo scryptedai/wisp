@@ -326,13 +326,23 @@ pub enum Command {
         #[arg(long, default_value_t = 0)]
         since: i64,
     },
-    /// Keyword search over current sections (vector/hybrid when an embedding codec is configured)
+    /// Search sections (`auto` = BM25 + fuzzy → RI → semantic when built in)
     Search {
         query: String,
-        #[arg(long, default_value = "hybrid")]
+        #[arg(long, default_value = "auto")]
         mode: String,
         #[arg(long, short = 'k', default_value_t = 10)]
         k: usize,
+        #[arg(
+            long,
+            help = "Minimum score floor (char-trigram Jaccard or neural cosine)"
+        )]
+        threshold: Option<f32>,
+        #[arg(
+            long,
+            help = "Skip neural tier only (no model load/download); RI still runs in auto"
+        )]
+        local_only: bool,
         #[arg(long)]
         codec: Option<String>,
         #[arg(long)]

@@ -44,8 +44,7 @@ fn merge_disjoint_sections_fast_forward_and_replay() {
     let (_dir, mut repo) = warehouse_repo();
     let branch_name = "task/ff-only";
     branch(&mut repo, branch_name, None).unwrap();
-    let (cust_sec, cust_ver) =
-        section_at_ref(&mut repo, branch_name, "tables/customers", "Schema");
+    let (cust_sec, cust_ver) = section_at_ref(&mut repo, branch_name, "tables/customers", "Schema");
     update_section_ref(
         &mut repo,
         branch_name,
@@ -155,9 +154,7 @@ fn merge_same_section_conflict_contract() {
     let res_path = _dir.path().join("resolutions.json");
     std::fs::write(
         &res_path,
-        format!(
-            r#"{{"resolutions":[{{"ours":"{ours}","theirs":"{theirs}","take":"theirs"}}]}}"#,
-        ),
+        format!(r#"{{"resolutions":[{{"ours":"{ours}","theirs":"{theirs}","take":"theirs"}}]}}"#,),
     )
     .unwrap();
     let merged = merge_refs(&mut repo, branch_name, MAIN_REF, Some(&res_path), false).unwrap();

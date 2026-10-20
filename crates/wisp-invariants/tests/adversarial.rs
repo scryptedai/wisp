@@ -78,7 +78,9 @@ fn adversarial_strip_wisp_id_at_same_path_is_repair_not_fork() {
         .find(|s| s.body.contains("alpha body"))
         .expect(&format!(
             "alpha section; headings={:?}",
-            secs.iter().map(|s| (&s.heading, s.level)).collect::<Vec<_>>()
+            secs.iter()
+                .map(|s| (&s.heading, s.level))
+                .collect::<Vec<_>>()
         ));
     let file = root.join("notes/chaos.md");
     let mut text = std::fs::read_to_string(&file).unwrap();
@@ -141,7 +143,10 @@ fn adversarial_reorder_sections_preserves_ids() {
         .map(|s| (s.heading.clone(), s.section))
         .collect();
     for (heading, id) in &ids_before {
-        let after = ids_after.iter().find(|(h, _)| h == heading).expect("heading");
+        let after = ids_after
+            .iter()
+            .find(|(h, _)| h == heading)
+            .expect("heading");
         assert_eq!(*id, after.1, "section id for {heading}");
     }
 }
@@ -152,7 +157,11 @@ fn adversarial_stray_anchor_file_in_suite_warns() {
     let text = std::fs::read_to_string(path).unwrap();
     let parsed = parse_file(&text);
     assert!(
-        parsed.sectioned.warnings.iter().any(|w| w.contains("anchor")),
+        parsed
+            .sectioned
+            .warnings
+            .iter()
+            .any(|w| w.contains("anchor")),
         "expected stray-anchor warning, got {:?}",
         parsed.sectioned.warnings
     );
@@ -162,7 +171,10 @@ fn adversarial_stray_anchor_file_in_suite_warns() {
 fn adversarial_crlf_bundle_file_parses() {
     let path = wisp_corpus::data_dir().join("bundles/adversarial-suite/frontmatter/crlf-note.md");
     let bytes = std::fs::read(path).unwrap();
-    assert!(bytes.windows(2).any(|w| w == b"\r\n"), "fixture must be CRLF");
+    assert!(
+        bytes.windows(2).any(|w| w == b"\r\n"),
+        "fixture must be CRLF"
+    );
     let text = String::from_utf8(bytes).unwrap();
     let parsed = parse_file(&text);
     assert_eq!(parsed.line_ending, "\r\n");
@@ -172,7 +184,11 @@ fn adversarial_crlf_bundle_file_parses() {
 #[test]
 fn adversarial_bom_concept_starts_with_bom() {
     let cat = catalog();
-    let spec = cat.concept.iter().find(|c| c.id == "parse.bom-utf8").unwrap();
+    let spec = cat
+        .concept
+        .iter()
+        .find(|c| c.id == "parse.bom-utf8")
+        .unwrap();
     let bytes = std::fs::read(wisp_corpus::data_dir().join(&spec.path)).unwrap();
     assert_eq!(&bytes[0..3], &[0xEF, 0xBB, 0xBF]);
 }

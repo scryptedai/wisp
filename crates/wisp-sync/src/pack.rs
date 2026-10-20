@@ -26,7 +26,8 @@ pub fn write_cold_pack(repo: &Repository, dest: &Path) -> Result<()> {
                 .map_err(|e| WispError::internal(e.to_string()))?;
         }
     }
-    tar.finish().map_err(|e| WispError::internal(e.to_string()))?;
+    tar.finish()
+        .map_err(|e| WispError::internal(e.to_string()))?;
     Ok(())
 }
 
@@ -35,7 +36,10 @@ pub fn read_cold_pack(repo: &mut Repository, pack: &Path) -> Result<()> {
     let dec = Decoder::new(file)?;
     let mut archive = Archive::new(dec);
     let extract_to = repo.wisp_dir.parent().unwrap();
-    for entry in archive.entries().map_err(|e| WispError::internal(e.to_string()))? {
+    for entry in archive
+        .entries()
+        .map_err(|e| WispError::internal(e.to_string()))?
+    {
         let mut entry = entry.map_err(|e| WispError::internal(e.to_string()))?;
         let path = entry
             .path()

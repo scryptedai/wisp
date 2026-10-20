@@ -7,6 +7,10 @@ authors.workspace = true
 description = "Corpus-driven invariant and integration tests for wisp (§17)"
 publish = false
 
+[features]
+default = ["semantic"]
+semantic = ["wisp-engine/semantic"]
+
 [dependencies]
 wisp-corpus = { workspace = true }
 wisp-engine = { workspace = true }
@@ -20,6 +24,8 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 tempfile = { workspace = true }
 walkdir = { workspace = true }
+rusqlite = { workspace = true }
+toml = { workspace = true }
 
 [lib]
 path = "src/lib.rs"

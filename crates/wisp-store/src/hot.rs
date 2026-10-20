@@ -3,6 +3,7 @@
 
 use crate::{blob16, sql_err, SqlResult as Result};
 use rusqlite::{params, Connection, OptionalExtension, Transaction};
+use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use wisp_model::*;
 
@@ -94,6 +95,29 @@ CREATE TRIGGER IF NOT EXISTS fts_au AFTER UPDATE ON state_sections BEGIN
   INSERT INTO state_search_fts(state_search_fts, rowid, heading, body) VALUES ('delete', old.rowid, old.heading, old.body);
   INSERT INTO state_search_fts(rowid, heading, body) VALUES (new.rowid, new.heading, new.body);
 END;
+
+CREATE VIRTUAL TABLE IF NOT EXISTS state_search_trigram USING fts5(
+  heading, body,
+  content = 'state_sections', content_rowid = 'rowid',
+  tokenize = 'trigram'
+);
+CREATE TRIGGER IF NOT EXISTS fts_tri_ai AFTER INSERT ON state_sections BEGIN
+  INSERT INTO state_search_trigram(rowid, heading, body) VALUES (new.rowid, new.heading, new.body);
+END;
+CREATE TRIGGER IF NOT EXISTS fts_tri_ad AFTER DELETE ON state_sections BEGIN
+  INSERT INTO state_search_trigram(state_search_trigram, rowid, heading, body) VALUES ('delete', old.rowid, old.heading, old.body);
+END;
+CREATE TRIGGER IF NOT EXISTS fts_tri_au AFTER UPDATE ON state_sections BEGIN
+  INSERT INTO state_search_trigram(state_search_trigram, rowid, heading, body) VALUES ('delete', old.rowid, old.heading, old.body);
+  INSERT INTO state_search_trigram(rowid, heading, body) VALUES (new.rowid, new.heading, new.body);
+END;
+
+CREATE TABLE IF NOT EXISTS section_dense_embeddings (
+  section BLOB PRIMARY KEY,
+  model_tag TEXT NOT NULL,
+  dimensions INTEGER NOT NULL,
+  vector BLOB NOT NULL
+);
 "#;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -189,9 +213,11 @@ impl Hot {
         conn.execute_batch("PRAGMA journal_mode = WAL; PRAGMA secure_delete = ON; PRAGMA auto_vacuum = INCREMENTAL; PRAGMA synchronous = NORMAL;")
             .map_err(sql_err)?;
         conn.execute_batch(SCHEMA).map_err(sql_err)?;
+        conn.execute_batch(crate::ri::schema_sql()).map_err(sql_err)?;
         // FTS5 secure-delete mode removes deleted tokens immediately (§6.2).
         let _ = conn.execute_batch(
-            "INSERT INTO state_search_fts(state_search_fts, rank) VALUES ('secure-delete', 1);",
+            "INSERT INTO state_search_fts(state_search_fts, rank) VALUES ('secure-delete', 1);
+             INSERT INTO state_search_trigram(state_search_trigram, rank) VALUES ('secure-delete', 1);",
         );
         Ok(Hot {
             conn,
@@ -255,6 +281,7 @@ impl Hot {
              DELETE FROM state_verified; DELETE FROM state_erased_markers; DELETE FROM state_concepts; DELETE FROM hot_meta;",
         )
         .map_err(sql_err)?;
+        crate::ri::clear(conn)?;
         Ok(())
     }
 
@@ -457,11 +484,18 @@ impl Hot {
             ],
         )
         .map_err(sql_err)?;
+        crate::ri::reindex_section(conn, s)?;
         Ok(())
     }
     pub fn delete_section(conn: &Connection, section: SectionId) -> Result<()> {
+        crate::ri::unindex_section(conn, section)?;
         conn.execute(
             "DELETE FROM state_links WHERE section = ?1",
+            params![section.bytes().to_vec()],
+        )
+        .map_err(sql_err)?;
+        conn.execute(
+            "DELETE FROM section_dense_embeddings WHERE section = ?1",
             params![section.bytes().to_vec()],
         )
         .map_err(sql_err)?;
@@ -962,8 +996,16 @@ impl Hot {
                 .filter_map(|r| r.ok())
                 .collect();
             for (c, s) in rows {
+                if let Some(sid) = SectionId::from_slice(&s) {
+                    crate::ri::unindex_section(conn, sid)?;
+                }
                 conn.execute(
                     "DELETE FROM state_links WHERE section = ?1",
+                    params![s.clone()],
+                )
+                .map_err(sql_err)?;
+                conn.execute(
+                    "DELETE FROM section_dense_embeddings WHERE section = ?1",
                     params![s.clone()],
                 )
                 .map_err(sql_err)?;
@@ -1014,6 +1056,185 @@ impl Hot {
 
     // ---- search ----
 
+    /// Tier 0: `#anchor` slug or `"quoted phrase"` substring match.
+    pub fn search_exact(conn: &Connection, query: &str, k: usize) -> Result<Vec<SearchHit>> {
+        let q = query.trim();
+        let needle = if let Some(inner) = q.strip_prefix('#') {
+            format!("#{}", inner.trim())
+        } else if q.len() >= 2 && q.starts_with('"') && q.ends_with('"') {
+            q[1..q.len() - 1].to_string()
+        } else {
+            return Ok(Vec::new());
+        };
+        if needle.is_empty() {
+            return Ok(Vec::new());
+        }
+        let pat = format!("%{}%", needle.replace('%', "\\%"));
+        let mut st = conn
+            .prepare(
+                "SELECT s.concept, s.section, c.path, s.heading, s.body
+                 FROM state_sections s
+                 JOIN state_concepts c ON c.concept = s.concept
+                 WHERE s.level > 0 AND (s.heading LIKE ?1 ESCAPE '\\' OR s.body LIKE ?1 ESCAPE '\\')
+                 ORDER BY s.idx LIMIT ?2",
+            )
+            .map_err(sql_err)?;
+        Self::collect_search_rows(&mut st, params![pat, k as i64])
+    }
+
+    /// FTS5 trigram tokenizer (substring / hyphenation).
+    pub fn search_substring_fts(
+        conn: &Connection,
+        query: &str,
+        k: usize,
+    ) -> Result<Vec<SearchHit>> {
+        let q = fts_trigram_query(query);
+        if q.is_empty() {
+            return Ok(Vec::new());
+        }
+        let mut st = conn
+            .prepare(
+                "SELECT s.concept, s.section, c.path, s.heading, bm25(state_search_trigram) AS score, s.body
+                 FROM state_search_trigram f
+                 JOIN state_sections s ON s.rowid = f.rowid
+                 JOIN state_concepts c ON c.concept = s.concept
+                 WHERE state_search_trigram MATCH ?1
+                 ORDER BY score LIMIT ?2",
+            )
+            .map_err(sql_err)?;
+        Self::collect_search_rows_scored(&mut st, params![q, k as i64])
+    }
+
+    /// Character trigram Jaccard (typo-tolerant); merges with substring FTS candidates.
+    pub fn search_char_trigram(
+        conn: &Connection,
+        query: &str,
+        k: usize,
+        min_score: Option<f32>,
+    ) -> Result<Vec<SearchHit>> {
+        let floor = min_score.unwrap_or(DEFAULT_CHAR_TRIGRAM_MIN);
+        let q_tri = char_trigrams(query);
+        if q_tri.is_empty() {
+            return Ok(Vec::new());
+        }
+        let mut candidates: Vec<SearchHit> = Self::search_substring_fts(conn, query, k * 4)?;
+        if candidates.is_empty() {
+            candidates = Self::all_section_hits(conn)?;
+        }
+        let mut scored: Vec<SearchHit> = Vec::new();
+        for mut h in candidates {
+            let text = format!("{}\n{}", h.heading, h.body);
+            let t_tri = char_trigrams(&text);
+            let j = query_trigram_coverage(&q_tri, &t_tri);
+            if j >= floor as f64 {
+                h.score = j;
+                scored.push(h);
+            }
+        }
+        scored.sort_by(|a, b| {
+            b.score
+                .partial_cmp(&a.score)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
+        scored.truncate(k);
+        Ok(scored)
+    }
+
+    fn all_section_hits(conn: &Connection) -> Result<Vec<SearchHit>> {
+        let mut st = conn
+            .prepare(
+                "SELECT s.concept, s.section, c.path, s.heading, s.body
+                 FROM state_sections s
+                 JOIN state_concepts c ON c.concept = s.concept
+                 WHERE s.level > 0",
+            )
+            .map_err(sql_err)?;
+        let rows = st
+            .query_map([], |r| {
+                Ok(SearchHit {
+                    concept: ConceptId::from_bytes(blob16(r.get::<_, Vec<u8>>(0)?)),
+                    section: SectionId::from_bytes(blob16(r.get::<_, Vec<u8>>(1)?)),
+                    path: r.get(2)?,
+                    heading: r.get(3)?,
+                    score: 0.0,
+                    body: r.get(4)?,
+                })
+            })
+            .map_err(sql_err)?;
+        Ok(rows.filter_map(|r| r.ok()).collect())
+    }
+
+    fn collect_search_rows(
+        st: &mut rusqlite::Statement,
+        bind: impl rusqlite::Params,
+    ) -> Result<Vec<SearchHit>> {
+        let rows = st
+            .query_map(bind, |r| {
+                Ok(SearchHit {
+                    concept: ConceptId::from_bytes(blob16(r.get::<_, Vec<u8>>(0)?)),
+                    section: SectionId::from_bytes(blob16(r.get::<_, Vec<u8>>(1)?)),
+                    path: r.get(2)?,
+                    heading: r.get(3)?,
+                    score: 1.0,
+                    body: r.get(4)?,
+                })
+            })
+            .map_err(sql_err)?;
+        Ok(rows.filter_map(|r| r.ok()).collect())
+    }
+
+    fn collect_search_rows_scored(
+        st: &mut rusqlite::Statement,
+        bind: impl rusqlite::Params,
+    ) -> Result<Vec<SearchHit>> {
+        let rows = st
+            .query_map(bind, |r| {
+                Ok(SearchHit {
+                    concept: ConceptId::from_bytes(blob16(r.get::<_, Vec<u8>>(0)?)),
+                    section: SectionId::from_bytes(blob16(r.get::<_, Vec<u8>>(1)?)),
+                    path: r.get(2)?,
+                    heading: r.get(3)?,
+                    score: -r.get::<_, f64>(4)?,
+                    body: r.get(5)?,
+                })
+            })
+            .map_err(sql_err)?;
+        Ok(rows.filter_map(|r| r.ok()).collect())
+    }
+
+    pub fn dense_embedding_rows(conn: &Connection, section: SectionId) -> Result<u64> {
+        let n: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM section_dense_embeddings WHERE section = ?1",
+                params![section.bytes().to_vec()],
+                |r| r.get(0),
+            )
+            .map_err(sql_err)?;
+        Ok(n as u64)
+    }
+
+    pub fn section_row_exists(conn: &Connection, section: SectionId) -> Result<bool> {
+        let n: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM state_sections WHERE section = ?1",
+                params![section.bytes().to_vec()],
+                |r| r.get(0),
+            )
+            .map_err(sql_err)?;
+        Ok(n > 0)
+    }
+
+    /// Random-index cosine search (incremental TF-IDF vectors in hot.db).
+    pub fn search_ri(
+        conn: &Connection,
+        query: &str,
+        k: usize,
+        min_score: f64,
+        standalone_lexical_miss: bool,
+    ) -> Result<Vec<SearchHit>> {
+        crate::ri::search(conn, query, k, min_score, standalone_lexical_miss)
+    }
+
     /// Keyword search with BM25 ranking over current sections.
     pub fn search_keyword(conn: &Connection, query: &str, k: usize) -> Result<Vec<SearchHit>> {
         let q = fts_query(query);
@@ -1058,6 +1279,50 @@ impl Hot {
 }
 
 /// Turn a free-text query into an FTS5 query: each token quoted, joined with implicit AND.
+pub const DEFAULT_CHAR_TRIGRAM_MIN: f32 = 0.05;
+/// When BM25 returns no hits, fuzzy leg must exceed this (avoids paraphrase ghost matches).
+pub const STANDALONE_CHAR_TRIGRAM_MIN: f32 = 0.42;
+
+fn char_trigrams(s: &str) -> HashSet<u32> {
+    let flat: String = s
+        .to_lowercase()
+        .chars()
+        .filter(|c| c.is_alphanumeric())
+        .collect();
+    let mut set = HashSet::new();
+    if flat.len() < 3 {
+        return set;
+    }
+    let bytes = flat.as_bytes();
+    for i in 0..bytes.len() - 2 {
+        let tri = (bytes[i] as u32) << 16 | (bytes[i + 1] as u32) << 8 | bytes[i + 2] as u32;
+        set.insert(tri);
+    }
+    set
+}
+
+fn query_trigram_coverage(query: &HashSet<u32>, doc: &HashSet<u32>) -> f64 {
+    if query.is_empty() {
+        return 0.0;
+    }
+    let inter = query.intersection(doc).count() as f64;
+    inter / query.len() as f64
+}
+
+/// Longest token substring match for FTS5 trigram (hyphenation / partial terms).
+pub fn fts_trigram_query(q: &str) -> String {
+    let mut best = String::new();
+    for tok in q.split(|c: char| !c.is_alphanumeric() && c != '-' && c != '_') {
+        if tok.len() >= 3 && tok.len() > best.len() {
+            best = tok.to_string();
+        }
+    }
+    if best.is_empty() {
+        return String::new();
+    }
+    format!("\"{}\"", best.replace('"', "\"\""))
+}
+
 pub fn fts_query(q: &str) -> String {
     let toks: Vec<String> = q
         .split(|c: char| !c.is_alphanumeric() && c != '_' && c != '-')

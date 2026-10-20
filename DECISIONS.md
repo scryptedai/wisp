@@ -1,6 +1,6 @@
 # DECISIONS.md
 
-Deviations from *Differential OKF Store — v1 Technical Design* (Oct 17, 2026), recorded with the section they affect, as §18's build guidance requires. Each entry says what the spec asks for, what this build does, and why.
+Deviations from the **v0.1.0 product design** in `docs/references/Differential OKF Store — v1 Technical Design.md` (local; not in git), recorded with the section they affect, as §18's build guidance requires. The Oct 17 2026 proposal PDF is an earlier draft. Each entry says what the design asks for, what this build does, and why.
 
 ## §5 Data model
 
@@ -23,7 +23,7 @@ Deviations from *Differential OKF Store — v1 Technical Design* (Oct 17, 2026),
 
 - **Commit order inside the critical section.** The spec commits the ledger, then the hot tier. This build commits the hot tier first, then the ledger, both while holding the ledger write lock. Reason: with ledger-first, a writer acquiring the lock between the two commits sees a head whose changes are not yet in the tier and would wrongly conclude the tier is stale. If a process dies between the commits the tier is ahead of the ledger; `Repository::hot` sees an unknown head and rebuilds.
 - **Rebuild holds the ledger write lock.** A rebuild computed from a stale head could otherwise be committed over a newer tier state.
-- Vector and token caches are not materialized (see §14); only `hot.db` per ref exists under `cache/refs/`.
+- Search indexes (FTS, trigram FTS, RI, optional dense embeddings) live in each ref’s `hot.db` under `cache/refs/` (see local Technical Design §6.2). Separate `.wisp/cache/vectors/` sqlite-vec files are not used in the community release. Token rollup DBs are not fully materialized; `pack` uses `tok:approx:chars4`.
 
 ## §7.2 Frontmatter CST
 
@@ -64,7 +64,7 @@ Deviations from *Differential OKF Store — v1 Technical Design* (Oct 17, 2026),
 ## §10.5 Erase procedure
 
 - The erase change is committed through the normal optimistic commit, and the tombstone, scope flags, payload-absence flags, and marker positions are written in a second ledger transaction immediately after. Both phases of shredding are idempotent and rerun on open, so an interruption between the two transactions is recovered.
-- Derived caches: vectors and token databases are not materialized in this build, so Phase 1 purges the hot tiers only.
+- Phase 1 purges search-derived rows in hot.db (FTS, trigram, RI, dense embeddings) for erased sections, then hot tier state; token DB purge follows the same pattern when present.
 
 ## §11 Concurrency
 
@@ -80,15 +80,14 @@ Deviations from *Differential OKF Store — v1 Technical Design* (Oct 17, 2026),
 - Erasure markers for a section whose preceding section no longer exists are rendered after the preamble; for a concept with no sections left they follow the frontmatter.
 - `export --archive` writes a `.tar.zst` of the rendered bundle. `export --git` renders and runs `git init` + one commit. `import --git` imports a **snapshot** via `git archive` + `record` (no per-commit history mapping yet). `import <dir>` copies a plain bundle into the working tree and records it.
 
-## §14 Feed, subscribers, codecs
+## §14–§15 Feed and search
 
-- Built-in subscribers (`tokens`, `links`, `views`) run inline during commit/checkout; `wisp index` advances built-in cursors and runs manifest `command` subscribers via `wisp-feed` (JSON lines on stdin, `{"ack": seq}` on stdout). Vector search uses codec `emb:hash:64` (deterministic bag-of-words hash, stored under `.wisp/cache/vectors/`); the index is synced from hot on each `search` call. No external embedding model or sqlite-vec extension yet. Repos initialized on 0.2 set `default_embedding` to `emb:hash:64`; without a configured codec, `vector`/`hybrid` still fall back to keyword (`mode` in JSON reflects the path taken).
-- **`emb:hash:64` is not semantic search.** The codec L2-normalizes a 64-dimensional signed bag-of-**whitespace tokens** (SHA-256 bucket + sign per token). Similarity is **cosine** on those vectors, not Hamming distance on a SimHash. It can correlate queries that share tokens (near-duplicates, light rewording with overlapping words). It does **not** understand synonyms or paraphrase with zero lexical overlap. Typos that change every token (e.g. `databse` vs `database`) score like unrelated text. True semantic retrieval is deferred to a pluggable neural codec in `wisp-sub-embed` (e.g. `emb:bge-micro` / ONNX).
-- **Vector similarity floor (`HASH_MIN_COSINE`, `HASH_MIN_SCORE_MARGIN`, `HASH_STANDALONE_MIN_COSINE`).** `wisp-sub-embed` drops weak cosine matches and ambiguous ties (small margin between top two scores). When BM25 returned nothing, `wisp-engine` hybrid search clears the vector leg unless the best cosine is at least `HASH_STANDALONE_MIN_COSINE`, so unrelated queries return **empty** results instead of RRF ghost hits. Regression: `wisp-invariants` `search_battery` (T3.x miss@5 and empty vector/hybrid payloads).
-- One tokenizer codec ships: `tok:approx:chars4` (one token per four characters). `pack --budget` and `tokens` use it. `tiktoken`/`hf` codecs are M5.
+- **Normative spec:** `docs/references/Differential OKF Store — v1 Technical Design.md` (§6.2, §10.5, §14–§15). Built-in search: FTS + trigram + RI + optional neural in `hot.db`; no `emb:hash:64`; external `emb:*` via `docs/EXTENSIONS.md`.
+- **Search IR battery:** `contrib/search-battery/cases.toml` only (see `contrib/search-battery/README.md`).
 
 ## §16 CLI
 
+- **Search:** see Technical Design §14.5–§16. `--local-only` / `WISP_LOCAL_ONLY` skip neural only (RI still runs in `auto`). Default `wisp-cli` / `wisp-invariants` features include `semantic`.
 - Erase targets an actor with `--actor-id <actor>` (the global `--actor` names the acting identity).
 - `record --resolve` clears `.wisp/merge.json` after a successful record on the merge target ref; finish the merge with `wisp merge <source> <into> --resolutions <file>`.
 - `wisp diff --from/--to` compares section-level ops along the `based_on` chain between two changesets; `diff` without those flags compares the working tree with its base.

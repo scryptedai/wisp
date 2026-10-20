@@ -2,10 +2,13 @@
 
 pub mod hot;
 pub mod ledger;
+pub mod ri;
 
 pub use hot::{
     AssetState, ConceptState, FrontmatterState, Hot, HotMeta, SearchHit, SectionState, SourceState,
+    DEFAULT_CHAR_TRIGRAM_MIN, STANDALONE_CHAR_TRIGRAM_MIN,
 };
+pub use ri::{RI_DIM, RI_MIN_COSINE, RI_STANDALONE_MIN_COSINE};
 pub use ledger::{ActorRow, ChangesetRow, Ledger, ScopeRow, Tombstone};
 
 use wisp_model::WispError;

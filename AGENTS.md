@@ -4,7 +4,7 @@ Guidance for AI coding agents (Cursor, CodeRabbit, Claude Code, etc.) working on
 
 ## What this is
 
-**wisp** is a local-first differential OKF (Open Knowledge Format) store: section-level changesets, encrypted cold storage, hot SQLite tiers, agent-friendly CLI (`wisp --json`). Release **0.1.0** implements the v1 design in `docs/references/Differential OKF Store — v1 Proposal.pdf` (not in git; see maintainer). Deviations live in **`DECISIONS.md`** — read before changing behavior.
+**wisp** is a local-first differential OKF (Open Knowledge Format) store: section-level changesets, encrypted cold storage, hot SQLite tiers, agent-friendly CLI (`wisp --json`). Release **0.1.0** design: `docs/references/Differential OKF Store — v1 Technical Design.md` (local; not in git). Deviations from that design live in **`DECISIONS.md`** — read before changing behavior.
 
 Do not confuse:
 
@@ -48,6 +48,8 @@ Rust **1.80+**. If `libsqlite3-sys` bindgen fails in a sandbox, use
 4. Record spec deviations in **`DECISIONS.md`** (§18 style).
 
 SPY desk narrative: `wisp-invariants/tests/spy_options_*.rs`, bundle `spy-options`.
+
+Search IR battery: edit **`contrib/search-battery/cases.toml` only** (Rust `search_battery.rs` and `run_battery.py` load it). See `contrib/search-battery/README.md`.
 
 ## Coding norms
 

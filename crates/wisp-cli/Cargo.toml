@@ -24,5 +24,6 @@ walkdir.workspace = true
 wisp-store.workspace = true
 
 [features]
-default = []
+default = ["semantic"]
+semantic = ["wisp-engine/semantic"]
 postgres-vector = ["wisp-engine/postgres-vector"]

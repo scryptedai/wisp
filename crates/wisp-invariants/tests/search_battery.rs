@@ -1,124 +1,101 @@
-//! Search IR battery: BM25 + `emb:hash:64` hybrid (see contrib/search-battery/README.md).
+//! Search IR battery: trigram/lexical + RI + semantic.
 //!
-//! **Semantic-gap probes (T3.x)** must miss at @5 on keyword, vector, and hybrid so agents get
-//! empty results instead of RRF ghost hits. **T2.1** (zero token overlap typos) is report-only:
-//! `emb:hash:64` is bag-of-token hashing, not character n-gram fuzzy match.
+//! **Canonical probes:** `contrib/search-battery/cases.toml` (also used by `run_battery.py`).
 
+use serde::Deserialize;
 use serde_json::Value;
 use std::collections::HashMap;
-use wisp_engine::query::search;
-use wisp_engine::repo::MAIN_REF;
-use wisp_engine::repo::Unlock;
+use wisp_engine::query::{search, search_with_params};
+use wisp_engine::repo::{Unlock, MAIN_REF};
+use wisp_engine::search::SearchParams;
 use wisp_invariants::{catalog, init_and_record_bundle};
 
-const K: usize = 5;
+const CASES_TOML: &str = include_str!("../../../contrib/search-battery/cases.toml");
 
 #[derive(Clone, Copy, PartialEq)]
 enum Expect {
-    /// Must rank 1 in top-K.
     Top1,
-    /// Must appear somewhere in top-K.
     InTopK,
-    /// Must not appear in top-K (semantic gap).
     AbsentTopK,
-    /// Log only (polysemy / partial-hit probes).
     Informative,
 }
 
+#[derive(Clone)]
 struct Case {
-    id: &'static str,
-    query: &'static str,
-    anchor: &'static str,
-    category: &'static str,
+    id: String,
+    query: String,
+    anchor: String,
+    category: String,
     expect: Expect,
-    /// If false, `InTopK` is not asserted under keyword mode (e.g. deliberate typos).
     keyword_in_top_k: bool,
-    note: &'static str,
+    auto_semantic_top1: bool,
 }
 
-const CASES: &[Case] = &[
-    Case {
-        id: "T1.0",
-        query: "database failover standby replica",
-        anchor: "sec-failover",
-        category: "lexical",
-        expect: Expect::Top1,
-        keyword_in_top_k: true,
-        note: "BM25 baseline",
-    },
-    Case {
-        id: "T2.1",
-        query: "databse replca hearbeat",
-        anchor: "sec-failover",
-        category: "syntactic_fuzzy",
-        expect: Expect::Informative,
-        keyword_in_top_k: false,
-        note: "BM25 miss; hash-64 has no shared tokens (was a ghost hit before cosine floor)",
-    },
-    Case {
-        id: "T2.2a",
-        query: "out of memory",
-        anchor: "sec-oom",
-        category: "syntactic",
-        expect: Expect::InTopK,
-        keyword_in_top_k: true,
-        note: "FTS tokenizer (spaced)",
-    },
-    Case {
-        id: "T2.2b",
-        query: "out-of-memory",
-        anchor: "sec-oom",
-        category: "syntactic",
-        expect: Expect::InTopK,
-        keyword_in_top_k: true,
-        note: "FTS tokenizer (hyphenated)",
-    },
-    Case {
-        id: "T3.1",
-        query: "RAM depleted process terminated",
-        anchor: "sec-oom",
-        category: "semantic_gap",
-        expect: Expect::AbsentTopK,
-        keyword_in_top_k: true,
-        note: "no lexical overlap with OOM section",
-    },
-    Case {
-        id: "T3.2",
-        query: "GDPR right to be forgotten compliance",
-        anchor: "sec-crypto-shred",
-        category: "semantic_gap",
-        expect: Expect::AbsentTopK,
-        keyword_in_top_k: true,
-        note: "paraphrase without shared tokens",
-    },
-    Case {
-        id: "T4.1",
-        query: "capital starvation bank liquidity",
-        anchor: "sec-liquidity",
-        category: "polysemy",
-        expect: Expect::Informative,
-        keyword_in_top_k: true,
-        note: "watch false pull to sec-oom (starvation)",
-    },
-    Case {
-        id: "T4.2",
-        query: "operating system thread context switch",
-        anchor: "sec-trading-pipeline",
-        category: "polysemy",
-        expect: Expect::Informative,
-        keyword_in_top_k: true,
-        note: "OS terms in trading doc",
-    },
-    Case {
-        id: "T5.1",
-        query: "OOM kernel kill",
-        anchor: "sec-oom",
-        category: "acronym",
-        expect: Expect::Informative,
-        keyword_in_top_k: true,
-        note: "partial token overlap",
-    },
-];
+#[derive(Deserialize)]
+struct CasesFile {
+    k: usize,
+    cases: Vec<CaseRow>,
+}
+
+#[derive(Deserialize)]
+struct CaseRow {
+    id: String,
+    query: String,
+    anchor: String,
+    category: String,
+    expect: String,
+    keyword_in_top_k: bool,
+    auto_semantic_top1: bool,
+}
+
+fn parse_expect(s: &str) -> Expect {
+    match s {
+        "top1" => Expect::Top1,
+        "topK" => Expect::InTopK,
+        "miss@K" => Expect::AbsentTopK,
+        "report" => Expect::Informative,
+        other => panic!("unknown expect in cases.toml: {other}"),
+    }
+}
+
+fn load_cases() -> (usize, Vec<Case>) {
+    let raw: CasesFile = toml::from_str(CASES_TOML).expect("parse cases.toml");
+    let cases = raw
+        .cases
+        .into_iter()
+        .map(|r| Case {
+            id: r.id,
+            query: r.query,
+            anchor: r.anchor,
+            category: r.category,
+            expect: parse_expect(&r.expect),
+            keyword_in_top_k: r.keyword_in_top_k,
+            auto_semantic_top1: r.auto_semantic_top1,
+        })
+        .collect();
+    (raw.k, cases)
+}
+
+fn assert_absent_top_k(c: &Case, mode: &str, k: usize, rank: Option<usize>, results: &[Value]) {
+    assert!(
+        rank.is_none(),
+        "{} [{}] expected miss for {} in top {}, rank {:?}",
+        c.id,
+        mode,
+        c.anchor,
+        k,
+        rank
+    );
+    if mode == "auto" || mode == "fuzzy" {
+        assert!(
+            results.is_empty(),
+            "{} [{}] expected empty results (no ghost hits), got {}",
+            c.id,
+            mode,
+            results.len()
+        );
+    }
+}
 
 fn hit_anchor(hit: &Value, anchor: &str) -> bool {
     let heading = hit["heading"].as_str().unwrap_or("");
@@ -164,10 +141,32 @@ impl CatStats {
     }
 }
 
+fn expect_label(c: &Case, mode: &str, neural: bool) -> String {
+    if c.expect == Expect::AbsentTopK
+        && c.auto_semantic_top1
+        && neural
+        && (mode == "auto" || mode == "semantic")
+    {
+        return "top1@neural".to_string();
+    }
+    expect_label_base(c.expect)
+}
+
+fn expect_label_base(e: Expect) -> String {
+    match e {
+        Expect::Top1 => "top1".to_string(),
+        Expect::InTopK => "topK".to_string(),
+        Expect::AbsentTopK => "miss@K".to_string(),
+        Expect::Informative => "report".to_string(),
+    }
+}
+
 fn run_mode(
     repo: &mut wisp_engine::repo::Repository,
     mode: &str,
+    k: usize,
     cases: &[Case],
+    neural: bool,
 ) -> HashMap<String, CatStats> {
     let mut by_cat: HashMap<String, CatStats> = HashMap::new();
     println!("\n=== mode: {} ===", mode);
@@ -176,9 +175,9 @@ fn run_mode(
         "id", "category", "expect", "rank", "score@1", "top path"
     );
     for c in cases {
-        let v = search(repo, MAIN_REF, c.query, mode, K).expect("search");
+        let v = search(repo, MAIN_REF, &c.query, mode, k).expect("search");
         let results = v["results"].as_array().cloned().unwrap_or_default();
-        let ranks = ranks_for_query(&results, c.anchor);
+        let ranks = ranks_for_query(&results, &c.anchor);
         let rank = ranks.first().copied();
         let score1 = results
             .first()
@@ -195,7 +194,7 @@ fn run_mode(
             "{:<8} {:<22} {:<12} {:<6} {:<8.4} {}",
             c.id,
             c.category,
-            expect_label(c.expect),
+            expect_label(c, mode, neural),
             rank_s,
             score1,
             top_path
@@ -203,10 +202,12 @@ fn run_mode(
         if !results.is_empty() && c.id == "T4.1" {
             let oom_ranks = ranks_for_query(&results, "sec-oom");
             if let Some(r) = oom_ranks.first() {
-                println!("         (sec-oom also in top-{} at rank {})", K, r);
+                println!("         (sec-oom also in top-{} at rank {})", k, r);
             }
         }
-        let stats = by_cat.entry(c.category.to_string()).or_insert_with(CatStats::new);
+        let stats = by_cat
+            .entry(c.category.clone())
+            .or_insert_with(CatStats::new);
         if c.expect != Expect::Informative {
             stats.record_hit(rank);
         }
@@ -228,30 +229,32 @@ fn run_mode(
                 c.id,
                 mode,
                 c.anchor,
-                K,
+                k,
                 results
                     .iter()
                     .map(|h| format!("{}:{}", h["path"], h["heading"]))
                     .collect::<Vec<_>>()
             ),
             Expect::AbsentTopK => {
-                assert!(
-                    rank.is_none(),
-                    "{} [{}] expected miss for {} in top {}, rank {:?}",
-                    c.id,
-                    mode,
-                    c.anchor,
-                    K,
-                    rank
-                );
-                if mode == "vector" || mode == "hybrid" {
-                    assert!(
-                        results.is_empty(),
-                        "{} [{}] semantic gap should return no hits (agent-safe empty), got {}",
+                if neural && c.auto_semantic_top1 && (mode == "auto" || mode == "semantic") {
+                    assert_eq!(
+                        rank,
+                        Some(1),
+                        "{} [{}] expected rank 1 for {} (neural)",
                         c.id,
                         mode,
-                        results.len()
+                        c.anchor
                     );
+                    if mode == "auto" {
+                        assert_eq!(
+                            v["mode"].as_str(),
+                            Some("semantic"),
+                            "{} [auto] expected mode semantic",
+                            c.id
+                        );
+                    }
+                } else {
+                    assert_absent_top_k(c, mode, k, rank, &results);
                 }
             }
             Expect::Informative => {}
@@ -262,29 +265,19 @@ fn run_mode(
 
 fn should_assert(mode: &str, c: &Case) -> bool {
     match c.expect {
-        // `emb:hash:64` vector-only scores are coarse; lexical @1 is gated on hybrid + keyword.
-        Expect::Top1 => mode != "vector",
+        Expect::Top1 => mode != "ri",
         Expect::InTopK => match mode {
             "keyword" => c.keyword_in_top_k,
-            "hybrid" => true,
+            "ri" => false,
+            "auto" | "fuzzy" => true,
             _ => false,
         },
-        // No ghost hits on unrelated queries in any search mode.
         Expect::AbsentTopK => true,
         Expect::Informative => false,
     }
 }
 
-fn expect_label(e: Expect) -> &'static str {
-    match e {
-        Expect::Top1 => "top1",
-        Expect::InTopK => "topK",
-        Expect::AbsentTopK => "miss@K",
-        Expect::Informative => "report",
-    }
-}
-
-fn print_summary(mode: &str, by_cat: &HashMap<String, CatStats>) {
+fn print_summary(mode: &str, k: usize, by_cat: &HashMap<String, CatStats>) {
     println!("\n--- Search evaluation summary ({}) ---", mode);
     let mut cats: Vec<_> = by_cat.keys().collect();
     cats.sort();
@@ -296,24 +289,55 @@ fn print_summary(mode: &str, by_cat: &HashMap<String, CatStats>) {
         let n = s.total as f64;
         println!("[{}] (N={})", cat.to_uppercase(), s.total);
         println!("  Recall@1: {:.2}%", 100.0 * s.hit_at_1 as f64 / n);
-        println!("  Recall@{}: {:.2}%", K, 100.0 * s.hit_at_k as f64 / n);
+        println!("  Recall@{}: {:.2}%", k, 100.0 * s.hit_at_k as f64 / n);
         println!("  MRR:      {:.3}", s.mrr_sum / n);
     }
 }
 
 #[test]
 fn search_battery_hybrid_keyword_vector() {
+    let (k, cases) = load_cases();
     let cat = catalog();
     let spec = cat
         .bundle("search-battery")
         .expect("search-battery bundle in catalog");
     let dir = tempfile::tempdir().unwrap();
     let root = dir.path().join("bundle");
-    let mut repo = init_and_record_bundle(spec, &root, &Unlock::default())
-        .expect("init search-battery");
+    let mut repo =
+        init_and_record_bundle(spec, &root, &Unlock::default()).expect("init search-battery");
 
-    for mode in ["hybrid", "keyword", "vector"] {
-        let stats = run_mode(&mut repo, mode, CASES);
-        print_summary(mode, &stats);
+    let neural = cfg!(feature = "semantic");
+
+    for mode in ["auto", "fuzzy", "keyword", "ri"] {
+        let stats = run_mode(&mut repo, mode, k, &cases, neural);
+        print_summary(mode, k, &stats);
+    }
+
+    if neural {
+        let stats = run_mode(&mut repo, "semantic", k, &cases, true);
+        print_summary("semantic", k, &stats);
+
+        let params = SearchParams {
+            threshold: None,
+            local_only: true,
+        };
+        for c in cases.iter().filter(|c| c.expect == Expect::AbsentTopK) {
+            let v = search_with_params(
+                &mut repo,
+                MAIN_REF,
+                &c.query,
+                "auto",
+                k,
+                &params,
+            )
+            .expect("local-only auto");
+            let results = v["results"].as_array().cloned().unwrap_or_default();
+            assert!(
+                ranks_for_query(&results, &c.anchor).is_empty(),
+                "{} [auto local_only] expected miss for {}",
+                c.id,
+                c.anchor
+            );
+        }
     }
 }

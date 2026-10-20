@@ -229,7 +229,8 @@ fn append_citations_downexport(
     repo_profile: &dyn wisp_profile::Profile,
 ) {
     let prof = export_profile.unwrap_or(repo_profile);
-    if prof.okf_version() != "0.1" || repo_profile.okf_version() != "0.2" || view.sources.is_empty() {
+    if prof.okf_version() != "0.1" || repo_profile.okf_version() != "0.2" || view.sources.is_empty()
+    {
         return;
     }
     if sections

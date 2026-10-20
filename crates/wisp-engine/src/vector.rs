@@ -21,9 +21,8 @@ pub fn open_index(
             url_env: None,
             command: None,
         });
-    let driver = VectorDriver::parse(&cfg.driver).ok_or_else(|| {
-        WispError::usage(format!("unknown vector_index driver {:?}", cfg.driver))
-    })?;
+    let driver = VectorDriver::parse(&cfg.driver)
+        .ok_or_else(|| WispError::usage(format!("unknown vector_index driver {:?}", cfg.driver)))?;
     match driver {
         VectorDriver::Sqlite => {
             let path_override = cfg.path.as_deref().map(Path::new);
@@ -66,7 +65,10 @@ pub fn purge_vectors_for_sections(
         .codecs
         .default_embedding
         .as_deref()
-        .unwrap_or(wisp_sub_embed::HASH_CODEC);
+        .unwrap_or("");
+    if codec.is_empty() || !wisp_sub_embed::is_supported(codec) {
+        return Ok(());
+    }
     let wisp_dir = repo.wisp_dir.clone();
     let vector_index = repo.manifest.vector_index.clone();
     let mut idx = open_index(&wisp_dir, &vector_index, codec)?;

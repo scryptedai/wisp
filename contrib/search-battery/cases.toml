@@ -1,0 +1,95 @@
+# Canonical search IR battery probes (single source of truth).
+# Loaded by: crates/wisp-invariants/tests/search_battery.rs, contrib/search-battery/run_battery.py
+# Contract: docs/references/... Technical Design.md §14.7, contrib/search-battery/README.md
+
+k = 5
+
+[[cases]]
+id = "T1.0"
+query = "database failover standby replica"
+anchor = "sec-failover"
+category = "lexical"
+expect = "top1"
+keyword_in_top_k = true
+auto_semantic_top1 = false
+note = "BM25 baseline"
+
+[[cases]]
+id = "T2.1"
+query = "databse replca hearbeat"
+anchor = "sec-failover"
+category = "syntactic_fuzzy"
+expect = "topK"
+keyword_in_top_k = false
+auto_semantic_top1 = false
+note = "char-trigram fuzzy (auto/fuzzy modes)"
+
+[[cases]]
+id = "T2.2a"
+query = "out of memory"
+anchor = "sec-oom"
+category = "syntactic"
+expect = "topK"
+keyword_in_top_k = true
+auto_semantic_top1 = false
+note = "FTS tokenizer (spaced)"
+
+[[cases]]
+id = "T2.2b"
+query = "out-of-memory"
+anchor = "sec-oom"
+category = "syntactic"
+expect = "topK"
+keyword_in_top_k = true
+auto_semantic_top1 = false
+note = "FTS tokenizer (hyphenated)"
+
+[[cases]]
+id = "T3.1"
+query = "RAM depleted process terminated"
+anchor = "sec-oom"
+category = "semantic_gap"
+expect = "miss@K"
+keyword_in_top_k = true
+auto_semantic_top1 = true
+note = "paraphrase; rank 1 on auto/semantic when neural enabled"
+
+[[cases]]
+id = "T3.2"
+query = "GDPR right to be forgotten compliance"
+anchor = "sec-crypto-shred"
+category = "semantic_gap"
+expect = "miss@K"
+keyword_in_top_k = true
+auto_semantic_top1 = false
+note = "hard paraphrase; miss@5 on auto even with neural"
+
+[[cases]]
+id = "T4.1"
+query = "capital starvation bank liquidity"
+anchor = "sec-liquidity"
+category = "polysemy"
+expect = "report"
+keyword_in_top_k = true
+auto_semantic_top1 = false
+note = "watch false pull to sec-oom (starvation)"
+
+[[cases]]
+id = "T4.2"
+query = "operating system thread context switch"
+anchor = "sec-trading-pipeline"
+category = "polysemy"
+expect = "report"
+keyword_in_top_k = true
+auto_semantic_top1 = false
+note = "OS terms in trading doc"
+
+[[cases]]
+id = "T5.1"
+query = "OOM kernel kill"
+anchor = "sec-oom"
+category = "acronym"
+expect = "report"
+keyword_in_top_k = true
+auto_semantic_top1 = false
+note = "partial token overlap"

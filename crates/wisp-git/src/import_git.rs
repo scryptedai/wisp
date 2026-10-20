@@ -19,11 +19,7 @@ pub struct ImportGitOptions {
     pub history: bool,
 }
 
-pub fn import_git(
-    repo: &mut Repository,
-    git_dir: &Path,
-    opts: ImportGitOptions,
-) -> Result<Value> {
+pub fn import_git(repo: &mut Repository, git_dir: &Path, opts: ImportGitOptions) -> Result<Value> {
     let git_dir = canonical_git_dir(git_dir)?;
     if opts.history {
         return import_git_history(repo, &git_dir, &opts);
@@ -111,7 +107,10 @@ fn import_git_history(
     }))
 }
 
-fn record_snapshot(repo: &mut Repository, message: &str) -> Result<wisp_engine::record::RecordResult> {
+fn record_snapshot(
+    repo: &mut Repository,
+    message: &str,
+) -> Result<wisp_engine::record::RecordResult> {
     record(
         repo,
         &RecordOptions {
@@ -169,7 +168,13 @@ fn extract_commit_to_root(
 
 fn git_archive_to_dir(git_dir: &Path, git_ref: &str, dest: &Path) -> Result<()> {
     let mut child = Command::new("git")
-        .args(["-C", git_dir.to_str().unwrap(), "archive", "--format=tar", git_ref])
+        .args([
+            "-C",
+            git_dir.to_str().unwrap(),
+            "archive",
+            "--format=tar",
+            git_ref,
+        ])
         .stdout(Stdio::piped())
         .spawn()
         .map_err(|e| WispError::internal(format!("git archive: {e}")))?;
@@ -208,7 +213,10 @@ fn clear_bundle_root(root: &Path) -> Result<()> {
 }
 
 fn copy_tree(src: &Path, prefix: Option<&str>, dest_root: &Path, files: &mut usize) -> Result<()> {
-    for entry in walkdir::WalkDir::new(src).into_iter().filter_map(|e| e.ok()) {
+    for entry in walkdir::WalkDir::new(src)
+        .into_iter()
+        .filter_map(|e| e.ok())
+    {
         if entry.file_type().is_dir() {
             continue;
         }

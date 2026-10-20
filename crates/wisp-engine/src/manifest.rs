@@ -304,12 +304,7 @@ impl Manifest {
             commit: CommitSection::default(),
             render: RenderSection::default(),
             config: ConfigSection::default(),
-            codecs: {
-                let mut c = CodecsSection::default();
-                c.embedding.push(wisp_sub_embed::HASH_CODEC.to_string());
-                c.default_embedding = Some(wisp_sub_embed::HASH_CODEC.to_string());
-                c
-            },
+            codecs: CodecsSection::default(),
             subscribers: vec![
                 SubscriberSection {
                     name: "tokens".into(),

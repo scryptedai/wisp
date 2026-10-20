@@ -1,6 +1,6 @@
 # Extension API (embeddings, vector index, sync)
 
-The default `wisp` binary ships a **reference** stack: SQLite ledger/hot, `emb:hash:64`, and a SQLite vector table under `.wisp/cache/vectors/`. Products can replace or augment pieces without forking core.
+The default `wisp` binary ships a **reference** stack: SQLite ledger/hot with FTS/trigram, random indexing (RI), and optional local neural embeddings in hot.db. Products can replace or augment pieces without forking core.
 
 ## Repository layout (`wisp init`)
 
@@ -16,7 +16,7 @@ Trait: `wisp_index::EmbeddingCodec`
 | `dimension()` | Vector length |
 | `embed(text)` | Dense vector |
 
-Built-in: `emb:hash:64` in `wisp-sub-embed` — bag-of-token cosine similarity with a minimum score floor (`HASH_MIN_COSINE`); typo/paraphrase limits and the `search-battery` corpus are documented in `DECISIONS.md` §14.
+Built-in search does not use manifest `emb:*` codecs; RI and semantic tiers are documented in `DECISIONS.md` §15. Optional external codecs can implement `wisp_index::EmbeddingCodec` and a `vector_index` backend.
 
 Register additional codecs in `manifest.toml` under `[codecs]` and implement the trait in your crate. Wire search via `wisp engine` or a `command` subscriber that updates an external index.
 
@@ -33,9 +33,9 @@ Trait: `wisp_index::VectorIndexBackend`
 Configure per codec in `manifest.toml`:
 
 ```toml
-[vector_index.backends."emb:hash:64"]
+[vector_index.backends."emb:local:bge-small-en-v1.5@1/384"]
 driver = "sqlite"
-# path = "cache/vectors/custom.db"   # optional; default derived from codec id
+# path = "cache/vectors/custom.db"   # optional; not used by built-in CLI search
 
 [vector_index.backends."emb:openai:3-small"]
 driver = "postgres"

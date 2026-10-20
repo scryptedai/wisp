@@ -31,6 +31,7 @@ time.workspace = true
 [features]
 default = []
 postgres-vector = ["dep:wisp-vector-pg"]
+semantic = ["wisp-sub-embed/semantic"]
 
 [dev-dependencies]
 tempfile.workspace = true

@@ -3,9 +3,7 @@
 use wisp_corpus::load_match_scenario;
 use wisp_engine::headless::ApplyOp;
 use wisp_engine::repo::{Unlock, MAIN_REF};
-use wisp_invariants::{
-    assert_lossless_strip, catalog, init_and_record_bundle, must_findings,
-};
+use wisp_invariants::{assert_lossless_strip, catalog, init_and_record_bundle, must_findings};
 use wisp_match::{match_sections, Context, Decision, PriorSection};
 use wisp_model::{ConceptId, SectionId};
 use wisp_parse::parse_file;
@@ -21,7 +19,12 @@ fn catalog_loads_and_paths_exist() {
     assert!(!c.bundle.is_empty());
     for b in &c.bundle {
         let root = wisp_corpus::bundle_root(b);
-        assert!(root.is_dir(), "bundle {} missing at {}", b.id, root.display());
+        assert!(
+            root.is_dir(),
+            "bundle {} missing at {}",
+            b.id,
+            root.display()
+        );
     }
     for concept in &c.concept {
         let p = wisp_corpus::data_dir().join(&concept.path);
@@ -126,8 +129,7 @@ fn corpus_bundles_record_and_validate() {
     for spec in catalog().bundle.iter().filter(|b| b.record) {
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path().join("bundle");
-        let before =
-            wisp_corpus::snapshot_bundle_sources(&wisp_corpus::bundle_root(spec)).unwrap();
+        let before = wisp_corpus::snapshot_bundle_sources(&wisp_corpus::bundle_root(spec)).unwrap();
         let mut repo = init_and_record_bundle(spec, &root, &unlock()).unwrap();
         let must = must_findings(&mut repo).unwrap();
         assert!(
@@ -141,7 +143,11 @@ fn corpus_bundles_record_and_validate() {
             assert_lossless_strip(&mut repo, &root, &before, &export)
                 .unwrap_or_else(|e| panic!("bundle {} I3: {}", spec.id, e));
         }
-        assert!(wisp_engine::query::fsck(&mut repo).is_ok(), "fsck {}", spec.id);
+        assert!(
+            wisp_engine::query::fsck(&mut repo).is_ok(),
+            "fsck {}",
+            spec.id
+        );
         assert!(
             wisp_engine::query::hot_check(&mut repo, MAIN_REF).is_ok(),
             "hot_check {}",
@@ -197,7 +203,9 @@ fn corpus_match_scenarios() {
 #[test]
 fn corpus_policy_attested_computation_denies_process() {
     let cat = catalog();
-    let spec = cat.bundle("policy-attested").expect("policy-attested bundle");
+    let spec = cat
+        .bundle("policy-attested")
+        .expect("policy-attested bundle");
     let dir = tempfile::tempdir().unwrap();
     let root = dir.path().join("bundle");
     let mut repo = init_and_record_bundle(spec, &root, &unlock()).unwrap();
@@ -249,7 +257,10 @@ fn corpus_v01_migration_plan_nonempty() {
     let mut repo = init_and_record_bundle(spec, &root, &unlock()).unwrap();
     let plan = wisp_engine::query::migrate(&mut repo, MAIN_REF, "0.2", true).unwrap();
     let n = plan["steps"].as_u64().unwrap_or(0);
-    assert!(n > 0, "v01 bundle should produce migration steps, got {plan}");
+    assert!(
+        n > 0,
+        "v01 bundle should produce migration steps, got {plan}"
+    );
 }
 
 #[test]
@@ -268,10 +279,8 @@ fn corpus_v01_migrate_and_validate() {
     assert_eq!(v["profile"], "okf-0.2");
 
     let export_02 = dir.path().join("export-02");
-    wisp_engine::checkout::checkout(&mut repo, MAIN_REF, Some(&export_02), false, false)
-        .unwrap();
-    let decision_02 =
-        std::fs::read_to_string(export_02.join("docs/decision.md")).unwrap();
+    wisp_engine::checkout::checkout(&mut repo, MAIN_REF, Some(&export_02), false, false).unwrap();
+    let decision_02 = std::fs::read_to_string(export_02.join("docs/decision.md")).unwrap();
     assert!(
         decision_02.contains("generated:"),
         "0.2 export should use generated, got:\n{decision_02}"
@@ -299,8 +308,7 @@ fn corpus_v01_migrate_and_validate() {
         false,
     )
     .unwrap();
-    let decision_01 =
-        std::fs::read_to_string(export_01.join("docs/decision.md")).unwrap();
+    let decision_01 = std::fs::read_to_string(export_01.join("docs/decision.md")).unwrap();
     assert!(
         decision_01.contains("timestamp:"),
         "down-export should emit okf-0.1 timestamp, got:\n{decision_01}"

@@ -1,11 +1,13 @@
 //! Lifecycle: retract/restore, erasure groups, and the erase procedure (§10.4–10.6).
 
-use crate::checkout;
+use crate::checkout::{self, WorktreeLock};
 use crate::commit::{commit, CommitRequest, PlannedOp, Precondition};
 use crate::payloads::*;
+use crate::query;
 use crate::repo::{Repository, MAIN_REF};
 use serde_json::{json, Value};
 use std::collections::BTreeSet;
+use std::path::{Path, PathBuf};
 use wisp_model::*;
 use wisp_store::{Hot, Ledger, Tombstone};
 
@@ -458,10 +460,8 @@ pub fn erase(
 
     // Phase 1 and Phase 2 (idempotent; recovery reruns them).
     shred(repo, &scopes, erase_change, &flagged)?;
-    // Working trees: erased concept files unlinked, erased sections replaced by markers (re-render).
-    let root = repo.root.clone();
-    let idx = checkout::write_tree(repo, MAIN_REF, &root, false, false, true)?;
-    idx.save(&checkout::checkout_idx_path(repo, &root))?;
+    rewrite_worktrees_for_ref(repo, ref_name)?;
+    assert_erase_complete(repo, &scopes)?;
     repo.ledger.checkpoint()?;
     repo.keystore.checkpoint()?;
 
@@ -549,7 +549,68 @@ pub fn recover(repo: &mut Repository) -> Result<()> {
         .map(|t| t.erase_change)
         .unwrap_or_else(ChangeId::new);
     shred(repo, &pending, cause, &[])?;
+    rewrite_all_managed_worktrees(repo)?;
+    assert_erase_complete(repo, &pending)?;
     repo.ledger.checkpoint()?;
     repo.keystore.checkpoint()?;
+    Ok(())
+}
+
+/// Re-render every Wisp-managed checkout (primary root and each registered linked worktree).
+pub fn rewrite_all_managed_worktrees(repo: &mut Repository) -> Result<()> {
+    let _lock = WorktreeLock::acquire(&repo.wisp_dir)?;
+    let primary_ref = query::current_ref(repo);
+    let primary_root = repo.root.clone();
+    rewrite_worktree_at(repo, &primary_ref, &primary_root)?;
+    for wt in Ledger::list_worktrees(repo.ledger.conn())? {
+        let path = PathBuf::from(&wt.path);
+        if path.is_dir() {
+            rewrite_worktree_at(repo, &wt.ref_name, &path)?;
+        }
+    }
+    Ok(())
+}
+
+/// Re-render checkouts that display `ref_name` (primary when checked out there, plus linked worktrees on that ref).
+pub fn rewrite_worktrees_for_ref(repo: &mut Repository, ref_name: &str) -> Result<()> {
+    let _lock = WorktreeLock::acquire(&repo.wisp_dir)?;
+    if query::current_ref(repo) == ref_name {
+        let primary_root = repo.root.clone();
+        rewrite_worktree_at(repo, ref_name, &primary_root)?;
+    }
+    for wt in Ledger::list_worktrees(repo.ledger.conn())? {
+        if wt.ref_name != ref_name {
+            continue;
+        }
+        let path = PathBuf::from(&wt.path);
+        if path.is_dir() {
+            rewrite_worktree_at(repo, ref_name, &path)?;
+        }
+    }
+    Ok(())
+}
+
+fn rewrite_worktree_at(repo: &mut Repository, ref_name: &str, dir: &Path) -> Result<()> {
+    if Ledger::head(repo.ledger.conn(), ref_name)?.is_none() {
+        return Ok(());
+    }
+    let idx = checkout::write_tree(repo, ref_name, dir, false, false, true)?;
+    idx.save(&checkout::checkout_idx_path(repo, dir))?;
+    Ok(())
+}
+
+fn assert_erase_complete(repo: &Repository, scopes: &[ScopeId]) -> Result<()> {
+    if !Ledger::scopes_erased_not_shredded(repo.ledger.conn())?.is_empty() {
+        return Err(WispError::internal("erase incomplete: pending shred"));
+    }
+    for s in scopes {
+        let row = Ledger::scope(repo.ledger.conn(), *s)?
+            .ok_or_else(|| WispError::integrity(format!("missing scope {s}")))?;
+        if !row.shredded {
+            return Err(WispError::internal(format!(
+                "erase incomplete: scope {s} not shredded"
+            )));
+        }
+    }
     Ok(())
 }

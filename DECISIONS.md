@@ -65,6 +65,7 @@ Deviations from the OKF store v1 design (ledger, parse, merge, sync, profiles), 
 
 - The erase change is committed through the normal optimistic commit, and the tombstone, scope flags, payload-absence flags, and marker positions are written in a second ledger transaction immediately after. Both phases of shredding are idempotent and rerun on open, so an interruption between the two transactions is recovered.
 - Phase 1 purges search-derived rows in hot.db (FTS, trigram, RI, dense embeddings) for erased sections, then hot tier state; token DB purge follows the same pattern when present.
+- After shred, managed working copies are re-rendered under the primary repo root and every registered linked worktree (ledger `worktrees` paths only — no whole-disk scan). `recover` repeats that rewrite. Erase returns an error unless every affected scope is shredded and none are pending shred.
 
 ## §11 Concurrency
 

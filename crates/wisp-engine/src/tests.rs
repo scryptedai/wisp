@@ -1086,6 +1086,92 @@ fn worktree_add_list_remove() {
 }
 
 #[test]
+fn erase_rewrites_linked_worktree_for_ref() {
+    let f = fixture();
+    Repository::init(&f.root, "0.2", &Unlock::default()).unwrap();
+    let canary = "CANARY_WT_ERASE_9e2b";
+    write(
+        &f.root,
+        "notes/standup.md",
+        &format!("---\ntype: Note\n---\n## Alpha\n\n{canary}\n"),
+    );
+    let mut repo = open(&f.root);
+    rec(&mut repo, "human:alex");
+    crate::worktree::add(&mut repo, "side", Some("task/side"), Some(MAIN_REF), None).unwrap();
+    let wt_root = f.root.join(".wisp/worktrees/side");
+    assert!(!scan_for(&wt_root, canary).is_empty());
+    let text = read(&wt_root, "notes/standup.md");
+    let parsed = wisp_parse::parse_file(&text);
+    let alpha = parsed
+        .sections()
+        .iter()
+        .find(|s| s.heading == "Alpha")
+        .and_then(|s| match &s.anchor {
+            Some(wisp_parse::Anchor::Valid(id)) => Some(*id),
+            _ => None,
+        })
+        .expect("Alpha section anchor");
+    crate::erase::erase(
+        &mut repo,
+        "task/side",
+        &EraseTarget::Path(format!("notes/standup.md#{alpha}")),
+        Reason::Policy,
+        true,
+        "human:alex",
+    )
+    .unwrap();
+    drop(repo);
+    assert!(
+        scan_for(&wt_root, canary).is_empty(),
+        "linked worktree still contains plaintext"
+    );
+    assert!(
+        !scan_for(&f.root, canary).is_empty(),
+        "primary on main should still show content until that ref is erased"
+    );
+}
+
+#[test]
+fn rewrite_managed_worktrees_clears_stale_plaintext_after_erase() {
+    let f = fixture();
+    Repository::init(&f.root, "0.2", &Unlock::default()).unwrap();
+    let canary = "CANARY_STALE_8f3d";
+    write(
+        &f.root,
+        "notes/standup.md",
+        &format!("---\ntype: Note\n---\n## Alpha\n\n{canary}\n"),
+    );
+    let mut repo = open(&f.root);
+    rec(&mut repo, "human:alex");
+    let text = read(&f.root, "notes/standup.md");
+    let alpha = wisp_parse::parse_file(&text)
+        .sections()
+        .iter()
+        .find(|s| s.heading == "Alpha")
+        .and_then(|s| match &s.anchor {
+            Some(wisp_parse::Anchor::Valid(id)) => Some(*id),
+            _ => None,
+        })
+        .expect("Alpha anchor");
+    crate::erase::erase(
+        &mut repo,
+        MAIN_REF,
+        &EraseTarget::Path(format!("notes/standup.md#{alpha}")),
+        Reason::Policy,
+        true,
+        "human:alex",
+    )
+    .unwrap();
+    write(
+        &f.root,
+        "notes/standup.md",
+        &format!("---\ntype: Note\n---\n## Alpha\n\nstale {canary}\n"),
+    );
+    crate::erase::rewrite_all_managed_worktrees(&mut repo).unwrap();
+    assert!(!read(&f.root, "notes/standup.md").contains(canary));
+}
+
+#[test]
 fn passphrase_and_env_master_keys() {
     let f = fixture();
     let unlock = Unlock {

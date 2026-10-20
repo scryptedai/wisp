@@ -42,9 +42,9 @@ pub fn open_index(
             #[cfg(not(feature = "postgres-vector"))]
             {
                 let _ = url_env;
-                return Err(WispError::not_implemented(
+                Err(WispError::not_implemented(
                     "postgres vector backend: build wisp with --features postgres-vector",
-                ));
+                ))
             }
         }
         VectorDriver::ExternalCommand => Err(WispError::not_implemented(

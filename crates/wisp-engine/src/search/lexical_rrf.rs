@@ -53,7 +53,7 @@ pub fn rrf_merge_lexical(
         .filter(|(_, h)| {
             let in_bm25 = bm25_sections.contains(&h.section.to_string());
             let need = min_lexical_token_hits(query);
-            lexical_token_hits(query, &h) >= need || (!in_bm25 && h.score >= alone_min)
+            lexical_token_hits(query, h) >= need || (!in_bm25 && h.score >= alone_min)
         })
         .collect();
     if term_count >= 4 {

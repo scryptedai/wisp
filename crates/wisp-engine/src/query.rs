@@ -268,8 +268,24 @@ pub fn search(
                 let rows = wisp_sub_embed::rows_from_hot(hot.conn(), embed.as_ref())?;
                 idx.replace_all(&rows)?;
                 let qv = embed.embed(query)?;
-                let vhits = idx.search(&qv, k)?;
+                let mut vhits = idx.search(&qv, k)?;
+                if mode == "hybrid"
+                    && kw_hits.is_empty()
+                    && c == wisp_sub_embed::HASH_CODEC
+                    && vhits
+                        .first()
+                        .is_none_or(|h| h.score < wisp_sub_embed::HASH_STANDALONE_MIN_COSINE)
+                {
+                    vhits.clear();
+                }
                 if mode == "vector" {
+                    if c == wisp_sub_embed::HASH_CODEC
+                        && vhits
+                            .first()
+                            .is_none_or(|h| h.score < wisp_sub_embed::HASH_STANDALONE_MIN_COSINE)
+                    {
+                        vhits.clear();
+                    }
                     let results = vhits
                         .into_iter()
                         .map(|h| search_vector_hit_json(&h))

@@ -10,6 +10,13 @@ use wisp_store::Hot;
 pub const CODEC_PREFIX: &str = "emb:";
 pub const HASH_CODEC: &str = "emb:hash:64";
 pub const DIM: usize = 64;
+/// Minimum cosine similarity for `emb:hash:64` vector hits. Below this, search returns no vector
+/// matches (avoids RRF "ghost hits" on unrelated queries in small corpora).
+pub const HASH_MIN_COSINE: f32 = 0.10;
+/// Top hit must beat the runner-up by at least this cosine margin, else treat as ambiguous noise.
+pub const HASH_MIN_SCORE_MARGIN: f32 = 0.06;
+/// When BM25 returned nothing, do not surface weak vector-only matches in hybrid search.
+pub const HASH_STANDALONE_MIN_COSINE: f32 = 0.27;
 
 pub fn is_supported(codec: &str) -> bool {
     codec == HASH_CODEC
@@ -200,6 +207,9 @@ impl VectorIndexBackend for SqliteVectorBackend {
                 continue;
             };
             let score = cosine(query, &vec);
+            if self.codec == HASH_CODEC && score < HASH_MIN_COSINE {
+                continue;
+            }
             hits.push(VectorSearchHit {
                 concept,
                 section,
@@ -210,6 +220,14 @@ impl VectorIndexBackend for SqliteVectorBackend {
             });
         }
         hits.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
+        if self.codec == HASH_CODEC {
+            if hits.first().is_none_or(|h| h.score < HASH_MIN_COSINE) {
+                return Ok(Vec::new());
+            }
+            if hits.len() > 1 && hits[0].score - hits[1].score < HASH_MIN_SCORE_MARGIN {
+                return Ok(Vec::new());
+            }
+        }
         hits.truncate(k);
         Ok(hits)
     }
@@ -312,5 +330,34 @@ mod tests {
         assert_eq!(a, b);
         let c = embed_text("unrelated quantum physics", DIM);
         assert!(cosine(&a, &c) < 0.5);
+    }
+
+    #[test]
+    fn hash_cosine_battery_probes() {
+        let failover = embed_text(
+            "High Availability Failover {#sec-failover}\nWhen primary database nodes fail to acknowledge heartbeats within 5000ms, the cluster initiates an automated transition to the standby replica. Traffic is rerouted immediately via DNS record updating.",
+            DIM,
+        );
+        let oom = embed_text(
+            "out-of-memory killer Linux kernel memory starvation",
+            DIM,
+        );
+        let typo_q = embed_text("databse replca hearbeat", DIM);
+        let paraphrase_q = embed_text("RAM depleted process terminated", DIM);
+        let gdpr_q = embed_text("GDPR right to be forgotten compliance", DIM);
+        let shred = embed_text(
+            "Provable Data Erasure {#sec-crypto-shred}\nTo satisfy compliance mandates without breaking hash chains, we employ crypto-shredding.",
+            DIM,
+        );
+        let lexical_q = embed_text("database failover standby replica", DIM);
+        eprintln!("lexical/failover {}", cosine(&lexical_q, &failover));
+        eprintln!("typo/failover {}", cosine(&typo_q, &failover));
+        eprintln!("paraphrase/oom {}", cosine(&paraphrase_q, &oom));
+        eprintln!("gdpr/failover {}", cosine(&gdpr_q, &failover));
+        eprintln!("gdpr/shred {}", cosine(&gdpr_q, &shred));
+        eprintln!("typo/full-failover-section {}", cosine(&typo_q, &failover));
+        assert!(cosine(&lexical_q, &failover) >= HASH_MIN_COSINE);
+        // Typos with zero token overlap can score 0 — typo rescue needs a future n-gram codec.
+        assert!(cosine(&gdpr_q, &failover) < HASH_MIN_COSINE);
     }
 }

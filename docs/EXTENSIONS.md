@@ -16,7 +16,7 @@ Trait: `wisp_index::EmbeddingCodec`
 | `dimension()` | Vector length |
 | `embed(text)` | Dense vector |
 
-Built-in: `emb:hash:64` in `wisp-sub-embed`.
+Built-in: `emb:hash:64` in `wisp-sub-embed` — bag-of-token cosine similarity with a minimum score floor (`HASH_MIN_COSINE`); typo/paraphrase limits and the `search-battery` corpus are documented in `DECISIONS.md` §14.
 
 Register additional codecs in `manifest.toml` under `[codecs]` and implement the trait in your crate. Wire search via `wisp engine` or a `command` subscriber that updates an external index.
 

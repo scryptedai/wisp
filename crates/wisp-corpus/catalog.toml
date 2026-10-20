@@ -100,6 +100,15 @@ invariants = ["I3"]
 record = true
 lossless_strip = true
 
+[[bundle]]
+id = "search-battery"
+path = "bundles/search-battery"
+profile = "0.2"
+description = "IR probe corpus: lexical, typo, synonym, polysemy, acronym queries (search benchmark)"
+invariants = ["I8"]
+record = true
+lossless_strip = false
+
 [[concept]]
 id = "parse.no-frontmatter"
 path = "concepts/no-frontmatter.md"

@@ -1,0 +1,5 @@
+id = "same-section-conflict"
+description = "Both refs edit the same section since the merge base; merge returns exit 3 with merge_conflict and scope_conflict entries."
+bundle = "warehouse"
+branch = "task/conflict"
+expect_outcome = "merge_conflict"

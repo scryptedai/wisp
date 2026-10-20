@@ -68,7 +68,7 @@ Deviations from *Differential OKF Store — v1 Technical Design* (Oct 17, 2026),
 
 ## §11 Concurrency
 
-- Worktrees (§11.4), merge (§11.5), and sync (§11.6) are not implemented. Branches, `switch`, headless writes, `apply` batches, read assertions, and `--assert-head` are.
+- Linked worktrees (§11.4) are implemented minimally: `worktree add|list|remove`, checkout under `.wisp/worktrees/<name>/` (or `--path`) with `.wisp-checkout.idx`, ledger `worktrees` bookkeeping, and one ref per checkout. Merge (§11.5) and sync (§11.6) are not implemented. Branches, `switch`, headless writes, `apply` batches, read assertions, and `--assert-head` are.
 - `--base any` is honored for headless operations; a policy rule with `unconditional = true` can deny it.
 
 ## §12 Profiles

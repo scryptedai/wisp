@@ -925,7 +925,7 @@ pub fn validate(
     let hot = repo.hots.remove(ref_name).expect("hot");
     let mut findings = Vec::new();
     for c in &targets {
-        match checkout::concept_view(repo, hot.conn(), c, None) {
+        match checkout::concept_view(repo, hot.conn(), c, None, None) {
             Ok(v) => findings.extend(repo.profile.validate(&v)),
             Err(e) => {
                 repo.hots.insert(ref_name.to_string(), hot);
@@ -962,7 +962,7 @@ pub fn migrate(repo: &mut Repository, ref_name: &str, to: &str, dry_run: bool) -
     let hot = repo.hots.remove(ref_name).expect("hot");
     let mut views = Vec::new();
     for c in Hot::concepts(hot.conn())? {
-        match checkout::concept_view(repo, hot.conn(), &c, None) {
+        match checkout::concept_view(repo, hot.conn(), &c, None, None) {
             Ok(mut v) => {
                 // The 0.1 view keeps `timestamp` as a user entry for the planner.
                 if let Ok(Some(e)) = Hot::frontmatter_entry(hot.conn(), c.concept, "timestamp") {

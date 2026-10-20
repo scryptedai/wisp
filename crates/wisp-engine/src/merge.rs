@@ -1,12 +1,13 @@
 //! Ref merge (§11.5): fast-forward and divergent conflict detection.
 
 use crate::checkout;
+use crate::commit::record_merge;
 use crate::query;
-use crate::repo::{Reader, Repository};
+use crate::repo::Repository;
 use serde_json::{json, Value};
 use std::collections::{HashMap, HashSet};
 use wisp_model::*;
-use wisp_store::{Hot, Ledger};
+use wisp_store::Ledger;
 
 /// Merge `source` into `into`. Fast-forwards when `into` is an ancestor of `source`.
 pub fn merge_refs(
@@ -77,13 +78,21 @@ pub fn merge_refs(
         ));
     }
 
-    replay_merge(repo, into, source, into_head, source_head, base, &source_cs)?;
+    let merge_id = record_merge(repo, into, into_head, source_head)?;
+    repo.hots.remove(into);
+    crate::apply::rebuild_hot(repo, into)?;
+    if query::current_ref(repo) == into {
+        let root = repo.root.clone();
+        let idx = checkout::write_tree(repo, into, &root, false, false, true)?;
+        idx.save(&checkout::checkout_idx_path(repo, &root))?;
+    }
     Ok(json!({
         "status": "merged",
         "into": into,
         "source": source,
         "base": base.to_string(),
-        "head": repo.head(into)?.map(|h| h.to_string()),
+        "merge": merge_id.to_string(),
+        "head": merge_id.to_string(),
         "changesets_replayed": source_cs.len(),
     }))
 }
@@ -101,53 +110,6 @@ fn fast_forward(
         .map_err(|e| WispError::internal(e.to_string()))?;
     repo.hots.remove(into);
     repo.hot(into)?;
-    if query::current_ref(repo) == into {
-        let root = repo.root.clone();
-        let idx = checkout::write_tree(repo, into, &root, false, false, true)?;
-        idx.save(&checkout::checkout_idx_path(repo, &root))?;
-    }
-    Ok(())
-}
-
-/// Replay source-side changes since `base` onto `into`'s hot tier and advance the ref head.
-fn replay_merge(
-    repo: &mut Repository,
-    into: &str,
-    _source: &str,
-    into_head: ChangesetId,
-    source_head: ChangesetId,
-    base: ChangesetId,
-    source_cs: &[ChangesetId],
-) -> Result<()> {
-    let _ = (into_head, source_head, base);
-    let payloads_dir = repo.ledger.payloads_dir();
-    let repo_id = repo.repo_id();
-    repo.hot(into)?;
-    let mut hot = repo.hots.remove(into).expect("hot");
-    let keystore = &repo.keystore;
-    let conn = repo.ledger.conn();
-    let reader = Reader {
-        conn,
-        payloads_dir,
-        keystore,
-        repo_id,
-    };
-    let htx = hot.begin()?;
-    for cs_id in source_cs {
-        let row = Ledger::get_changeset(conn, *cs_id)?
-            .ok_or_else(|| WispError::internal("missing changeset on merge replay"))?;
-        let changes = Ledger::changes_of(conn, *cs_id)?;
-        crate::apply::apply_changeset(&reader, &htx, &row.changeset, &changes)?;
-        Hot::advance(&htx, *cs_id, row.seq)?;
-    }
-    htx.commit()
-        .map_err(|e| WispError::internal(format!("hot merge: {e}")))?;
-    repo.hots.insert(into.to_string(), hot);
-    let tx = repo.ledger.begin_immediate()?;
-    Ledger::set_head(&tx, into, source_head)?;
-    tx.commit()
-        .map_err(|e| WispError::internal(e.to_string()))?;
-    repo.hots.remove(into);
     if query::current_ref(repo) == into {
         let root = repo.root.clone();
         let idx = checkout::write_tree(repo, into, &root, false, false, true)?;

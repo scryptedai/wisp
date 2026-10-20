@@ -369,27 +369,15 @@ pub fn apply_change(
     Ok(())
 }
 
-/// The linear history of a ref: follow `parents[0]` from the head, oldest first.
+/// Changesets that contribute to a ref head (merge-aware), oldest first.
 pub fn history_chain(
     ledger: &Ledger,
     head: Option<ChangesetId>,
 ) -> Result<Vec<wisp_store::ChangesetRow>> {
-    let mut out = Vec::new();
-    let mut cur = head;
-    let mut guard = 0usize;
-    while let Some(id) = cur {
-        let Some(row) = Ledger::get_changeset(ledger.conn(), id)? else {
-            break;
-        };
-        cur = row.changeset.parents.first().copied();
-        out.push(row);
-        guard += 1;
-        if guard > 10_000_000 {
-            break;
-        }
+    match head {
+        Some(h) => Ledger::changesets_closure(ledger.conn(), h),
+        None => Ok(Vec::new()),
     }
-    out.reverse();
-    Ok(out)
 }
 
 /// Apply a changeset's changes to a hot tier, reading and decrypting payloads as needed.
@@ -486,18 +474,9 @@ pub fn rebuild_hot(repo: &mut Repository, ref_name: &str) -> Result<()> {
             keystore,
             repo_id,
         };
-        let chain = {
-            let mut out = Vec::new();
-            let mut cur = head;
-            while let Some(id) = cur {
-                let Some(row) = Ledger::get_changeset(&ltx, id)? else {
-                    break;
-                };
-                cur = row.changeset.parents.first().copied();
-                out.push(row);
-            }
-            out.reverse();
-            out
+        let chain = match head {
+            Some(h) => Ledger::changesets_closure(&ltx, h)?,
+            None => Vec::new(),
         };
         let tx = hot.begin()?;
         Hot::clear(&tx)?;

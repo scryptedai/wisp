@@ -180,3 +180,11 @@ path = "scenarios/match/repair-by-body"
 [[scenario]]
 id = "match.malformed-anchor"
 path = "scenarios/match/malformed-anchor"
+
+[[scenario]]
+id = "merge.disjoint-sections"
+path = "scenarios/merge/disjoint-sections"
+
+[[scenario]]
+id = "merge.same-section-conflict"
+path = "scenarios/merge/same-section-conflict"

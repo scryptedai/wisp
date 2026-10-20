@@ -239,6 +239,22 @@ pub fn load_match_scenario(spec: &ScenarioSpec) -> Result<MatchScenario, CorpusE
     Ok(scenario)
 }
 
+/// Metadata for ref-merge playbook scenarios (`data/scenarios/merge/`).
+#[derive(Debug, Clone, Deserialize)]
+pub struct MergeScenario {
+    pub id: String,
+    pub description: Option<String>,
+    pub bundle: String,
+    pub branch: String,
+    pub expect_outcome: String,
+}
+
+pub fn load_merge_scenario(spec: &ScenarioSpec) -> Result<MergeScenario, CorpusError> {
+    let dir = data_dir().join(&spec.path);
+    let raw = fs::read_to_string(dir.join("scenario.toml"))?;
+    toml::from_str(&raw).map_err(|e| CorpusError::Catalog(e.to_string()))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -248,6 +264,6 @@ mod tests {
         let c = Catalog::load().unwrap();
         assert!(c.bundle.len() >= 11);
         assert!(c.concept.len() >= 8);
-        assert!(c.scenario.len() >= 8);
+        assert!(c.scenario.len() >= 10);
     }
 }

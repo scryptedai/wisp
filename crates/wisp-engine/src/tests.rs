@@ -970,6 +970,44 @@ fn mv_rewrites_links_and_i25_staging_recovers() {
 }
 
 #[test]
+fn worktree_add_list_remove() {
+    let f = fixture();
+    Repository::init(&f.root, "0.2", &Unlock::default()).unwrap();
+    write(&f.root, "tables/orders.md", ORDERS);
+    let mut repo = open(&f.root);
+    rec(&mut repo, "human:alex");
+    let added = crate::worktree::add(
+        &mut repo,
+        "side",
+        Some("task/side"),
+        Some(MAIN_REF),
+        None,
+    )
+    .unwrap();
+    assert_eq!(added["name"], "side");
+    assert_eq!(added["ref"], "task/side");
+    let wt_path = f.root.join(".wisp/worktrees/side");
+    assert!(wt_path.join("tables/orders.md").exists());
+    assert!(wt_path.join(".wisp-checkout.idx").exists());
+    let listed = crate::worktree::list(&repo).unwrap();
+    let wts = listed["worktrees"].as_array().unwrap();
+    assert_eq!(wts.len(), 2);
+    assert!(wts[0]["primary"].as_bool().unwrap());
+    assert_eq!(wts[1]["name"], "side");
+    let err = crate::worktree::add(&mut repo, "dup", None, Some("task/side"), None).unwrap_err();
+    assert_eq!(err.code, ExitCode::Usage);
+    crate::worktree::remove(&mut repo, "side", false).unwrap();
+    assert!(!wt_path.exists());
+    assert_eq!(
+        crate::worktree::list(&repo).unwrap()["worktrees"]
+            .as_array()
+            .unwrap()
+            .len(),
+        1
+    );
+}
+
+#[test]
 fn passphrase_and_env_master_keys() {
     let f = fixture();
     let unlock = Unlock {

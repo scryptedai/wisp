@@ -1,0 +1,5 @@
+id = "disjoint-sections"
+description = "Fork a branch; agents edit different sections on main vs branch; merge fast-forwards when only the branch moved, or replays disjoint section edits."
+bundle = "warehouse"
+branch = "task/disjoint"
+expect_outcome = "merged"

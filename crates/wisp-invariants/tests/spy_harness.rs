@@ -22,12 +22,13 @@ pub fn fresh_spy_repo(spec: &BundleSpec) -> (tempfile::TempDir, std::path::PathB
     (dir, root, repo)
 }
 
-pub fn section_at(
+pub fn section_at_ref(
     repo: &mut Repository,
+    ref_name: &str,
     concept_path: &str,
     heading: &str,
 ) -> (SectionId, ChangeId) {
-    let hot = repo.hot(MAIN_REF).unwrap();
+    let hot = repo.hot(ref_name).unwrap();
     let c = Hot::concept_by_path(hot.conn(), concept_path)
         .unwrap()
         .unwrap_or_else(|| panic!("no concept {concept_path}"));
@@ -39,6 +40,14 @@ pub fn section_at(
     (s.section, s.version)
 }
 
+pub fn section_at(
+    repo: &mut Repository,
+    concept_path: &str,
+    heading: &str,
+) -> (SectionId, ChangeId) {
+    section_at_ref(repo, MAIN_REF, concept_path, heading)
+}
+
 pub fn head_changeset(repo: &mut Repository) -> ChangesetId {
     let hot = repo.hot(MAIN_REF).unwrap();
     Hot::meta(hot.conn())
@@ -47,8 +56,9 @@ pub fn head_changeset(repo: &mut Repository) -> ChangesetId {
         .head
 }
 
-pub fn update_section(
+pub fn update_section_ref(
     repo: &mut Repository,
+    ref_name: &str,
     actor: &str,
     path: &str,
     section: SectionId,
@@ -77,7 +87,7 @@ pub fn update_section(
     apply(
         repo,
         ApplyBatch {
-            r#ref: None,
+            r#ref: Some(ref_name.into()),
             base: None,
             actor: Some(actor.into()),
             message: Some(message.into()),
@@ -88,6 +98,19 @@ pub fn update_section(
         },
         None,
     )
+}
+
+pub fn update_section(
+    repo: &mut Repository,
+    actor: &str,
+    path: &str,
+    section: SectionId,
+    base: ChangeId,
+    content: &str,
+    message: &str,
+    inputs: Vec<ApplyInput>,
+) -> Result<serde_json::Value, wisp_model::WispError> {
+    update_section_ref(repo, MAIN_REF, actor, path, section, base, content, message, inputs)
 }
 
 pub fn rec(repo: &mut Repository, actor: &str, message: &str) -> wisp_engine::record::RecordResult {

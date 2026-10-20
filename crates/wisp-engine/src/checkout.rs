@@ -118,14 +118,43 @@ pub fn write_atomic(path: &Path, bytes: &[u8]) -> Result<()> {
     Ok(())
 }
 
+fn profile_for_render<'a>(
+    repo: &'a Repository,
+    export_profile: Option<&'a dyn wisp_profile::Profile>,
+) -> &'a dyn wisp_profile::Profile {
+    export_profile.unwrap_or(&*repo.profile)
+}
+
+/// Resolve `--profile` for down-export (0.2 → 0.1). Same profile as the repo returns `None`.
+pub fn export_profile_for(
+    repo: &Repository,
+    profile_arg: &str,
+) -> Result<Option<Box<dyn wisp_profile::Profile>>> {
+    let target = wisp_profile::by_version(profile_arg)
+        .or_else(|| wisp_profile::by_id(profile_arg))
+        .ok_or_else(|| WispError::usage(format!("unknown profile {profile_arg}")))?;
+    if target.id() == repo.profile.id() {
+        return Ok(None);
+    }
+    if repo.profile.okf_version() == "0.2" && target.okf_version() == "0.1" {
+        return Ok(Some(target));
+    }
+    Err(WispError::usage(format!(
+        "cannot render {} bundle as {} (down-export supports 0.2 → 0.1 only)",
+        repo.profile.id(),
+        target.id(),
+    )))
+}
+
 /// Build the profile's view of a concept from the hot tier.
 pub fn concept_view(
     repo: &Repository,
     hot: &rusqlite::Connection,
     c: &ConceptState,
     include_retracted: Option<(String, String, String)>,
+    export_profile: Option<&dyn wisp_profile::Profile>,
 ) -> Result<ConceptView> {
-    let managed: &[&str] = repo.profile.managed_keys();
+    let managed: &[&str] = profile_for_render(repo, export_profile).managed_keys();
     let entries: Vec<(String, String)> = Hot::frontmatter_of(hot, c.concept)?
         .into_iter()
         .filter(|e| !managed.contains(&e.key.as_str()) && e.key != repo.identity_key())
@@ -191,6 +220,36 @@ fn detect_line_ending(hot: &rusqlite::Connection, concept: ConceptId) -> Result<
     Ok("\n".into())
 }
 
+fn append_citations_downexport(
+    out: &mut String,
+    view: &ConceptView,
+    sections: &[wisp_store::SectionState],
+    le: &str,
+    export_profile: Option<&dyn wisp_profile::Profile>,
+    repo_profile: &dyn wisp_profile::Profile,
+) {
+    let prof = export_profile.unwrap_or(repo_profile);
+    if prof.okf_version() != "0.1" || repo_profile.okf_version() != "0.2" || view.sources.is_empty() {
+        return;
+    }
+    if sections
+        .iter()
+        .any(|s| s.heading.eq_ignore_ascii_case("citations"))
+    {
+        return;
+    }
+    out.push_str(&format!("## Citations{le}{le}"));
+    for src in &view.sources {
+        if let Some(t) = src
+            .get("title")
+            .and_then(|x| x.as_str())
+            .filter(|s| !s.is_empty())
+        {
+            out.push_str(&format!("- {t}{le}"));
+        }
+    }
+}
+
 /// Render a concept file: frontmatter via the profile, then the sections with anchors and erasure markers.
 pub fn render_concept(
     repo: &Repository,
@@ -198,10 +257,12 @@ pub fn render_concept(
     c: &ConceptState,
     strip_anchors: bool,
     retracted: Option<(String, String, String)>,
+    export_profile: Option<&dyn wisp_profile::Profile>,
 ) -> Result<String> {
-    let view = concept_view(repo, hot, c, retracted)?;
+    let prof = profile_for_render(repo, export_profile);
+    let view = concept_view(repo, hot, c, retracted, export_profile)?;
     let le = view.line_ending.clone();
-    let mut out = repo.profile.render_frontmatter(&view, repo.identity_key());
+    let mut out = prof.render_frontmatter(&view, repo.identity_key());
     let sections = Hot::sections_of(hot, c.concept)?;
     let markers = if repo.manifest.render.erasure_markers {
         Hot::erased_markers(hot, c.concept)?
@@ -247,6 +308,14 @@ pub fn render_concept(
         v
     });
     out.push_str(&body);
+    append_citations_downexport(
+        &mut out,
+        &view,
+        &sections,
+        &le,
+        export_profile,
+        &*repo.profile,
+    );
     if sections.is_empty() {
         // Nothing left to anchor the markers to: they follow the frontmatter.
         for (s, _, r) in &markers {
@@ -297,7 +366,9 @@ pub fn render_views(
     repo: &Repository,
     hot: &rusqlite::Connection,
     ref_name: &str,
+    export_profile: Option<&dyn wisp_profile::Profile>,
 ) -> Result<RenderedViews> {
+    let prof = profile_for_render(repo, export_profile);
     let concepts = Hot::concepts(hot)?;
     let dirs = view_dirs(&concepts);
     let mut files = Vec::new();
@@ -419,7 +490,7 @@ pub fn render_views(
             concepts: here,
             subdirs,
         };
-        let idx = repo.profile.render_index(&view);
+        let idx = prof.render_index(&view);
         let entries: Vec<LogEntry> = log
             .iter()
             .filter(|(p, _)| match p {
@@ -428,7 +499,7 @@ pub fn render_views(
             })
             .map(|(_, e)| e.clone())
             .collect();
-        let lg = repo.profile.render_log(&view, &entries);
+        let lg = prof.render_log(&view, &entries);
         files.push((format!("{prefix}index.md"), idx));
         files.push((format!("{prefix}log.md"), lg));
     }
@@ -445,6 +516,26 @@ pub fn write_tree(
     include_retracted: bool,
     remove_stale: bool,
 ) -> Result<CheckoutIndex> {
+    write_tree_export_profile(
+        repo,
+        ref_name,
+        dir,
+        strip_anchors,
+        include_retracted,
+        remove_stale,
+        None,
+    )
+}
+
+pub fn write_tree_export_profile(
+    repo: &mut Repository,
+    ref_name: &str,
+    dir: &Path,
+    strip_anchors: bool,
+    include_retracted: bool,
+    remove_stale: bool,
+    export_profile: Option<&dyn wisp_profile::Profile>,
+) -> Result<CheckoutIndex> {
     let head = repo.head(ref_name)?;
     repo.hot(ref_name)?;
     let hot = repo.hots.remove(ref_name).expect("hot");
@@ -457,6 +548,7 @@ pub fn write_tree(
         strip_anchors,
         include_retracted,
         remove_stale,
+        export_profile,
     );
     repo.hots.insert(ref_name.to_string(), hot);
     res
@@ -472,6 +564,7 @@ fn write_tree_with(
     strip_anchors: bool,
     include_retracted: bool,
     remove_stale: bool,
+    export_profile: Option<&dyn wisp_profile::Profile>,
 ) -> Result<CheckoutIndex> {
     let conn = hot.conn();
     let mut idx = CheckoutIndex {
@@ -482,7 +575,7 @@ fn write_tree_with(
     let concepts = Hot::concepts(conn)?;
     let mut written: BTreeSet<PathBuf> = BTreeSet::new();
     for c in &concepts {
-        let text = render_concept(repo, conn, c, strip_anchors, None)?;
+        let text = render_concept(repo, conn, c, strip_anchors, None, export_profile)?;
         let rel = format!("{}.md", c.path);
         let p = dir.join(&rel);
         write_atomic(&p, text.as_bytes())?;
@@ -515,6 +608,7 @@ fn write_tree_with(
                     &c2,
                     strip_anchors,
                     Some((at, repo.actor_display(actor), reason)),
+                    export_profile,
                 )?;
                 let rel = format!("{}.md", path);
                 let p = dir.join(&rel);
@@ -533,7 +627,7 @@ fn write_tree_with(
         );
         idx.assets.insert(a.path.clone(), (a.asset, a.version));
     }
-    let views = render_views(repo, conn, ref_name)?;
+    let views = render_views(repo, conn, ref_name, export_profile)?;
     for (rel, content) in views.files {
         let p = dir.join(&rel);
         write_atomic(&p, content.as_bytes())?;
@@ -621,18 +715,51 @@ pub fn checkout(
     strip_anchors: bool,
     include_retracted: bool,
 ) -> Result<CheckoutIndex> {
+    checkout_with_profile(repo, ref_name, to, None, strip_anchors, include_retracted)
+}
+
+/// Checkout or export to a directory, optionally down-exporting to an older OKF profile.
+pub fn checkout_with_profile(
+    repo: &mut Repository,
+    ref_name: &str,
+    to: Option<&Path>,
+    profile: Option<&str>,
+    strip_anchors: bool,
+    include_retracted: bool,
+) -> Result<CheckoutIndex> {
+    let export_profile = match profile {
+        None => None,
+        Some(p) => export_profile_for(repo, p)?,
+    };
+    if export_profile.is_some() && to.is_none() {
+        return Err(WispError::usage(
+            "checkout --profile for down-export requires --to <dir>",
+        ));
+    }
     let dir = to
         .map(|p| p.to_path_buf())
         .unwrap_or_else(|| repo.root.clone());
     std::fs::create_dir_all(&dir)?;
-    let idx = write_tree(
-        repo,
-        ref_name,
-        &dir,
-        strip_anchors,
-        include_retracted,
-        to.is_none(),
-    )?;
+    let idx = if let Some(ref prof) = export_profile {
+        write_tree_export_profile(
+            repo,
+            ref_name,
+            &dir,
+            strip_anchors,
+            include_retracted,
+            false,
+            Some(prof.as_ref()),
+        )?
+    } else {
+        write_tree(
+            repo,
+            ref_name,
+            &dir,
+            strip_anchors,
+            include_retracted,
+            to.is_none(),
+        )?
+    };
     if to.is_none() {
         idx.save(&checkout_idx_path(repo, &dir))?;
     }

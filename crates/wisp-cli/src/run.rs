@@ -341,17 +341,13 @@ pub fn run(cli: Cli) -> CliResult {
             include_retracted,
             strip_anchors,
         } => {
-            if profile.is_some() {
-                return Err(WispError::not_implemented(
-                    "checkout --profile (down-export)",
-                ));
-            }
             let mut repo = open(&cli)?;
             let ref_name = ref_of(&repo, r#ref);
-            let idx = wisp_engine::checkout::checkout(
+            let idx = wisp_engine::checkout::checkout_with_profile(
                 &mut repo,
                 &ref_name,
                 to.as_deref(),
+                profile.as_deref(),
                 *strip_anchors,
                 *include_retracted,
             )?;
@@ -699,7 +695,27 @@ pub fn run(cli: Cli) -> CliResult {
                 )?,
             ))
         }
-        Command::Worktree { .. } => Err(WispError::not_implemented("worktree (M7)")),
+        Command::Worktree { cmd } => {
+            let mut repo = open(&cli)?;
+            match cmd {
+                WorktreeCmd::Add {
+                    name,
+                    branch,
+                    from,
+                    path,
+                } => Ok(Output::json(wisp_engine::worktree::add(
+                    &mut repo,
+                    name,
+                    branch.as_deref(),
+                    from.as_deref(),
+                    path.as_deref(),
+                )?)),
+                WorktreeCmd::List => Ok(Output::json(wisp_engine::worktree::list(&repo)?)),
+                WorktreeCmd::Remove { name, force } => Ok(Output::json(
+                    wisp_engine::worktree::remove(&mut repo, name, *force)?,
+                )),
+            }
+        }
         Command::Remote { cmd } => {
             let mut repo = open(&cli)?;
             match cmd {
@@ -756,9 +772,6 @@ pub fn run(cli: Cli) -> CliResult {
             r#ref,
             strip_anchors,
         } => {
-            if profile.is_some() {
-                return Err(WispError::not_implemented("export --profile (down-export)"));
-            }
             match (git, archive) {
                 (Some(_), _) => wisp_git::export_git().map(Output::json),
                 (None, Some(file)) => {
@@ -766,15 +779,21 @@ pub fn run(cli: Cli) -> CliResult {
                     let mut repo = open(&cli)?;
                     let ref_name = ref_of(&repo, r#ref);
                     let dir = file.with_extension("");
-                    wisp_engine::checkout::checkout(
+                    let idx = wisp_engine::checkout::checkout_with_profile(
                         &mut repo,
                         &ref_name,
                         Some(&dir),
+                        profile.as_deref(),
                         *strip_anchors,
                         false,
                     )?;
                     Ok(Output::json(
-                        json!({ "exported_dir": dir.display().to_string(), "note": "tar.zst packaging is not built in; the directory is a complete OKF bundle" }),
+                        json!({
+                            "exported_dir": dir.display().to_string(),
+                            "profile": profile,
+                            "files": idx.files.len(),
+                            "note": "tar.zst packaging is not built in; the directory is a complete OKF bundle"
+                        }),
                     ))
                 }
                 (None, None) => Err(WispError::usage("export --git <dir> | --archive <file>")),

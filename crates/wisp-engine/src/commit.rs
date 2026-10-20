@@ -842,6 +842,80 @@ fn enrich_conflicts(
         .collect()
 }
 
+/// Record a two-parent merge changeset on `ref_name` and advance its head (§11.5).
+pub fn record_merge(
+    repo: &mut Repository,
+    ref_name: &str,
+    into_head: ChangesetId,
+    source_head: ChangesetId,
+) -> Result<ChangesetId> {
+    let (actor_id, _kind, new_actor) = resolve_actor(repo, "process:wisp-merge")?;
+    let now = now_rfc3339();
+    let cs_id = ChangesetId::new();
+    let mut changes: Vec<Change> = Vec::new();
+    if let Some((row, name_payload)) = &new_actor {
+        changes.push(Change {
+            id: ChangeId::new(),
+            changeset: cs_id,
+            ordinal: 0,
+            op: Op::RegisterActor,
+            target: Target::Actor { actor: row.id },
+            scope: row.scope,
+            payload: Some(name_payload.reference),
+            note: None,
+            inputs: vec![],
+            valid: None,
+            lineage: None,
+            origin: None,
+            reason: None,
+        });
+    }
+    let message = repo.prepare_payload(
+        repo.repo_scope(),
+        PayloadKind::Message,
+        b"merge",
+    )?;
+    let parents = vec![into_head, source_head];
+    let mut parent_digests = Vec::new();
+    let tx = repo.ledger.begin_immediate()?;
+    for p in &parents {
+        let row = Ledger::get_changeset(&tx, *p)?
+            .ok_or_else(|| WispError::integrity("merge parent missing"))?;
+        parent_digests.push(row.changeset.digest);
+    }
+    let digest = canonical::changeset_digest(
+        cs_id,
+        actor_id,
+        &now,
+        &parent_digests,
+        Some(into_head),
+        Some(&message.reference),
+        &changes,
+    );
+    let cs = Changeset {
+        id: cs_id,
+        parents,
+        based_on: Some(into_head),
+        actor_id,
+        at: now,
+        message: Some(message.reference),
+        digest,
+        sig: None,
+    };
+    if let Some((row, name_payload)) = &new_actor {
+        Ledger::insert_scope(&tx, row.scope, &ScopeKind::Actor { actor: row.id })?;
+        Ledger::insert_actor(&tx, row)?;
+        stage(&tx, name_payload)?;
+    }
+    stage(&tx, &message)?;
+    let _seq = Ledger::insert_changeset(&tx, &cs, &changes)?;
+    Ledger::set_head(&tx, ref_name, cs_id)?;
+    tx.commit()
+        .map_err(|e| WispError::internal(e.to_string()))?;
+    repo.ledger.flush_staged()?;
+    Ok(cs_id)
+}
+
 fn content_of(op: Op, pt: &[u8]) -> Value {
     match op {
         Op::AddSection | Op::UpdateSection | Op::Split | Op::MoveSection => {

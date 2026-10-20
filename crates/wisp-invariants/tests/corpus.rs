@@ -152,7 +152,11 @@ fn corpus_bundles_record_and_validate() {
 
 #[test]
 fn corpus_match_scenarios() {
-    for spec in &catalog().scenario {
+    for spec in catalog()
+        .scenario
+        .iter()
+        .filter(|s| s.id.starts_with("match."))
+    {
         let scenario = load_match_scenario(spec).unwrap();
         let parsed = parse_file(&scenario.input);
         let prior: Vec<PriorSection> = scenario
@@ -246,4 +250,77 @@ fn corpus_v01_migration_plan_nonempty() {
     let plan = wisp_engine::query::migrate(&mut repo, MAIN_REF, "0.2", true).unwrap();
     let n = plan["steps"].as_u64().unwrap_or(0);
     assert!(n > 0, "v01 bundle should produce migration steps, got {plan}");
+}
+
+#[test]
+fn corpus_v01_migrate_and_validate() {
+    let cat = catalog();
+    let spec = cat.bundle("v01-migration").expect("v01-migration");
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path().join("bundle");
+    let mut repo = init_and_record_bundle(spec, &root, &unlock()).unwrap();
+
+    let migrated = wisp_engine::query::migrate(&mut repo, MAIN_REF, "0.2", false).unwrap();
+    assert_eq!(migrated["migrated_to"], "0.2");
+    assert!(migrated["changeset"].is_string());
+
+    let v = wisp_engine::query::validate(&mut repo, MAIN_REF, None, false).unwrap();
+    assert_eq!(v["profile"], "okf-0.2");
+
+    let export_02 = dir.path().join("export-02");
+    wisp_engine::checkout::checkout(&mut repo, MAIN_REF, Some(&export_02), false, false)
+        .unwrap();
+    let decision_02 =
+        std::fs::read_to_string(export_02.join("docs/decision.md")).unwrap();
+    assert!(
+        decision_02.contains("generated:"),
+        "0.2 export should use generated, got:\n{decision_02}"
+    );
+    assert!(
+        decision_02.contains("sources:"),
+        "0.2 export should list sources, got:\n{decision_02}"
+    );
+    assert!(
+        !decision_02.contains("timestamp:"),
+        "timestamp should be migrated away:\n{decision_02}"
+    );
+    assert!(
+        !decision_02.contains("## Citations"),
+        "Citations section should become sources:\n{decision_02}"
+    );
+
+    let export_01 = dir.path().join("export-01");
+    wisp_engine::checkout::checkout_with_profile(
+        &mut repo,
+        MAIN_REF,
+        Some(&export_01),
+        Some("0.1"),
+        false,
+        false,
+    )
+    .unwrap();
+    let decision_01 =
+        std::fs::read_to_string(export_01.join("docs/decision.md")).unwrap();
+    assert!(
+        decision_01.contains("timestamp:"),
+        "down-export should emit okf-0.1 timestamp, got:\n{decision_01}"
+    );
+    assert!(
+        !decision_01.contains("generated:"),
+        "0.1 down-export should not emit generated:\n{decision_01}"
+    );
+    assert!(
+        decision_01.contains("## Citations"),
+        "down-export should restore Citations section:\n{decision_01}"
+    );
+    assert!(
+        decision_01.contains("Smith et al. 2024"),
+        "citation items should round-trip:\n{decision_01}"
+    );
+    assert!(
+        !decision_01.contains("sources:"),
+        "0.1 down-export should not emit sources frontmatter:\n{decision_01}"
+    );
+    assert!(wisp_engine::query::fsck(&mut repo).is_ok());
+    assert!(wisp_engine::query::hot_check(&mut repo, MAIN_REF).is_ok());
 }

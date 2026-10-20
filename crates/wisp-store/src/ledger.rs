@@ -170,6 +170,14 @@ pub struct Ledger {
     wisp_dir: PathBuf,
 }
 
+#[derive(Debug, Clone)]
+pub struct WorktreeRow {
+    pub name: String,
+    pub path: String,
+    pub ref_name: String,
+    pub created_at: String,
+}
+
 impl Ledger {
     pub fn open(wisp_dir: &Path, busy_timeout_ms: u64) -> Result<Self> {
         let path = wisp_dir.join("ledger.db");
@@ -251,6 +259,83 @@ impl Ledger {
         conn.execute("DELETE FROM refs WHERE name = ?1", params![name])
             .map_err(sql_err)?;
         Ok(())
+    }
+
+    // ---- worktrees ----
+
+    pub fn insert_worktree(
+        conn: &Connection,
+        name: &str,
+        path: &str,
+        ref_name: &str,
+        created_at: &str,
+    ) -> Result<()> {
+        conn.execute(
+            "INSERT INTO worktrees (name, path, ref, created_at) VALUES (?1, ?2, ?3, ?4)",
+            params![name, path, ref_name, created_at],
+        )
+        .map_err(sql_err)?;
+        Ok(())
+    }
+
+    pub fn delete_worktree(conn: &Connection, name: &str) -> Result<bool> {
+        let n = conn
+            .execute("DELETE FROM worktrees WHERE name = ?1", params![name])
+            .map_err(sql_err)?;
+        Ok(n > 0)
+    }
+
+    pub fn get_worktree(conn: &Connection, name: &str) -> Result<Option<WorktreeRow>> {
+        conn.query_row(
+            "SELECT name, path, ref, created_at FROM worktrees WHERE name = ?1",
+            params![name],
+            |r| {
+                Ok(WorktreeRow {
+                    name: r.get(0)?,
+                    path: r.get(1)?,
+                    ref_name: r.get(2)?,
+                    created_at: r.get(3)?,
+                })
+            },
+        )
+        .optional()
+        .map_err(sql_err)
+    }
+
+    pub fn worktree_by_ref(conn: &Connection, ref_name: &str) -> Result<Option<WorktreeRow>> {
+        conn.query_row(
+            "SELECT name, path, ref, created_at FROM worktrees WHERE ref = ?1",
+            params![ref_name],
+            |r| {
+                Ok(WorktreeRow {
+                    name: r.get(0)?,
+                    path: r.get(1)?,
+                    ref_name: r.get(2)?,
+                    created_at: r.get(3)?,
+                })
+            },
+        )
+        .optional()
+        .map_err(sql_err)
+    }
+
+    pub fn list_worktrees(conn: &Connection) -> Result<Vec<WorktreeRow>> {
+        let mut st = conn
+            .prepare("SELECT name, path, ref, created_at FROM worktrees ORDER BY name")
+            .map_err(sql_err)?;
+        let rows = st
+            .query_map([], |r| {
+                Ok(WorktreeRow {
+                    name: r.get(0)?,
+                    path: r.get(1)?,
+                    ref_name: r.get(2)?,
+                    created_at: r.get(3)?,
+                })
+            })
+            .map_err(sql_err)?
+            .filter_map(|r| r.ok())
+            .collect();
+        Ok(rows)
     }
 
     // ---- changesets ----
@@ -370,6 +455,38 @@ impl Ledger {
                 Ok(Some(ChangesetRow { seq, changeset: cs }))
             }
         }
+    }
+
+    /// All changesets reachable from `head` (parents + `based_on`), oldest-first, each id once.
+    pub fn changesets_closure(conn: &Connection, head: ChangesetId) -> Result<Vec<ChangesetRow>> {
+        use std::collections::{HashSet, VecDeque};
+        let mut seen = HashSet::new();
+        let mut stack = VecDeque::from([head]);
+        let mut rows = Vec::new();
+        while let Some(id) = stack.pop_front() {
+            if !seen.insert(id) {
+                continue;
+            }
+            let Some(row) = Self::get_changeset(conn, id)? else {
+                continue;
+            };
+            if let Some(b) = row.changeset.based_on {
+                stack.push_back(b);
+            }
+            for p in &row.changeset.parents {
+                stack.push_back(*p);
+            }
+            rows.push(row);
+        }
+        rows.sort_by_key(|r| r.seq);
+        let mut out = Vec::new();
+        let mut ids = HashSet::new();
+        for r in rows {
+            if ids.insert(r.changeset.id) {
+                out.push(r);
+            }
+        }
+        Ok(out)
     }
 
     /// All changesets in seq order (oldest first).

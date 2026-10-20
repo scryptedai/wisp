@@ -11,6 +11,7 @@ pub mod payloads;
 pub mod query;
 pub mod record;
 pub mod repo;
+pub mod worktree;
 
 pub use repo::{Repository, Unlock, MAIN_REF};
 

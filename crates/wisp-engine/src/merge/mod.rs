@@ -1,5 +1,11 @@
 //! Ref merge (§11.5): fast-forward and divergent conflict detection.
 
+mod detect;
+mod replay;
+
+pub use detect::{analyze_divergence, changes_same_commitment, DivergenceAnalysis, ScopeKey};
+pub use replay::ordered_changeset_ids;
+
 use crate::checkout;
 use crate::commit::record_merge;
 use crate::query;
@@ -29,6 +35,29 @@ pub fn merge_skips_for_head(
     ref_name: &str,
     head: ChangesetId,
 ) -> Option<HashSet<ChangeId>> {
+    let conn = repo.ledger.conn();
+    let mut cur = Some(head);
+    let mut seen = HashSet::new();
+    while let Some(id) = cur {
+        if !seen.insert(id) {
+            break;
+        }
+        if let Some(skip) = merge_skips_at_exact_head(repo, ref_name, id) {
+            return Some(skip);
+        }
+        cur = Ledger::get_changeset(conn, id)
+            .ok()
+            .flatten()
+            .and_then(|r| r.changeset.based_on);
+    }
+    None
+}
+
+fn merge_skips_at_exact_head(
+    repo: &Repository,
+    ref_name: &str,
+    head: ChangesetId,
+) -> Option<HashSet<ChangeId>> {
     let path = merge_skip_path(repo, ref_name);
     let Ok(text) = fs::read_to_string(&path) else {
         return None;
@@ -52,6 +81,7 @@ pub fn merge_skips_for_head(
     }
 }
 
+/// Persist change ids to skip when rebuilding hot state for `head` on `ref_name`.
 pub fn persist_merge_skips(
     repo: &Repository,
     ref_name: &str,
@@ -73,6 +103,7 @@ pub fn persist_merge_skips(
     Ok(())
 }
 
+/// Remove merge skip metadata for a ref (fast-forward / clean merge).
 pub fn clear_merge_skips(repo: &Repository, ref_name: &str) -> Result<()> {
     let path = merge_skip_path(repo, ref_name);
     if path.is_file() {
@@ -140,9 +171,8 @@ pub fn merge_refs(
         .ok_or_else(|| WispError::conflict("no common ancestor", json!([])))?;
     let into_cs = changesets_since(conn, into_head, base);
     let source_cs = changesets_since(conn, source_head, base);
-    let into_keys = scope_keys_for_changesets(conn, &into_cs)?;
-    let source_keys = scope_keys_for_changesets(conn, &source_cs)?;
-    let conflicts = divergent_conflicts(conn, &into_keys, &source_keys)?;
+    let analysis = detect::analyze_divergence(conn, &into_cs, &source_cs)?;
+    let conflicts = analysis.conflicts;
     if !conflicts.is_empty() {
         if resolutions.is_none() {
             write_merge_state(repo, source, into, base, into_head, source_head, &conflicts)?;
@@ -156,7 +186,8 @@ pub fn merge_refs(
                 }),
             ));
         }
-        let skip = skip_changes_from_resolutions(&conflicts, resolutions.unwrap())?;
+        let mut skip = skip_changes_from_resolutions(&conflicts, resolutions.unwrap())?;
+        skip.extend(analysis.erase_skips.iter().copied());
         let merge_id = record_merge(repo, into, into_head, source_head)?;
         persist_merge_skips(repo, into, merge_id, &skip)?;
         repo.hots.remove(into);
@@ -171,13 +202,22 @@ pub fn merge_refs(
             "merge": merge_id.to_string(),
             "head": merge_id.to_string(),
             "resolved": conflicts.len(),
+            "erase_wins": analysis.erase_reports,
         }));
     }
 
     let merge_id = record_merge(repo, into, into_head, source_head)?;
-    clear_merge_skips(repo, into)?;
+    if !analysis.erase_skips.is_empty() {
+        persist_merge_skips(repo, into, merge_id, &analysis.erase_skips)?;
+    } else {
+        clear_merge_skips(repo, into)?;
+    }
     repo.hots.remove(into);
-    crate::apply::rebuild_hot(repo, into)?;
+    if analysis.erase_skips.is_empty() {
+        crate::apply::rebuild_hot(repo, into)?;
+    } else {
+        crate::apply::rebuild_hot_skipping(repo, into, &analysis.erase_skips)?;
+    }
     finish_merge_checkout(repo, into)?;
     clear_merge_state(repo)?;
     Ok(json!({
@@ -188,6 +228,7 @@ pub fn merge_refs(
         "merge": merge_id.to_string(),
         "head": merge_id.to_string(),
         "changesets_replayed": source_cs.len(),
+        "erase_wins": analysis.erase_reports,
     }))
 }
 
@@ -258,6 +299,19 @@ struct ResolutionEntry {
     take: String,
 }
 
+fn change_ids_from_conflict(conflict: &Value, field: &str) -> Vec<ChangeId> {
+    conflict
+        .get(field)
+        .and_then(|v| v.as_array())
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|s| s.as_str())
+                .filter_map(|s| ChangeId::from_str(s).ok())
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
 fn skip_changes_from_resolutions(conflicts: &[Value], path: &Path) -> Result<HashSet<ChangeId>> {
     let text =
         fs::read_to_string(path).map_err(|e| WispError::usage(format!("read resolutions: {e}")))?;
@@ -281,8 +335,22 @@ fn skip_changes_from_resolutions(conflicts: &[Value], path: &Path) -> Result<Has
         let theirs = ChangeId::from_str(theirs_s)
             .map_err(|_| WispError::usage("invalid theirs change id in conflict"))?;
         match entry.take.as_str() {
-            "ours" => skip.insert(theirs),
-            "theirs" => skip.insert(ours),
+            "ours" => {
+                let chain = change_ids_from_conflict(c, "source_changes");
+                if chain.is_empty() {
+                    skip.insert(theirs);
+                } else {
+                    skip.extend(chain);
+                }
+            }
+            "theirs" => {
+                let chain = change_ids_from_conflict(c, "into_changes");
+                if chain.is_empty() {
+                    skip.insert(ours);
+                } else {
+                    skip.extend(chain);
+                }
+            }
             other => {
                 return Err(WispError::usage(format!(
                     "take must be \"ours\" or \"theirs\", got {other:?}"
@@ -310,6 +378,7 @@ fn fast_forward(
     Ok(())
 }
 
+/// Whether `ancestor` appears on the `based_on` / parent graph above `desc`.
 pub fn is_ancestor(
     conn: &rusqlite::Connection,
     ancestor: ChangesetId,
@@ -339,7 +408,8 @@ pub fn is_ancestor(
     Ok(false)
 }
 
-fn merge_base(
+/// Greatest common ancestor of two changesets (by ledger seq).
+pub fn merge_base(
     conn: &rusqlite::Connection,
     a: ChangesetId,
     b: ChangesetId,
@@ -382,106 +452,72 @@ fn ancestry_with_seq(
     Ok(out)
 }
 
-/// Changesets on the `based_on` chain from `base` (exclusive) to `head` (inclusive), oldest first.
+/// Changesets from `base` (exclusive) to `head` (inclusive), oldest first.
+///
+/// Follows `based_on` for linear history and expands two-parent merge nodes so both
+/// parent histories are included (needed for nested merges and post-merge linear commits).
 pub fn changesets_since(
     conn: &rusqlite::Connection,
     head: ChangesetId,
     base: ChangesetId,
 ) -> Vec<ChangesetId> {
-    let mut path = Vec::new();
-    let mut cur = Some(head);
-    while let Some(id) = cur {
-        if id == base {
+    changesets_since_inner(conn, head, base).unwrap_or_default()
+}
+
+pub(crate) fn dedupe_changesets_preserve_order(ids: Vec<ChangesetId>) -> Vec<ChangesetId> {
+    let mut seen = HashSet::new();
+    let mut out = Vec::with_capacity(ids.len());
+    for id in ids {
+        if seen.insert(id) {
+            out.push(id);
+        }
+    }
+    out
+}
+
+fn changesets_since_inner(
+    conn: &rusqlite::Connection,
+    head: ChangesetId,
+    base: ChangesetId,
+) -> Result<Vec<ChangesetId>> {
+    if head == base {
+        return Ok(vec![]);
+    }
+    let row = Ledger::get_changeset(conn, head)?
+        .ok_or_else(|| WispError::internal("changesets_since: missing head"))?;
+    if row.changeset.parents.len() == 2 {
+        let into = row.changeset.parents[0];
+        let source = row.changeset.parents[1];
+        let mb = merge_base(conn, into, source)?
+            .ok_or_else(|| WispError::integrity("changesets_since: merge without base"))?;
+        let floor = if is_ancestor(conn, base, mb)? {
+            base
+        } else {
+            mb
+        };
+        let mut out = changesets_since_inner(conn, into, floor)?;
+        out.extend(changesets_since_inner(conn, source, floor)?);
+        out.push(head);
+        return Ok(dedupe_changesets_preserve_order(out));
+    }
+    let mut newer_first = Vec::new();
+    let mut cur = head;
+    while cur != base {
+        let Some(r) = Ledger::get_changeset(conn, cur)? else {
             break;
+        };
+        if r.changeset.parents.len() == 2 {
+            let mut out = changesets_since_inner(conn, cur, base)?;
+            newer_first.reverse();
+            out.extend(newer_first);
+            return Ok(dedupe_changesets_preserve_order(out));
         }
-        path.push(id);
-        cur = Ledger::get_changeset(conn, id)
-            .ok()
-            .flatten()
-            .and_then(|r| r.changeset.based_on);
-    }
-    path.reverse();
-    path
-}
-
-#[derive(Clone, Debug, Hash, PartialEq, Eq)]
-enum ScopeKey {
-    Section(ConceptId, SectionId),
-    Frontmatter(ConceptId, String),
-    ConceptPath(ConceptId),
-    Source(ConceptId, String),
-    Asset(AssetId),
-    Other(String),
-}
-
-fn scope_key(c: &Change) -> ScopeKey {
-    match &c.target {
-        Target::Section { concept, section } => ScopeKey::Section(*concept, *section),
-        Target::FrontmatterKey {
-            concept,
-            key_commit,
-        } => ScopeKey::Frontmatter(*concept, hex::encode(key_commit.0)),
-        Target::Concept { concept } => ScopeKey::ConceptPath(*concept),
-        Target::Source { concept, source } => ScopeKey::Source(*concept, source.clone()),
-        Target::Asset { asset } => ScopeKey::Asset(*asset),
-        other => ScopeKey::Other(format!("{other:?}")),
-    }
-}
-
-fn scope_keys_for_changesets(
-    conn: &rusqlite::Connection,
-    ids: &[ChangesetId],
-) -> Result<HashMap<ScopeKey, ChangeId>> {
-    let mut map = HashMap::new();
-    for cs in ids {
-        for c in Ledger::changes_of(conn, *cs)? {
-            if c.op == Op::Verify {
-                continue;
-            }
-            let key = scope_key(&c);
-            map.insert(key, c.id);
+        newer_first.push(cur);
+        match r.changeset.based_on {
+            Some(b) => cur = b,
+            None => break,
         }
     }
-    Ok(map)
-}
-
-fn divergent_conflicts(
-    conn: &rusqlite::Connection,
-    into: &HashMap<ScopeKey, ChangeId>,
-    source: &HashMap<ScopeKey, ChangeId>,
-) -> Result<Vec<Value>> {
-    let mut out = Vec::new();
-    for (key, theirs) in source {
-        if let Some(ours) = into.get(key) {
-            if ours != theirs && !changes_same_commitment(conn, *ours, *theirs)? {
-                out.push(json!({
-                    "type": "scope_conflict",
-                    "scope": format!("{key:?}"),
-                    "ours": ours.to_string(),
-                    "theirs": theirs.to_string(),
-                }));
-            }
-        }
-    }
-    Ok(out)
-}
-
-/// §11.5: same section/frontmatter with the same payload commitment is not a conflict.
-fn changes_same_commitment(
-    conn: &rusqlite::Connection,
-    ours: ChangeId,
-    theirs: ChangeId,
-) -> Result<bool> {
-    let a = Ledger::get_change(conn, ours)?
-        .ok_or_else(|| WispError::internal("merge conflict scan: missing change"))?;
-    let b = Ledger::get_change(conn, theirs)?
-        .ok_or_else(|| WispError::internal("merge conflict scan: missing change"))?;
-    if a.op != b.op || a.target != b.target {
-        return Ok(false);
-    }
-    Ok(match (&a.payload, &b.payload) {
-        (Some(pa), Some(pb)) => pa.commit == pb.commit,
-        (None, None) => true,
-        _ => false,
-    })
+    newer_first.reverse();
+    Ok(newer_first)
 }

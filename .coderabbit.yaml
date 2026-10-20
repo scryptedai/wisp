@@ -8,17 +8,17 @@ reviews:
   auto_review:
     enabled: true
     drafts: false
+  path_filters:
+    - "!target/**"
+    - "!**/target/**"
+    - "!**/*.lock"
+    - "!docs/references/**"
+    - "crates/**"
+    - "docs/**"
+    - "*.md"
+    - ".github/**"
 chat:
   auto_reply: true
 knowledge_base:
   learnings:
     scope: auto
-path_filters:
-  - "!target/**"
-  - "!**/target/**"
-  - "!**/*.lock"
-  - "!docs/references/**"
-  - "crates/**"
-  - "docs/**"
-  - "*.md"
-  - ".github/**"

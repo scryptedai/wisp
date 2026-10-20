@@ -7,5 +7,5 @@
 pub const APPROX_CODEC: &str = "tok:approx:chars4";
 
 pub fn count(text: &str) -> usize {
-    (text.chars().count() + 3) / 4
+    text.chars().count().div_ceil(4)
 }

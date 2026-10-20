@@ -500,14 +500,16 @@ fn rebuild_hot_inner(
             keystore,
             repo_id,
         };
-        let chain = match head {
-            Some(h) => Ledger::changesets_closure(&ltx, h)?,
-            None => Vec::new(),
-        };
         let skip = skip_owned.as_ref();
         let tx = hot.begin()?;
         Hot::clear(&tx)?;
-        for row in &chain {
+        let changeset_ids = match head {
+            Some(h) => crate::merge::ordered_changeset_ids(&ltx, h)?,
+            None => Vec::new(),
+        };
+        for cs_id in changeset_ids {
+            let row = Ledger::get_changeset(&ltx, cs_id)?
+                .ok_or_else(|| WispError::internal("rebuild: missing changeset"))?;
             let changes = Ledger::changes_of(&ltx, row.changeset.id)?;
             let changes: Vec<Change> = match skip {
                 Some(skip) => changes

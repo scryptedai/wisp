@@ -1,12 +1,27 @@
 # Ref merge scenarios (§11.5)
 
-Integration contracts: `wisp-invariants/tests/merge_playbook.rs` calls `wisp_engine::merge::merge_refs`.
+Integration contracts live in **`wisp-invariants/tests/merge_playbook.rs`** (`wisp_engine::merge::merge_refs`). Narrative and tables: **`docs/MERGE.md`**.
 
-| Scenario | Bundle | Expected merge result |
-|----------|--------|------------------------|
-| `merge.disjoint-sections` | `warehouse` | `fast_forward` when only the branch commits; `merged` with disjoint replay when main and branch each touch different sections |
-| `merge.same-section-conflict` | `warehouse` | Exit **3** Conflict — `details.conflicts.type` is `merge_conflict` with `scope_conflict` rows |
+## Corpus scenarios (metadata in `scenario.toml`)
 
-Each folder has `scenario.toml` (catalog metadata). Steps are encoded in the playbook test, not as data-driven scripts.
+| Scenario id | Bundle | Playbook test | Expected |
+|-------------|--------|---------------|----------|
+| `merge.disjoint-sections` | `warehouse` | `merge_disjoint_sections_fast_forward_and_replay` | `fast_forward` when only the branch commits; `merged` when main and branch touch disjoint sections; `fsck` + `hot_check` on `main` |
+| `merge.same-section-conflict` | `warehouse` | `merge_same_section_conflict_contract` | Exit **3** Conflict; `--resolutions` with `take: theirs` completes merge |
 
-**Known engine gap:** after a divergent `merged` replay, `main`’s ref head is set to `source_head`, so `into`-only commits drop off the ref’s parent chain while the hot tier holds the combined state — `wisp fsck` reports `hot_mismatch` on `main`.
+Steps are encoded in Rust, not as data-driven scripts in each folder.
+
+## Additional playbook tests (no `scenario.toml`)
+
+| Test | Intent |
+|------|--------|
+| `merge_nested_second_divergence_hot_check` | Merge once, diverge again, resolve conflict; nested history + `hot_check` |
+| `merge_retract_survives_unrelated_branch_commit` | Branch retracts a concept then main diverges on another concept; merge replays retract |
+
+## Rule battery (separate runner)
+
+Per-row §11.5 rules: **`contrib/merge-rules/cases.toml`** and **`cargo test -p wisp-invariants --test merge_rules`**. Includes stacked branch edits + resolution (`rule_resolution_skips_stacked_branch_edits`).
+
+## Hot tier after merge
+
+Divergent merges rebuild hot state with **layered changeset order** and honor **`merge-skip.json`**. Playbook and rule tests assert **`wisp fsck`** and **`wisp hot-check`** on `main` after merge where applicable.

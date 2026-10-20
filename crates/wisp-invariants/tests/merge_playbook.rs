@@ -1,7 +1,8 @@
-//! Ref merge contracts (§11.5): fast-forward, disjoint replay, scope conflicts.
+//! Ref merge contracts (§11.5): fast-forward, disjoint replay, scope conflicts,
+//! nested merge, retract replay, resolutions + hot_check.
 //!
 //! Scenario metadata: `wisp-corpus/data/scenarios/merge/*/scenario.toml`
-//! Narrative: `wisp-corpus/data/scenarios/merge/README.md`
+//! Narrative: `wisp-corpus/data/scenarios/merge/README.md` and `docs/MERGE.md`
 
 mod spy_harness;
 
@@ -161,4 +162,106 @@ fn merge_same_section_conflict_contract() {
     assert_eq!(merged["status"], "merged");
     assert!(section_body(&mut repo, MAIN_REF, ord_sec).contains("STRING"));
     assert!(wisp_engine::query::fsck(&mut repo).is_ok());
+}
+
+#[test]
+fn merge_nested_second_divergence_hot_check() {
+    let (_dir, mut repo) = warehouse_repo();
+    let branch_a = "task/nested-a";
+    branch(&mut repo, branch_a, None).unwrap();
+    let (cust_sec, cust_ver) = section_at_ref(&mut repo, branch_a, "tables/customers", "Schema");
+    update_section_ref(
+        &mut repo,
+        branch_a,
+        "process:branch-bot/1.0",
+        "tables/customers",
+        cust_sec,
+        cust_ver,
+        "nested tier column\n",
+        "branch a",
+        vec![],
+    )
+    .unwrap();
+    merge_refs(&mut repo, branch_a, MAIN_REF, None, false).unwrap();
+    let branch_b = "task/nested-b";
+    branch(&mut repo, branch_b, None).unwrap();
+    let (ord_sec, ord_ver) = section_at_ref(&mut repo, branch_b, "tables/orders", "Schema");
+    update_section_ref(
+        &mut repo,
+        branch_b,
+        "process:branch-bot/1.0",
+        "tables/orders",
+        ord_sec,
+        ord_ver,
+        "nested orders edit\n",
+        "branch b",
+        vec![],
+    )
+    .unwrap();
+    let (_, ord_ver_m) = section_at(&mut repo, "tables/orders", "Schema");
+    update_section(
+        &mut repo,
+        "process:main-bot/1.0",
+        "tables/orders",
+        ord_sec,
+        ord_ver_m,
+        "main after first merge\n",
+        "main",
+        vec![],
+    )
+    .unwrap();
+    let err = merge_refs(&mut repo, branch_b, MAIN_REF, None, false).unwrap_err();
+    assert_eq!(err.code, ExitCode::Conflict);
+    let rows = err.details["conflicts"]["conflicts"].as_array().unwrap();
+    let ours = rows[0]["ours"].as_str().unwrap();
+    let theirs = rows[0]["theirs"].as_str().unwrap();
+    let res_path = _dir.path().join("res2.json");
+    std::fs::write(
+        &res_path,
+        format!(r#"{{"resolutions":[{{"ours":"{ours}","theirs":"{theirs}","take":"theirs"}}]}}"#),
+    )
+    .unwrap();
+    merge_refs(&mut repo, branch_b, MAIN_REF, Some(&res_path), false).unwrap();
+    assert!(section_body(&mut repo, MAIN_REF, cust_sec).contains("nested tier"));
+    assert!(section_body(&mut repo, MAIN_REF, ord_sec).contains("nested orders"));
+    assert!(wisp_engine::query::hot_check(&mut repo, MAIN_REF).is_ok());
+}
+
+#[test]
+fn merge_retract_survives_unrelated_branch_commit() {
+    let (_dir, mut repo) = warehouse_repo();
+    let branch_name = "task/retract-chain";
+    branch(&mut repo, branch_name, None).unwrap();
+    wisp_engine::erase::retract(
+        &mut repo,
+        branch_name,
+        "tables/orders",
+        wisp_model::Reason::Withdrawn,
+        None,
+        "human:alice",
+    )
+    .unwrap();
+    let (cust_sec, cust_ver) = section_at(&mut repo, "tables/customers", "Schema");
+    update_section(
+        &mut repo,
+        "process:main-bot/1.0",
+        "tables/customers",
+        cust_sec,
+        cust_ver,
+        "main customers diverge\n",
+        "main diverge",
+        vec![],
+    )
+    .unwrap();
+    let merged = merge_refs(&mut repo, branch_name, MAIN_REF, None, false).unwrap();
+    assert_eq!(merged["status"], "merged");
+    let hot = repo.hot(MAIN_REF).unwrap();
+    let retracted_paths: Vec<String> = Hot::retracted_all(hot.conn())
+        .unwrap()
+        .into_iter()
+        .map(|(_, p)| p)
+        .collect();
+    assert!(retracted_paths.iter().any(|p| p == "tables/orders"));
+    assert!(section_body(&mut repo, MAIN_REF, cust_sec).contains("main customers"));
+    assert!(wisp_engine::query::hot_check(&mut repo, MAIN_REF).is_ok());
 }

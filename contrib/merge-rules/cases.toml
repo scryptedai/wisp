@@ -1,0 +1,62 @@
+# §11.5 merge rule battery — one case per row in wisp_merge::RULES.
+# Implemented in crates/wisp-invariants/tests/merge_rules.rs
+
+[[case]]
+id = "same_section_same_commitment"
+rule = "same section, same final commitment"
+expect = "merged"
+
+[[case]]
+id = "same_section_different_content"
+rule = "same section, different final content"
+expect = "conflict"
+
+[[case]]
+id = "remove_vs_update"
+rule = "section removed on one side, updated on the other"
+expect = "conflict"
+
+[[case]]
+id = "frontmatter_same_commitment"
+rule = "same frontmatter entry, same parsed value"
+expect = "merged"
+
+[[case]]
+id = "frontmatter_different"
+rule = "same frontmatter entry, different values"
+expect = "conflict"
+
+[[case]]
+id = "verify_union"
+rule = "verify events"
+expect = "merged"
+
+[[case]]
+id = "section_order_layered"
+rule = "section order"
+expect = "merged"
+
+[[case]]
+id = "concept_path_move_conflict"
+rule = "different paths for the same concept"
+expect = "conflict"
+
+[[case]]
+id = "two_concepts_same_path"
+rule = "two concepts at the same path"
+expect = "record_rejected"
+
+[[case]]
+id = "retract_vs_update"
+rule = "retract on one side, content change on the other"
+expect = "conflict"
+
+[[case]]
+id = "set_status_conflict"
+rule = "set_status both sides, different values"
+expect = "conflict"
+
+[[case]]
+id = "erase_wins"
+rule = "erase on either side"
+expect = "merged_erase_wins"

@@ -4,7 +4,12 @@ use wisp_engine::merge::merge_refs;
 use wisp_engine::Repository;
 use wisp_model::Result;
 
-/// §11.5 merge rules: (both sides changed, result).
+pub use wisp_engine::merge::{
+    analyze_divergence, changes_same_commitment, ordered_changeset_ids, DivergenceAnalysis,
+    ScopeKey,
+};
+
+/// §11.5 merge rules: (both sides changed, result). Each row has a matching test in `merge_rules.rs` (see `contrib/merge-rules/cases.toml`).
 pub const RULES: &[(&str, &str)] = &[
     ("same section, same final commitment", "no conflict"),
     ("same section, different final content", "conflict"),

@@ -51,6 +51,8 @@ SPY desk narrative: `wisp-invariants/tests/spy_options_*.rs`, bundle `spy-option
 
 Search IR battery: edit **`contrib/search-battery/cases.toml` only** (Rust `search_battery.rs` and `run_battery.py` load it). See `contrib/search-battery/README.md`.
 
+Merge rule battery: edit **`contrib/merge-rules/cases.toml` only**; tests in `wisp-invariants/tests/merge_rules.rs`. See `contrib/merge-rules/README.md` and `docs/MERGE.md`.
+
 ## Coding norms
 
 - Match existing style in the file you edit; minimal diffs.

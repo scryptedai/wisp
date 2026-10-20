@@ -271,6 +271,11 @@ fn sync_trusted_scope_keys(src: &Repository, dst: &mut Repository) -> Result<usi
         if s.shredded || dst.keystore.has(s.id)? {
             continue;
         }
+        if let Some(local) = Ledger::scope(dst.ledger.conn(), s.id)? {
+            if local.shredded {
+                continue;
+            }
+        }
         if let Some(wrapped) = src.keystore.wrapped_blob(s.id)? {
             dst.keystore.put_wrapped(s.id, &wrapped)?;
             copied += 1;

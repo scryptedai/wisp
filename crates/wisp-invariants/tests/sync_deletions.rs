@@ -1,8 +1,9 @@
 //! Trusted replica sync: erasures and scope keys follow the source (§11.6 deletions win).
 
-use wisp_engine::erase::{erase, EraseTarget};
+use wisp_engine::erase::{erase, shred, EraseTarget};
 use wisp_engine::record::{record, RecordOptions};
 use wisp_engine::repo::{Repository, Unlock, MAIN_REF};
+use wisp_model::ChangeId;
 use wisp_model::Reason;
 use wisp_store::{Hot, Ledger};
 use wisp_sync::{init_trusted_replica, pull, push};
@@ -53,7 +54,7 @@ fn sync_pull_after_erase_drops_scope_keys() {
     erase(
         &mut a,
         MAIN_REF,
-        &EraseTarget::Path(format!("note#{}", section)),
+        &EraseTarget::Path(format!("note#{section}")),
         Reason::Policy,
         true,
         "human:sync",
@@ -70,6 +71,39 @@ fn sync_pull_after_erase_drops_scope_keys() {
     assert!(Hot::section(b.hot(MAIN_REF).unwrap().conn(), section)
         .unwrap()
         .is_none());
+}
+
+#[test]
+fn sync_pull_does_not_restore_keys_for_locally_shredded_scopes() {
+    let (_dir, mut a, mut b) = init_pair();
+    let a_root = a.root.clone();
+
+    let conn = a.hot(MAIN_REF).unwrap().conn();
+    let concept = Hot::concept_by_path(conn, "note").unwrap().unwrap();
+    let section = Hot::sections_of(conn, concept.concept).unwrap()[0].section;
+    let scope = Ledger::scope_of_section(a.ledger.conn(), section)
+        .unwrap()
+        .unwrap()
+        .id;
+
+    Ledger::mark_scope_erased(b.ledger.conn(), scope).unwrap();
+    Ledger::set_scope_payloads_absent(b.ledger.conn(), scope).unwrap();
+    shred(&mut b, &[scope], ChangeId::new(), &[]).unwrap();
+    assert!(!b.keystore.has(scope).unwrap());
+    assert!(
+        Ledger::scope(b.ledger.conn(), scope)
+            .unwrap()
+            .unwrap()
+            .shredded
+    );
+    assert!(a.keystore.has(scope).unwrap());
+    assert_eq!(
+        Ledger::head(a.ledger.conn(), MAIN_REF).unwrap(),
+        Ledger::head(b.ledger.conn(), MAIN_REF).unwrap()
+    );
+
+    pull(&mut b, &a_root, MAIN_REF, &Unlock::default()).unwrap();
+    assert!(!b.keystore.has(scope).unwrap());
 }
 
 #[test]

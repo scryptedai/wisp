@@ -222,6 +222,10 @@ impl Keystore {
 
     /// Copy a wrapped scope key from a trusted peer (same master key).
     pub fn put_wrapped(&self, scope: ScopeId, wrapped: &[u8]) -> Result<(), WispError> {
+        let pt = self.unwrap_raw(&scope.bytes(), wrapped)?;
+        if pt.len() != 32 {
+            return Err(WispError::integrity("scope key wrong length"));
+        }
         self.conn
             .execute(
                 "INSERT OR IGNORE INTO scope_keys (scope, wrapped) VALUES (?1, ?2)",
@@ -336,6 +340,15 @@ mod tests {
         let wrapped = a.wrapped_blob(s).unwrap().unwrap();
         b.put_wrapped(s, &wrapped).unwrap();
         assert_eq!(b.get(s).unwrap().unwrap().0, k.0);
+    }
+
+    #[test]
+    fn put_wrapped_rejects_bad_ciphertext() {
+        let dir = tempfile::tempdir().unwrap();
+        let master = MasterKey::from_file(&dir.path().join("master.key"), true).unwrap();
+        let ks = Keystore::open(&dir.path().join("keystore.db"), master).unwrap();
+        let s = ScopeId::new();
+        assert!(ks.put_wrapped(s, b"too-short").is_err());
     }
 
     #[test]

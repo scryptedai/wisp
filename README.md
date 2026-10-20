@@ -84,12 +84,12 @@ The keystore unlocks from, in order: `WISP_MASTER_KEY` (64 hex chars; CI), `--pa
 | M2 Cold tier and crypto (ledger, payload envelope, keystore, staging) | done |
 | M3 Hot tier, optimistic commits, record, checkout, views, okf-0.2 | done |
 | M4 Lifecycle and erase (retract/restore, groups, erase, fsck, policies, revert, backup) | done |
-| M5 Feed and search | feed, keyword search, pack, tokens (approx codec) done; embeddings and the external subscriber host pending |
-| M6 Profiles and migration | okf-0.1 profile and the 0.1→0.2 migration plan done; down-export pending |
-| M7 Concurrency and branches | headless writes, read assertions, branches, switch done; worktrees and merge pending |
-| M8 Sync, git interop, release | pending (`import <dir>` and `export --archive` render whole bundles today) |
+| M5 Feed and search | feed, keyword search, pack, tokens (approx codec), external subscriber host done; embeddings pending |
+| M6 Profiles and migration | okf-0.1 profile, 0.1→0.2 migration plan, down-export (`export --profile 0.1`) done |
+| M7 Concurrency and branches | headless writes, read assertions, branches, switch, worktrees, merge (fast-forward and disjoint replay) done; `merge --resolutions` pending |
+| M8 Sync, git interop, release | trusted local push/pull, `export --git` (single-commit), `serve --stdio` skeleton done; `import --git` deferred (`import <dir>` and `export --archive` render whole bundles today) |
 
-Invariants exercised in `cargo test`: I1, I2, I3 (parse layer and strip-anchors round-trip), I4, I5, I7, I12, I13, I16, I17, I19, I21, I22, I23, I24, I25 (staging flush on open).
+Invariants exercised in `cargo test`: I1, I2, I3 (parse layer and strip-anchors round-trip), I4, I5, I7, I12, I13, I16, I17, I19, I21, I22, I23, I24, I25 (staging flush on open); §11.5 merge playbook and §11.6 sync roundtrip integration tests in `wisp-invariants`.
 
 The **`wisp-corpus`** crate holds versioned OKF bundles (including a **SPY calls / news-signals** desk playbook under `bundles/spy-options/`), parse fixtures, and matcher scenarios (`catalog.toml`). **`wisp-invariants`** runs them on every CI build: record → validate → fsck → lossless strip (where tagged), plus §7.5 scenario tables. Add fixtures first, then implement until `cargo test -p wisp-invariants` passes.
 

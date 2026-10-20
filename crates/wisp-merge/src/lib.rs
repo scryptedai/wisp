@@ -3,7 +3,6 @@
 use wisp_engine::merge::merge_refs;
 use wisp_engine::Repository;
 use wisp_model::Result;
-use wisp_model::WispError;
 
 /// §11.5 merge rules: (both sides changed, result).
 pub const RULES: &[(&str, &str)] = &[
@@ -41,9 +40,4 @@ pub fn merge(
     abort: bool,
 ) -> Result<serde_json::Value> {
     merge_refs(repo, source, into, resolutions, abort)
-}
-
-/// Legacy stub entry (tests); prefer `merge(repo, ...)`.
-pub fn merge_stub() -> Result<serde_json::Value> {
-    Err(WispError::not_implemented("merge (M7)"))
 }

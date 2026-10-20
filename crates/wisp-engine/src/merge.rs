@@ -70,7 +70,7 @@ pub fn merge_refs(
     let source_cs = changesets_since(conn, source_head, base);
     let into_keys = scope_keys_for_changesets(conn, &into_cs)?;
     let source_keys = scope_keys_for_changesets(conn, &source_cs)?;
-    let conflicts = divergent_conflicts(&into_keys, &source_keys);
+    let conflicts = divergent_conflicts(conn, &into_keys, &source_keys)?;
     if !conflicts.is_empty() {
         return Err(WispError::conflict(
             "merge conflicts",
@@ -245,13 +245,14 @@ fn scope_keys_for_changesets(
 }
 
 fn divergent_conflicts(
+    conn: &rusqlite::Connection,
     into: &HashMap<ScopeKey, ChangeId>,
     source: &HashMap<ScopeKey, ChangeId>,
-) -> Vec<Value> {
+) -> Result<Vec<Value>> {
     let mut out = Vec::new();
     for (key, theirs) in source {
         if let Some(ours) = into.get(key) {
-            if ours != theirs {
+            if ours != theirs && !changes_same_commitment(conn, *ours, *theirs)? {
                 out.push(json!({
                     "type": "scope_conflict",
                     "scope": format!("{key:?}"),
@@ -261,5 +262,25 @@ fn divergent_conflicts(
             }
         }
     }
-    out
+    Ok(out)
+}
+
+/// §11.5: same section/frontmatter with the same payload commitment is not a conflict.
+fn changes_same_commitment(
+    conn: &rusqlite::Connection,
+    ours: ChangeId,
+    theirs: ChangeId,
+) -> Result<bool> {
+    let a = Ledger::get_change(conn, ours)?
+        .ok_or_else(|| WispError::internal("merge conflict scan: missing change"))?;
+    let b = Ledger::get_change(conn, theirs)?
+        .ok_or_else(|| WispError::internal("merge conflict scan: missing change"))?;
+    if a.op != b.op || a.target != b.target {
+        return Ok(false);
+    }
+    Ok(match (&a.payload, &b.payload) {
+        (Some(pa), Some(pb)) => pa.commit == pb.commit,
+        (None, None) => true,
+        _ => false,
+    })
 }

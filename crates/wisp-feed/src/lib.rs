@@ -82,10 +82,20 @@ pub fn run_external_subscribers(repo: &mut Repository) -> Result<Value> {
                     ack_line
                 ))
             })?;
+            let ev_seq = ev
+                .get("seq")
+                .and_then(|v| v.as_i64())
+                .ok_or_else(|| WispError::internal(format!("feed event missing seq")))?;
             let seq = ack
                 .get("ack")
                 .and_then(|v| v.as_i64())
                 .ok_or_else(|| WispError::internal(format!("ack missing seq from {}", sub.name)))?;
+            if seq != ev_seq {
+                return Err(WispError::internal(format!(
+                    "subscriber {} ack seq {seq} does not match event seq {ev_seq}",
+                    sub.name
+                )));
+            }
             Ledger::set_cursor(repo.ledger.conn(), &sub.name, seq)?;
             cursor = seq;
             delivered += 1;

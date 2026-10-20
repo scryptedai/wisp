@@ -248,16 +248,21 @@ fn copy_payload(
     if Ledger::payload_present(dst.ledger.conn(), pr.id)? {
         return Ok(0);
     }
+    let (meta_scope, kind, size) = match Ledger::payload_info(src.ledger.conn(), pr.id)? {
+        Some(info) => info,
+        None => return Ok(0),
+    };
     let Some(ct) = Ledger::read_payload_at(
         src.ledger.conn(),
         &src.ledger.payloads_dir(),
         pr.id,
     )?
     else {
-        return Ok(0);
+        return Err(WispError::integrity(format!(
+            "payload {} listed in ledger but bytes missing on source",
+            pr.id
+        )));
     };
-    let (meta_scope, kind, size) = Ledger::payload_info(src.ledger.conn(), pr.id)?
-        .ok_or_else(|| WispError::integrity(format!("payload {} missing on source", pr.id)))?;
     Ledger::insert_payload_row(dst.ledger.conn(), pr.id, meta_scope, kind, size)?;
     Ledger::stage_payload(dst.ledger.conn_mut(), pr.id, &ct)?;
     Ok(1)

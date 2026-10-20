@@ -35,6 +35,29 @@ pub fn merge_skips_for_head(
     ref_name: &str,
     head: ChangesetId,
 ) -> Option<HashSet<ChangeId>> {
+    let conn = repo.ledger.conn();
+    let mut cur = Some(head);
+    let mut seen = HashSet::new();
+    while let Some(id) = cur {
+        if !seen.insert(id) {
+            break;
+        }
+        if let Some(skip) = merge_skips_at_exact_head(repo, ref_name, id) {
+            return Some(skip);
+        }
+        cur = Ledger::get_changeset(conn, id)
+            .ok()
+            .flatten()
+            .and_then(|r| r.changeset.based_on);
+    }
+    None
+}
+
+fn merge_skips_at_exact_head(
+    repo: &Repository,
+    ref_name: &str,
+    head: ChangesetId,
+) -> Option<HashSet<ChangeId>> {
     let path = merge_skip_path(repo, ref_name);
     let Ok(text) = fs::read_to_string(&path) else {
         return None;
@@ -161,7 +184,8 @@ pub fn merge_refs(
                 }),
             ));
         }
-        let skip = skip_changes_from_resolutions(&conflicts, resolutions.unwrap())?;
+        let mut skip = skip_changes_from_resolutions(&conflicts, resolutions.unwrap())?;
+        skip.extend(analysis.erase_skips.iter().copied());
         let merge_id = record_merge(repo, into, into_head, source_head)?;
         persist_merge_skips(repo, into, merge_id, &skip)?;
         repo.hots.remove(into);
@@ -176,6 +200,7 @@ pub fn merge_refs(
             "merge": merge_id.to_string(),
             "head": merge_id.to_string(),
             "resolved": conflicts.len(),
+            "erase_wins": analysis.erase_reports,
         }));
     }
 
@@ -396,24 +421,72 @@ fn ancestry_with_seq(
     Ok(out)
 }
 
-/// Changesets on the `based_on` chain from `base` (exclusive) to `head` (inclusive), oldest first.
+/// Changesets from `base` (exclusive) to `head` (inclusive), oldest first.
+///
+/// Follows `based_on` for linear history and expands two-parent merge nodes so both
+/// parent histories are included (needed for nested merges and post-merge linear commits).
 pub fn changesets_since(
     conn: &rusqlite::Connection,
     head: ChangesetId,
     base: ChangesetId,
 ) -> Vec<ChangesetId> {
-    let mut path = Vec::new();
-    let mut cur = Some(head);
-    while let Some(id) = cur {
-        if id == base {
-            break;
+    changesets_since_inner(conn, head, base).unwrap_or_default()
+}
+
+pub(crate) fn dedupe_changesets_preserve_order(ids: Vec<ChangesetId>) -> Vec<ChangesetId> {
+    let mut seen = HashSet::new();
+    let mut out = Vec::with_capacity(ids.len());
+    for id in ids {
+        if seen.insert(id) {
+            out.push(id);
         }
-        path.push(id);
-        cur = Ledger::get_changeset(conn, id)
-            .ok()
-            .flatten()
-            .and_then(|r| r.changeset.based_on);
     }
-    path.reverse();
-    path
+    out
+}
+
+fn changesets_since_inner(
+    conn: &rusqlite::Connection,
+    head: ChangesetId,
+    base: ChangesetId,
+) -> Result<Vec<ChangesetId>> {
+    if head == base {
+        return Ok(vec![]);
+    }
+    let row = Ledger::get_changeset(conn, head)?
+        .ok_or_else(|| WispError::internal("changesets_since: missing head"))?;
+    if row.changeset.parents.len() == 2 {
+        let into = row.changeset.parents[0];
+        let source = row.changeset.parents[1];
+        let mb = merge_base(conn, into, source)?
+            .ok_or_else(|| WispError::integrity("changesets_since: merge without base"))?;
+        let floor = if is_ancestor(conn, base, mb)? {
+            base
+        } else {
+            mb
+        };
+        let mut out = changesets_since_inner(conn, into, floor)?;
+        out.extend(changesets_since_inner(conn, source, floor)?);
+        out.push(head);
+        return Ok(dedupe_changesets_preserve_order(out));
+    }
+    let mut newer_first = Vec::new();
+    let mut cur = head;
+    while cur != base {
+        let Some(r) = Ledger::get_changeset(conn, cur)? else {
+            break;
+        };
+        if r.changeset.parents.len() == 2 {
+            let mut out = changesets_since_inner(conn, cur, base)?;
+            newer_first.reverse();
+            out.extend(newer_first);
+            return Ok(dedupe_changesets_preserve_order(out));
+        }
+        newer_first.push(cur);
+        match r.changeset.based_on {
+            Some(b) => cur = b,
+            None => break,
+        }
+    }
+    newer_first.reverse();
+    Ok(newer_first)
 }

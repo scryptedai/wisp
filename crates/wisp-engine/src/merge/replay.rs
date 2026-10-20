@@ -4,7 +4,7 @@ use rusqlite::Connection;
 use wisp_model::ChangesetId;
 use wisp_store::Ledger;
 
-use super::{changesets_since, merge_base};
+use super::{changesets_since, dedupe_changesets_preserve_order, merge_base};
 
 pub fn ordered_changeset_ids(
     conn: &Connection,
@@ -29,5 +29,5 @@ pub fn ordered_changeset_ids(
     out.extend(changesets_since(conn, into_head, base));
     out.extend(changesets_since(conn, source_head, base));
     out.push(head);
-    Ok(out)
+    Ok(dedupe_changesets_preserve_order(out))
 }

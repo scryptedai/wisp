@@ -2,11 +2,11 @@
 
 use rusqlite::Connection;
 use serde_json::{json, Value};
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeSet, HashMap, HashSet};
 use wisp_model::*;
 use wisp_store::Ledger;
 
-#[derive(Clone, Debug, Hash, PartialEq, Eq)]
+#[derive(Clone, Debug, Hash, PartialEq, Eq, PartialOrd, Ord)]
 pub enum ScopeKey {
     Section(ConceptId, SectionId),
     Frontmatter(ConceptId, String),
@@ -100,7 +100,7 @@ pub fn analyze_divergence(
     let mut erase_skips = HashSet::new();
     let mut erase_reports = Vec::new();
     let mut conflicts = Vec::new();
-    let all_keys: HashSet<&ScopeKey> = into_keys.keys().chain(source_keys.keys()).collect();
+    let all_keys: BTreeSet<&ScopeKey> = into_keys.keys().chain(source_keys.keys()).collect();
     for key in all_keys {
         let ours = into_keys.get(key);
         let theirs = source_keys.get(key);

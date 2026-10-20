@@ -52,13 +52,13 @@ fn merge_rules_table_matches_battery() {
     let table = load_cases();
     let cases = table["case"].as_array().expect("case array");
     assert_eq!(cases.len(), RULES.len(), "one battery case per RULES row");
-    let case_ids: Vec<&str> = cases
-        .iter()
-        .map(|c| c.get("id").and_then(|v| v.as_str()).unwrap())
-        .collect();
-    assert_eq!(case_ids.len(), RULES.len());
-    assert!(case_ids.iter().any(|id| id.contains("concept_path")));
-    assert!(case_ids.iter().any(|id| id.contains("two_concepts")));
+    for (rule_row, _expect) in RULES {
+        let matches = cases
+            .iter()
+            .filter(|c| c.get("rule").and_then(|v| v.as_str()) == Some(*rule_row))
+            .count();
+        assert_eq!(matches, 1, "exactly one case per RULES row: {rule_row}");
+    }
 }
 
 fn section_headings(repo: &mut Repository, ref_name: &str, concept_path: &str) -> Vec<String> {
@@ -556,7 +556,7 @@ fn rule_set_status_conflict() {
 fn rule_erase_wins() {
     let cat = catalog();
     let spec = cat.bundle("okf-minimal").expect("okf-minimal");
-    let (dir, root, mut repo) = fresh_spy_repo(spec);
+    let (_dir, _root, mut repo) = fresh_spy_repo(spec);
     let branch_name = "rule/erase";
     branch(&mut repo, branch_name, None).unwrap();
     let (sec, ver) = section_at(&mut repo, "notes/hello", "Detail");
@@ -584,6 +584,7 @@ fn rule_erase_wins() {
     assert_eq!(merged["status"], "merged");
     let wins = merged["erase_wins"].as_array().unwrap();
     assert!(!wins.is_empty());
-    drop(dir);
-    drop(root);
+    assert_eq!(wins[0]["reason"], "erased_on_source");
+    assert!(wisp_engine::query::fsck(&mut repo).is_ok());
+    assert!(wisp_engine::query::hot_check(&mut repo, MAIN_REF).is_ok());
 }

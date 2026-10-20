@@ -1371,7 +1371,10 @@ name = "wisp-feed"
 version = "0.1.0"
 dependencies = [
  "serde_json",
+ "tempfile",
+ "wisp-engine",
  "wisp-model",
+ "wisp-store",
 ]
 
 [[package]]
@@ -1379,6 +1382,7 @@ name = "wisp-git"
 version = "0.1.0"
 dependencies = [
  "serde_json",
+ "wisp-engine",
  "wisp-model",
 ]
 
@@ -1397,6 +1401,7 @@ dependencies = [
  "wisp-parse",
  "wisp-profile",
  "wisp-store",
+ "wisp-sync",
 ]
 
 [[package]]
@@ -1484,8 +1489,13 @@ dependencies = [
 name = "wisp-sync"
 version = "0.1.0"
 dependencies = [
+ "rusqlite",
+ "serde",
  "serde_json",
+ "tempfile",
+ "wisp-engine",
  "wisp-model",
+ "wisp-store",
 ]
 
 [[package]]

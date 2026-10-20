@@ -118,7 +118,7 @@ fn fast_forward(
     Ok(())
 }
 
-fn is_ancestor(conn: &rusqlite::Connection, ancestor: ChangesetId, desc: ChangesetId) -> Result<bool> {
+pub fn is_ancestor(conn: &rusqlite::Connection, ancestor: ChangesetId, desc: ChangesetId) -> Result<bool> {
     if ancestor == desc {
         return Ok(true);
     }
@@ -186,7 +186,8 @@ fn ancestry_with_seq(
     Ok(out)
 }
 
-fn changesets_since(conn: &rusqlite::Connection, head: ChangesetId, base: ChangesetId) -> Vec<ChangesetId> {
+/// Changesets on the `based_on` chain from `base` (exclusive) to `head` (inclusive), oldest first.
+pub fn changesets_since(conn: &rusqlite::Connection, head: ChangesetId, base: ChangesetId) -> Vec<ChangesetId> {
     let mut path = Vec::new();
     let mut cur = Some(head);
     while let Some(id) = cur {

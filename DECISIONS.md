@@ -68,7 +68,7 @@ Deviations from *Differential OKF Store — v1 Technical Design* (Oct 17, 2026),
 
 ## §11 Concurrency
 
-- Linked worktrees (§11.4) are implemented minimally: `worktree add|list|remove`, checkout under `.wisp/worktrees/<name>/` (or `--path`) with `.wisp-checkout.idx`, ledger `worktrees` bookkeeping, and one ref per checkout. Merge (§11.5) and sync (§11.6) are not implemented. Branches, `switch`, headless writes, `apply` batches, read assertions, and `--assert-head` are.
+- Linked worktrees (§11.4) are implemented minimally: `worktree add|list|remove`, checkout under `.wisp/worktrees/<name>/` (or `--path`) with `.wisp-checkout.idx`, ledger `worktrees` bookkeeping, and one ref per checkout. Merge (§11.5) is implemented for ref replay; sync (§11.6) is minimal trusted `file://` push/pull plus a stdio Hello/Ack skeleton (`wisp serve --stdio`). Branches, `switch`, headless writes, `apply` batches, read assertions, and `--assert-head` are.
 - `--base any` is honored for headless operations; a policy rule with `unconditional = true` can deny it.
 
 ## §12 Profiles
@@ -78,14 +78,14 @@ Deviations from *Differential OKF Store — v1 Technical Design* (Oct 17, 2026),
 ## §13 Views and git interop
 
 - Erasure markers for a section whose preceding section no longer exists are rendered after the preamble; for a concept with no sections left they follow the frontmatter.
-- `export --archive` renders a complete bundle directory; it does not produce a `.tar.zst`. `import --git`/`export --git` are stubs (M8). `import <dir>` copies a plain bundle into the working tree and records it.
+- `export --archive` renders a complete bundle directory; it does not produce a `.tar.zst`. `export --git` renders and runs `git init` + one commit (no per-changeset history). `import --git` remains deferred (use `wisp import <dir>`). `import <dir>` copies a plain bundle into the working tree and records it.
 
 ## §14 Feed, subscribers, codecs
 
-- Built-in subscribers (`tokens`, `links`, `views`) run inline during commit/checkout; `wisp index` only advances cursors. The external subscriber host and the `embed` subscriber are not implemented; `search --mode vector|hybrid` falls back to keyword (and says so in `mode`) until an embedding codec is configured.
+- Built-in subscribers (`tokens`, `links`, `views`) run inline during commit/checkout; `wisp index` advances built-in cursors and runs manifest `command` subscribers via `wisp-feed` (JSON lines on stdin, `{"ack": seq}` on stdout). The `embed` subscriber is not implemented; `search --mode vector|hybrid` falls back to keyword (and says so in `mode`) until an embedding codec is configured.
 - One tokenizer codec ships: `tok:approx:chars4` (one token per four characters). `pack --budget` and `tokens` use it. `tiktoken`/`hf` codecs are M5.
 
 ## §16 CLI
 
 - Erase targets an actor with `--actor-id <actor>` (the global `--actor` names the acting identity).
-- `wisp diff --from/--to` between changesets is not implemented; `diff` compares the working tree with its base.
+- `wisp diff --from/--to` compares section-level ops along the `based_on` chain between two changesets; `diff` without those flags compares the working tree with its base.

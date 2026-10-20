@@ -33,6 +33,15 @@ fn ref_of(repo: &Repository, explicit: &Option<String>) -> String {
     explicit.clone().unwrap_or_else(|| query::current_ref(repo))
 }
 
+fn remote_url(repo: &Repository, name: &str) -> Result<String> {
+    repo.manifest
+        .remotes
+        .iter()
+        .find(|r| r.name == name)
+        .map(|r| r.url.clone())
+        .ok_or_else(|| WispError::not_found(format!("remote {name:?}")))
+}
+
 fn parse_cs(s: &str) -> Result<ChangesetId> {
     s.parse()
         .map_err(|_| WispError::usage(format!("bad changeset id {s:?}")))
@@ -257,12 +266,30 @@ pub fn run(cli: Cli) -> CliResult {
             from,
             to,
         } => {
-            if from.is_some() || to.is_some() {
-                return Err(WispError::not_implemented(
-                    "diff --from/--to between changesets",
-                ));
-            }
             let mut repo = open(&cli)?;
+            if from.is_some() || to.is_some() {
+                let from = from
+                    .as_deref()
+                    .ok_or_else(|| WispError::usage("diff --from and --to are required together"))?;
+                let to = to
+                    .as_deref()
+                    .ok_or_else(|| WispError::usage("diff --from and --to are required together"))?;
+                use std::str::FromStr;
+                let from_id = ChangesetId::from_str(from)
+                    .map_err(|e| WispError::usage(format!("invalid --from changeset: {e}")))?;
+                let to_id = ChangesetId::from_str(to)
+                    .map_err(|e| WispError::usage(format!("invalid --to changeset: {e}")))?;
+                let ref_name = ref_of(&repo, &None);
+                let d = wisp_engine::record::diff_between_changesets(
+                    &mut repo,
+                    &ref_name,
+                    from_id,
+                    to_id,
+                    path.as_deref(),
+                )?;
+                let _ = explain;
+                return Ok(Output::json(d));
+            }
             let d = wisp_engine::record::diff(&mut repo, None, *explain, path.as_deref())?;
             Ok(Output::json(d))
         }
@@ -741,8 +768,36 @@ pub fn run(cli: Cli) -> CliResult {
                 }
             }
         }
-        Command::Push { .. } | Command::Pull { .. } | Command::Serve { .. } => {
-            wisp_sync::sync().map(Output::json)
+        Command::Push { remote, r#ref } => {
+            let mut repo = open(&cli)?;
+            let ref_name = ref_of(&repo, r#ref);
+            let url = remote_url(&repo, remote)?;
+            let path = wisp_sync::parse_local_url(&url)?;
+            Ok(Output::json(wisp_sync::push(
+                &mut repo,
+                &path,
+                &ref_name,
+                &unlock(&cli),
+            )?))
+        }
+        Command::Pull { remote, r#ref } => {
+            let mut repo = open(&cli)?;
+            let ref_name = ref_of(&repo, r#ref);
+            let url = remote_url(&repo, remote)?;
+            let path = wisp_sync::parse_local_url(&url)?;
+            Ok(Output::json(wisp_sync::pull(
+                &mut repo,
+                &path,
+                &ref_name,
+                &unlock(&cli),
+            )?))
+        }
+        Command::Serve { stdio } => {
+            if !stdio {
+                return Err(WispError::usage("serve requires --stdio (M8 skeleton)"));
+            }
+            let mut repo = open(&cli)?;
+            Ok(Output::json(wisp_sync::serve_stdio(&mut repo, &unlock(&cli))?))
         }
         Command::Validate {
             path,
@@ -773,7 +828,11 @@ pub fn run(cli: Cli) -> CliResult {
             strip_anchors,
         } => {
             match (git, archive) {
-                (Some(_), _) => wisp_git::export_git().map(Output::json),
+                (Some(dir), _) => {
+                    let mut repo = open(&cli)?;
+                    let ref_name = ref_of(&repo, r#ref);
+                    Ok(Output::json(wisp_git::export_git(&mut repo, &ref_name, dir)?))
+                }
                 (None, Some(file)) => {
                     // A plain directory export; the archive is left to the caller's tar (DECISIONS.md).
                     let mut repo = open(&cli)?;
@@ -801,7 +860,15 @@ pub fn run(cli: Cli) -> CliResult {
         }
         Command::Index { rebuild } => {
             let mut repo = open(&cli)?;
-            Ok(Output::json(query::index(&mut repo, rebuild.as_deref())?))
+            let built = query::index(&mut repo, rebuild.as_deref())?;
+            let external = wisp_feed::run_external_subscribers(&mut repo)?;
+            let mut out = built;
+            if let Some(ext) = external.get("subscribers").and_then(|v| v.as_array()) {
+                if let Some(subs) = out.get_mut("subscribers").and_then(|v| v.as_array_mut()) {
+                    subs.extend(ext.clone());
+                }
+            }
+            Ok(Output::json(out))
         }
         Command::Feed { since } => {
             let repo = open(&cli)?;

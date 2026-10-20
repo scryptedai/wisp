@@ -7,4 +7,9 @@ description = "Change feed, cursors, subscriber host (§14). The feed itself liv
 
 [dependencies]
 wisp-model.workspace = true
+wisp-engine.workspace = true
+wisp-store.workspace = true
 serde_json.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true

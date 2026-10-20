@@ -2,6 +2,7 @@
 
 use crate::checkout::{self, CheckoutIndex};
 use crate::commit::{CommitOutcome, CommitRequest, PlannedOp, PolicyFacts, Precondition};
+use crate::merge;
 use crate::payloads::*;
 use crate::repo::{Repository, MAIN_REF};
 use globset::{Glob, GlobSet, GlobSetBuilder};
@@ -1266,4 +1267,86 @@ pub fn diff(
     Ok(
         json!({ "ref": p.status.ref_name, "head": p.status.head, "changes": by_path, "explain": p.explanations, "warnings": p.status.warnings }),
     )
+}
+
+fn change_path(hot: &Hot, c: &Change) -> String {
+    if let Target::Asset { asset } = &c.target {
+        return Hot::asset(hot.conn(), *asset)
+            .ok()
+            .flatten()
+            .map(|a| a.path)
+            .unwrap_or_else(|| format!("asset:{}", asset));
+    }
+    if let Some(cp) = c.target.concept() {
+        if let Ok(Some(st)) = Hot::concept(hot.conn(), cp) {
+            return st.path;
+        }
+        if let Ok(Some(r)) = Hot::retracted(hot.conn(), cp) {
+            return r.0;
+        }
+    }
+    String::new()
+}
+
+/// `wisp diff --from <cs> --to <cs>`: section-level ops between two changesets on the same line.
+pub fn diff_between_changesets(
+    repo: &mut Repository,
+    ref_name: &str,
+    from: ChangesetId,
+    to: ChangesetId,
+    path_filter: Option<&str>,
+) -> Result<Value> {
+    if from == to {
+        return Ok(json!({
+            "from": from.to_string(),
+            "to": to.to_string(),
+            "changes": Value::Object(Default::default()),
+        }));
+    }
+    let cs_ids = {
+        let conn = repo.ledger.conn();
+        if Ledger::get_changeset(conn, from)?.is_none() {
+            return Err(WispError::not_found(format!("no changeset {from}")));
+        }
+        if Ledger::get_changeset(conn, to)?.is_none() {
+            return Err(WispError::not_found(format!("no changeset {to}")));
+        }
+        if !merge::is_ancestor(conn, from, to)? {
+            return Err(WispError::usage(format!(
+                "{from} is not an ancestor of {to}"
+            )));
+        }
+        merge::changesets_since(conn, to, from)
+    };
+    repo.hot(ref_name)?;
+    let conn = repo.ledger.conn();
+    let hot = repo.hots.remove(ref_name).expect("hot");
+    let mut by_path: BTreeMap<String, Vec<Value>> = BTreeMap::new();
+    for cs_id in cs_ids {
+        for c in Ledger::changes_of(conn, cs_id)? {
+            let path = change_path(&hot, &c);
+            if let Some(f) = path_filter {
+                if !path.starts_with(f) {
+                    continue;
+                }
+            }
+            let mut v = json!({ "op": c.op.as_str(), "changeset": cs_id.to_string() });
+            if let Some(s) = c.target.section() {
+                v["section"] = json!(s.to_string());
+            }
+            if let Target::Source { source, .. } = &c.target {
+                v["source"] = json!(source);
+            }
+            if let Some(l) = &c.lineage {
+                v["lineage"] = serde_json::to_value(l).unwrap_or(Value::Null);
+            }
+            by_path.entry(path).or_default().push(v);
+        }
+    }
+    repo.hots.insert(ref_name.to_string(), hot);
+    Ok(json!({
+        "from": from.to_string(),
+        "to": to.to_string(),
+        "changes": by_path,
+    }))
 }

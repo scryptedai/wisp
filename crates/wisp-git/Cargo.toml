@@ -3,8 +3,9 @@ name = "wisp-git"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
-description = "Git import and export as transports (§13.2–13.3). Scheduled for M8."
+description = "Git import and export as transports (§13.2–13.3)."
 
 [dependencies]
 wisp-model.workspace = true
+wisp-engine.workspace = true
 serde_json.workspace = true

@@ -774,6 +774,71 @@ fn split_merge_reorder_and_frontmatter_ops() {
 }
 
 #[test]
+fn diff_between_changesets() {
+    let f = fixture();
+    Repository::init(&f.root, "0.2", &Unlock::default()).unwrap();
+    write(&f.root, "tables/orders.md", ORDERS);
+    let mut repo = open(&f.root);
+    rec(&mut repo, "human:alex");
+    let log1 = crate::query::log(
+        &mut repo,
+        MAIN_REF,
+        &crate::query::LogFilter {
+            path: None,
+            ops: None,
+            actor: None,
+            since: None,
+            include_erased: false,
+            limit: Some(1),
+        },
+    )
+    .unwrap();
+    let cs1: ChangesetId = log1["changesets"][0]["changeset"]
+        .as_str()
+        .unwrap()
+        .parse()
+        .unwrap();
+    write(
+        &f.root,
+        "tables/orders.md",
+        &ORDERS.replace("append-only", "immutable"),
+    );
+    rec(&mut repo, "human:alex");
+    let log2 = crate::query::log(
+        &mut repo,
+        MAIN_REF,
+        &crate::query::LogFilter {
+            path: None,
+            ops: None,
+            actor: None,
+            since: None,
+            include_erased: false,
+            limit: Some(1),
+        },
+    )
+    .unwrap();
+    let cs2: ChangesetId = log2["changesets"][0]["changeset"]
+        .as_str()
+        .unwrap()
+        .parse()
+        .unwrap();
+    let d = crate::record::diff_between_changesets(&mut repo, MAIN_REF, cs1, cs2, None).unwrap();
+    let changes = d["changes"]["tables/orders"].as_array().unwrap();
+    assert!(!changes.is_empty(), "{d}");
+    assert!(
+        changes.iter().any(|o| {
+            matches!(
+                o["op"].as_str(),
+                Some("update_section" | "add_section" | "remove_section")
+            )
+        }),
+        "{d}"
+    );
+    let empty = crate::record::diff_between_changesets(&mut repo, MAIN_REF, cs2, cs2, None).unwrap();
+    assert!(empty["changes"].as_object().unwrap().is_empty());
+}
+
+#[test]
 fn search_pack_and_feed() {
     let f = fixture();
     Repository::init(&f.root, "0.2", &Unlock::default()).unwrap();

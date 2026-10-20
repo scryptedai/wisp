@@ -1,19 +1,67 @@
-//! `wisp-git`: git import and export as transports (§13.2, §13.3). Not implemented in this build (M8).
+//! `wisp-git`: git import and export as transports (§13.2, §13.3).
 //!
-//! `wisp import <dir>` (a plain bundle) and `wisp export --archive` (a rendered directory) are
-//! available through the engine today; `--git` import with history and per-changeset git commits
-//! on export will build on `gix`.
+//! Full history import (`import --git`) is deferred; `export --git` renders the bundle and
+//! initializes a single-commit git repository (no per-changeset history).
 
-use wisp_model::{Result, WispError};
+use serde_json::{json, Value};
+use std::path::Path;
+use std::process::Command;
+use wisp_engine::checkout;
+use wisp_engine::repo::Repository;
+use wisp_model::*;
 
-pub fn import_git() -> Result<serde_json::Value> {
+pub fn import_git() -> Result<Value> {
     Err(WispError::not_implemented(
-        "import --git (M8); use `wisp import <dir>` for a checked-out bundle",
+        "import --git (M8): history-preserving import needs gix; use `wisp import <dir>` for a checked-out bundle",
     ))
 }
 
-pub fn export_git() -> Result<serde_json::Value> {
-    Err(WispError::not_implemented(
-        "export --git (M8); use `wisp export --archive <dir>` for a rendered bundle",
-    ))
+/// Render `ref_name` into `dir`, `git init`, add all, one commit.
+pub fn export_git(repo: &mut Repository, ref_name: &str, dir: &Path) -> Result<Value> {
+    if dir.exists() {
+        let mut empty = true;
+        if dir.is_dir() {
+            if let Ok(mut it) = std::fs::read_dir(dir) {
+                empty = it.next().is_none();
+            }
+        } else {
+            empty = false;
+        }
+        if !empty {
+            return Err(WispError::usage(format!(
+                "export --git target {} is not empty",
+                dir.display()
+            )));
+        }
+    }
+    std::fs::create_dir_all(dir)?;
+    let idx = checkout::checkout_with_profile(repo, ref_name, Some(dir), None, false, false)?;
+    run_git(dir, &["init"])?;
+    run_git(dir, &["add", "-A"])?;
+    let msg = format!("wisp export {} @ {}", ref_name, repo.repo_id());
+    run_git(dir, &["commit", "-m", &msg])?;
+    Ok(json!({
+        "git_dir": dir.display().to_string(),
+        "ref": ref_name,
+        "files": idx.files.len(),
+        "commits": 1,
+        "note": "single-commit export; per-changeset git history is not implemented"
+    }))
+}
+
+fn run_git(dir: &Path, args: &[&str]) -> Result<()> {
+    let out = Command::new("git")
+        .args(args)
+        .current_dir(dir)
+        .output()
+        .map_err(|e| WispError::internal(format!("git {:?}: {e}", args)))?;
+    if !out.status.success() {
+        let stderr = String::from_utf8_lossy(&out.stderr);
+        return Err(WispError::internal(format!(
+            "git {:?} failed: {}",
+            args,
+            stderr.trim()
+        )));
+    }
+    Ok(())
 }

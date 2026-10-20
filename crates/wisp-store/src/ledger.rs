@@ -743,6 +743,24 @@ impl Ledger {
         }
     }
 
+    pub fn payload_info(
+        conn: &Connection,
+        id: PayloadId,
+    ) -> Result<Option<(ScopeId, PayloadKind, usize)>> {
+        conn.query_row(
+            "SELECT scope, kind, size FROM payloads WHERE id = ?1",
+            params![id.bytes().to_vec()],
+            |r| {
+                let scope = ScopeId::from_bytes(blob16(r.get::<_, Vec<u8>>(0)?));
+                let kind: String = r.get(1)?;
+                let size: i64 = r.get(2)?;
+                Ok((scope, payload_kind_from_str(&kind), size as usize))
+            },
+        )
+        .optional()
+        .map_err(sql_err)
+    }
+
     pub fn payload_present(conn: &Connection, id: PayloadId) -> Result<bool> {
         let p: Option<i64> = conn
             .query_row(
@@ -1281,6 +1299,25 @@ impl Ledger {
             .execute_batch("PRAGMA incremental_vacuum; PRAGMA wal_checkpoint(TRUNCATE);")
             .map_err(sql_err)?;
         Ok(())
+    }
+}
+
+fn payload_kind_from_str(s: &str) -> PayloadKind {
+    match s {
+        "section" => PayloadKind::Section,
+        "note" => PayloadKind::Note,
+        "path" => PayloadKind::Path,
+        "frontmatter_entry" => PayloadKind::FrontmatterEntry,
+        "source_record" => PayloadKind::SourceRecord,
+        "asset_bytes" => PayloadKind::AssetBytes,
+        "message" => PayloadKind::Message,
+        "group_label" => PayloadKind::GroupLabel,
+        "actor_name" => PayloadKind::ActorName,
+        "actor_key" => PayloadKind::ActorKey,
+        "section_order" => PayloadKind::SectionOrder,
+        "status" => PayloadKind::Status,
+        "group_member" => PayloadKind::GroupMember,
+        _ => PayloadKind::Message,
     }
 }
 

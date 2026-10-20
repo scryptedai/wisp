@@ -149,4 +149,19 @@ fn merge_same_section_conflict_contract() {
     assert_eq!(rows[0]["type"], "scope_conflict");
     assert!(rows[0]["ours"].is_string());
     assert!(rows[0]["theirs"].is_string());
+
+    let ours = rows[0]["ours"].as_str().unwrap();
+    let theirs = rows[0]["theirs"].as_str().unwrap();
+    let res_path = _dir.path().join("resolutions.json");
+    std::fs::write(
+        &res_path,
+        format!(
+            r#"{{"resolutions":[{{"ours":"{ours}","theirs":"{theirs}","take":"theirs"}}]}}"#,
+        ),
+    )
+    .unwrap();
+    let merged = merge_refs(&mut repo, branch_name, MAIN_REF, Some(&res_path), false).unwrap();
+    assert_eq!(merged["status"], "merged");
+    assert!(section_body(&mut repo, MAIN_REF, ord_sec).contains("STRING"));
+    assert!(wisp_engine::query::fsck(&mut repo).is_ok());
 }

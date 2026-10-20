@@ -68,12 +68,12 @@ Deviations from *Differential OKF Store — v1 Technical Design* (Oct 17, 2026),
 
 ## §11 Concurrency
 
-- Linked worktrees (§11.4) are implemented minimally: `worktree add|list|remove`, checkout under `.wisp/worktrees/<name>/` (or `--path`) with `.wisp-checkout.idx`, ledger `worktrees` bookkeeping, and one ref per checkout. Merge (§11.5) is implemented for ref replay; sync (§11.6) is minimal trusted `file://` push/pull plus a stdio Hello/Ack skeleton (`wisp serve --stdio`). Branches, `switch`, headless writes, `apply` batches, read assertions, and `--assert-head` are.
+- Linked worktrees (§11.4) are implemented minimally: `worktree add|list|remove`, checkout under `.wisp/worktrees/<name>/` (or `--path`) with `.wisp-checkout.idx`, ledger `worktrees` bookkeeping, and one ref per checkout. Merge (§11.5): fast-forward, disjoint replay, `--resolutions` JSON (`take`: `ours`|`theirs` per conflict), `--abort` clears `.wisp/merge.json`; resolved merges persist skip lists under `cache/refs/<ref>/merge-skip.json` for hot rebuild/check. Sync (§11.6) is minimal trusted `file://` push/pull plus a stdio Hello/Ack skeleton (`wisp serve --stdio`). Branches, `switch`, headless writes, `apply` batches, read assertions, and `--assert-head` are.
 - `--base any` is honored for headless operations; a policy rule with `unconditional = true` can deny it.
 
 ## §12 Profiles
 
-- The okf-0.1 profile and the 0.1→0.2 migration plan (timestamp → `generated` with origin; `Citations` → sources) are implemented; down-export (`export --profile 0.1`) is not.
+- The okf-0.1 profile and the 0.1→0.2 migration plan (timestamp → `generated` with origin; `Citations` → sources) are implemented; down-export via `checkout --profile 0.1` / `export --profile 0.1` (to `--to` only on the primary worktree) is implemented.
 
 ## §13 Views and git interop
 

@@ -440,11 +440,19 @@ pub fn hot_check(repo: &mut Repository, ref_name: &str) -> Result<Value> {
     let mut scratch = Hot::open(&scratch_dir.join("hot.db"))?;
     let head = repo.head(ref_name)?;
     let chain = history_chain(&repo.ledger, head)?;
+    let skip = head.and_then(|h| crate::merge::merge_skips_for_head(repo, ref_name, h));
     {
         let reader = repo.reader();
         let tx = scratch.begin()?;
         for row in &chain {
             let changes = Ledger::changes_of(reader.conn, row.changeset.id)?;
+            let changes: Vec<wisp_model::Change> = match &skip {
+                Some(skip) => changes
+                    .into_iter()
+                    .filter(|c| !skip.contains(&c.id))
+                    .collect(),
+                None => changes,
+            };
             apply::apply_changeset(&reader, &tx, &row.changeset, &changes)?;
         }
         tx.commit()

@@ -452,6 +452,33 @@ pub fn replay_asset(reader: &Reader<'_>, conn: &Connection, asset: AssetId) -> R
 
 /// Rebuild the hot tier of `ref_name` from the cold tier (§6.3). Byte-identical given the same log (I2, I13).
 pub fn rebuild_hot(repo: &mut Repository, ref_name: &str) -> Result<()> {
+    let head = repo.head(ref_name)?;
+    let skip = head
+        .and_then(|h| crate::merge::merge_skips_for_head(repo, ref_name, h));
+    rebuild_hot_inner(repo, ref_name, skip.as_ref())
+}
+
+/// Like `rebuild_hot`, but omit specific changes (merge conflict resolution).
+pub fn rebuild_hot_skipping(
+    repo: &mut Repository,
+    ref_name: &str,
+    skip: &std::collections::HashSet<ChangeId>,
+) -> Result<()> {
+    rebuild_hot_inner(repo, ref_name, Some(skip))
+}
+
+fn rebuild_hot_inner(
+    repo: &mut Repository,
+    ref_name: &str,
+    skip: Option<&std::collections::HashSet<ChangeId>>,
+) -> Result<()> {
+    let skip_owned = match skip {
+        Some(s) => Some(s.clone()),
+        None => {
+            let head = repo.head(ref_name)?;
+            head.and_then(|h| crate::merge::merge_skips_for_head(repo, ref_name, h))
+        }
+    };
     let hot_path = repo.hot_path(ref_name);
     let profile_id = repo.profile.id().to_string();
     let payloads_dir = repo.ledger.payloads_dir();
@@ -478,10 +505,18 @@ pub fn rebuild_hot(repo: &mut Repository, ref_name: &str) -> Result<()> {
             Some(h) => Ledger::changesets_closure(&ltx, h)?,
             None => Vec::new(),
         };
+        let skip = skip_owned.as_ref();
         let tx = hot.begin()?;
         Hot::clear(&tx)?;
         for row in &chain {
             let changes = Ledger::changes_of(&ltx, row.changeset.id)?;
+            let changes: Vec<Change> = match skip {
+                Some(skip) => changes
+                    .into_iter()
+                    .filter(|c| !skip.contains(&c.id))
+                    .collect(),
+                None => changes,
+            };
             apply_changeset(&reader, &tx, &row.changeset, &changes)?;
         }
         // Erasure markers (positions kept as bookkeeping).

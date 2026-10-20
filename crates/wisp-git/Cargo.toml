@@ -9,3 +9,7 @@ description = "Git import and export as transports (§13.2–13.3)."
 wisp-model.workspace = true
 wisp-engine.workspace = true
 serde_json.workspace = true
+tar.workspace = true
+zstd.workspace = true
+tempfile.workspace = true
+walkdir.workspace = true

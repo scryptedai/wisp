@@ -23,6 +23,14 @@ pub struct Manifest {
     pub remotes: Vec<RemoteSection>,
     #[serde(default, rename = "policy")]
     pub policies: Vec<Policy>,
+    #[serde(default)]
+    pub vector_index: VectorIndexSection,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+pub struct VectorIndexSection {
+    #[serde(default)]
+    pub backends: std::collections::BTreeMap<String, wisp_index::VectorBackendConfig>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -321,6 +329,7 @@ impl Manifest {
             ],
             remotes: vec![],
             policies: default_policies(),
+            vector_index: VectorIndexSection::default(),
         }
     }
 

@@ -15,6 +15,7 @@ members = [
     "crates/wisp-sync",
     "crates/wisp-feed",
     "crates/wisp-sub-embed",
+    "crates/wisp-index",
     "crates/wisp-sub-tokens",
     "crates/wisp-git",
 ]
@@ -37,6 +38,7 @@ wisp-merge = { path = "crates/wisp-merge" }
 wisp-sync = { path = "crates/wisp-sync" }
 wisp-feed = { path = "crates/wisp-feed" }
 wisp-sub-embed = { path = "crates/wisp-sub-embed" }
+wisp-index = { path = "crates/wisp-index" }
 wisp-sub-tokens = { path = "crates/wisp-sub-tokens" }
 wisp-git = { path = "crates/wisp-git" }
 wisp-engine = { path = "crates/wisp-engine" }
@@ -64,6 +66,9 @@ hex = "0.4"
 walkdir = "2"
 tempfile = "3"
 globset = "0.4"
+tar = "0.4"
+zstd = "0.13"
+ureq = { version = "2", default-features = false, features = ["tls"] }
 
 [profile.release]
 lto = "thin"

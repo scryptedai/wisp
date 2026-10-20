@@ -4,9 +4,12 @@
 //! transports. Session outline: Hello → Tombstones → Negotiate → Transfer → Refs.
 
 mod local;
+mod pack;
 mod protocol;
+mod transport;
 
 pub use local::{init_trusted_replica, parse_local_url, pull, push};
+pub use transport::{parse_remote_url, pull_remote, push_remote, RemoteTarget};
 pub use protocol::{client_hello_frames, server_ack_line, Message};
 
 pub const PROTOCOL_VERSION: u32 = 1;

@@ -493,6 +493,15 @@ pub fn shred(
 ) -> Result<()> {
     // Phase 1: every hot tier on disk.
     let names = repo.open_all_hots()?;
+    let mut vector_sections = Vec::new();
+    for name in &names {
+        if let Some(hot) = repo.hots.get(name) {
+            for s in scopes {
+                vector_sections.extend(Hot::section_ids_in_scope(hot.conn(), *s)?);
+            }
+        }
+    }
+    crate::vector::purge_vectors_for_sections(repo, &vector_sections)?;
     for name in &names {
         let hot = repo.hots.get_mut(name).expect("opened");
         let tx = hot.begin()?;
@@ -518,7 +527,7 @@ pub fn shred(
             .map_err(|e| WispError::internal(e.to_string()))?;
         hot.vacuum()?;
     }
-    // Derived caches (vectors/tokens) hold no text in this build; nothing to purge beyond the hot tiers.
+    // Vector rows for erased sections were removed above; token DBs follow the same subscriber pattern.
     // Phase 2: cold shred.
     for s in scopes {
         repo.ledger.shred_scope_payloads(*s)?;

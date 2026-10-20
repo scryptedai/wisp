@@ -4,7 +4,7 @@ A local-first, differential knowledge store for [Open Knowledge Format](https://
 
 wisp stores a bundle as an append-only log of **section-level** changes with encrypted, destroyable payloads, and materializes a conformant OKF directory on demand. It is built for fleets of agents: many writers commit without locks, every change carries provenance, and any section, concept, or group can be provably erased while the integrity chain still verifies.
 
-This is the v1 implementation of the design in `docs/references/Differential OKF Store — v1 Proposal.pdf` (Scrypted, Oct 17 2026). See [Status](#status) and [DECISIONS.md](DECISIONS.md) for milestone coverage and spec deviations.
+This is the v1 implementation of the design in `docs/references/Differential OKF Store — v1 Proposal.pdf` (Scrypted, Oct 17 2026). See [Status](#status), [DECISIONS.md](DECISIONS.md), [EXTENSIONS.md](docs/EXTENSIONS.md), and [MERGE.md](docs/MERGE.md).
 
 ## Build
 
@@ -87,7 +87,7 @@ The keystore unlocks from, in order: `WISP_MASTER_KEY` (64 hex chars; CI), `--pa
 | M5 Feed and search | feed, keyword/vector/hybrid search (`emb:hash:64`), pack, tokens (approx codec), external subscriber host done; external embed models pending |
 | M6 Profiles and migration | okf-0.1 profile, 0.1→0.2 migration plan, down-export (`export --profile 0.1`) done |
 | M7 Concurrency and branches | headless writes, read assertions, branches, switch, worktrees, merge (fast-forward, disjoint replay, `--resolutions`, `--abort`) done; full §11.5 rule table still partial |
-| M8 Sync, git interop, release | trusted local push/pull, `export --git` (single-commit), `serve --stdio` skeleton done; `import --git` deferred (`import <dir>` and `export --archive` render whole bundles today) |
+| M8 Sync, git interop, release | `file://` + HTTPS pack + SSH/rsync remotes, `export --archive` tar.zst, `import --git` snapshot, `export --git`, `serve --stdio` skeleton |
 
 Invariants exercised in `cargo test`: I1, I2, I3 (parse layer and strip-anchors round-trip), I4, I5, I7, I12, I13, I16, I17, I19, I21, I22, I23, I24, I25 (staging flush on open); §11.5 merge playbook and §11.6 sync roundtrip integration tests in `wisp-invariants`.
 

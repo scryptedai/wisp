@@ -12,6 +12,7 @@ pub mod query;
 pub mod record;
 pub mod repo;
 pub mod signing;
+pub mod vector;
 pub mod worktree;
 
 pub use repo::{Repository, Unlock, MAIN_REF};

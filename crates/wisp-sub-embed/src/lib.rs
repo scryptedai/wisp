@@ -1,11 +1,9 @@
-//! `wisp-sub-embed`: deterministic hash embeddings and a section vector index (§14.4).
-//!
-//! Vectors are search accelerators under `.wisp/cache/vectors/<codec>.db`, keyed by section id
-//! and content version. This build ships `emb:hash:64` (no external model).
+//! `wisp-sub-embed`: reference embedding codec and SQLite vector backend (§14.4).
 
 use rusqlite::{params, Connection};
 use sha2::{Digest, Sha256};
-use std::path::Path;
+use std::path::{Path, PathBuf};
+use wisp_index::{EmbeddingCodec, SectionVectorRow, VectorIndexBackend, VectorSearchHit};
 use wisp_model::{ConceptId, Result, SectionId, WispError};
 use wisp_store::Hot;
 
@@ -15,6 +13,30 @@ pub const DIM: usize = 64;
 
 pub fn is_supported(codec: &str) -> bool {
     codec == HASH_CODEC
+}
+
+pub fn codec_for(id: &str) -> Result<Box<dyn EmbeddingCodec>> {
+    if id == HASH_CODEC {
+        Ok(Box::new(HashEmbeddingCodec))
+    } else {
+        Err(WispError::usage(format!(
+            "embedding codec {id} is not built in; register an external codec in your product"
+        )))
+    }
+}
+
+pub struct HashEmbeddingCodec;
+
+impl EmbeddingCodec for HashEmbeddingCodec {
+    fn id(&self) -> &str {
+        HASH_CODEC
+    }
+    fn dimension(&self) -> usize {
+        DIM
+    }
+    fn embed(&self, text: &str) -> Result<Vec<f32>> {
+        Ok(embed_text(text, DIM))
+    }
 }
 
 /// Deterministic bag-of-words hash embedding, L2-normalized.
@@ -66,20 +88,25 @@ pub struct VectorHit {
     pub score: f32,
 }
 
-pub struct VectorIndex {
+/// SQLite vector index (default backend).
+pub struct SqliteVectorBackend {
+    codec: String,
     conn: Connection,
     dim: usize,
 }
 
-impl VectorIndex {
-    pub fn open(path: &Path, codec: &str) -> Result<Self> {
+impl SqliteVectorBackend {
+    pub fn open(wisp_dir: &Path, codec: &str, path_override: Option<&Path>) -> Result<Self> {
         if !is_supported(codec) {
             return Err(WispError::usage(format!("unsupported embedding codec {codec}")));
         }
+        let path = path_override
+            .map(PathBuf::from)
+            .unwrap_or_else(|| index_path(wisp_dir, codec));
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent).map_err(|e| WispError::internal(e.to_string()))?;
         }
-        let conn = Connection::open(path).map_err(|e| WispError::internal(e.to_string()))?;
+        let conn = Connection::open(&path).map_err(|e| WispError::internal(e.to_string()))?;
         conn.execute_batch(
             "CREATE TABLE IF NOT EXISTS vectors (
                 section BLOB PRIMARY KEY,
@@ -92,46 +119,64 @@ impl VectorIndex {
             );",
         )
         .map_err(|e| WispError::internal(e.to_string()))?;
-        Ok(VectorIndex { conn, dim: DIM })
+        Ok(SqliteVectorBackend {
+            codec: codec.to_string(),
+            conn,
+            dim: DIM,
+        })
+    }
+}
+
+impl VectorIndexBackend for SqliteVectorBackend {
+    fn codec_id(&self) -> &str {
+        &self.codec
     }
 
-    /// Rebuild the index from the current hot tier (level > 0 sections only).
-    pub fn sync_from_hot(&mut self, hot: &Connection) -> Result<()> {
-        self.conn
-            .execute("DELETE FROM vectors", [])
-            .map_err(|e| WispError::internal(e.to_string()))?;
+    fn upsert(&mut self, rows: &[SectionVectorRow]) -> Result<()> {
         let tx = self
             .conn
             .transaction()
             .map_err(|e| WispError::internal(e.to_string()))?;
-        for c in Hot::concepts(hot)? {
-            for s in Hot::sections_of(hot, c.concept)? {
-                if s.level == 0 {
-                    continue;
-                }
-                let text = format!("{}\n{}", s.heading, s.body);
-                let vec = embed_text(&text, self.dim);
-                tx.execute(
-                    "INSERT INTO vectors (section, concept, version, path, heading, body, vec)
-                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
-                    params![
-                        s.section.bytes().to_vec(),
-                        c.concept.bytes().to_vec(),
-                        s.version.bytes().to_vec(),
-                        c.path,
-                        s.heading,
-                        s.body,
-                        vec_to_blob(&vec),
-                    ],
-                )
-                .map_err(|e| WispError::internal(e.to_string()))?;
-            }
+        for r in rows {
+            tx.execute(
+                "INSERT OR REPLACE INTO vectors (section, concept, version, path, heading, body, vec)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+                params![
+                    r.section.bytes().to_vec(),
+                    r.concept.bytes().to_vec(),
+                    r.version.bytes().to_vec(),
+                    r.path,
+                    r.heading,
+                    r.body,
+                    vec_to_blob(&r.vector),
+                ],
+            )
+            .map_err(|e| WispError::internal(e.to_string()))?;
         }
         tx.commit().map_err(|e| WispError::internal(e.to_string()))?;
         Ok(())
     }
 
-    pub fn search(&self, query_vec: &[f32], k: usize) -> Result<Vec<VectorHit>> {
+    fn delete_sections(&mut self, sections: &[SectionId]) -> Result<()> {
+        for s in sections {
+            self.conn
+                .execute(
+                    "DELETE FROM vectors WHERE section = ?1",
+                    params![s.bytes().to_vec()],
+                )
+                .map_err(|e| WispError::internal(e.to_string()))?;
+        }
+        Ok(())
+    }
+
+    fn replace_all(&mut self, rows: &[SectionVectorRow]) -> Result<()> {
+        self.conn
+            .execute("DELETE FROM vectors", [])
+            .map_err(|e| WispError::internal(e.to_string()))?;
+        self.upsert(rows)
+    }
+
+    fn search(&self, query: &[f32], k: usize) -> Result<Vec<VectorSearchHit>> {
         let mut st = self
             .conn
             .prepare("SELECT concept, section, path, heading, body, vec FROM vectors")
@@ -154,8 +199,8 @@ impl VectorIndex {
             let Some(vec) = blob_to_vec(&blob, self.dim) else {
                 continue;
             };
-            let score = cosine(query_vec, &vec);
-            hits.push(VectorHit {
+            let score = cosine(query, &vec);
+            hits.push(VectorSearchHit {
                 concept,
                 section,
                 path,
@@ -170,6 +215,79 @@ impl VectorIndex {
     }
 }
 
+/// Legacy handle (wraps SQLite backend).
+pub struct VectorIndex {
+    inner: SqliteVectorBackend,
+}
+
+impl VectorIndex {
+    pub fn open(path: &Path, codec: &str) -> Result<Self> {
+        let parent = path.parent().unwrap_or(Path::new("."));
+        let wisp_dir = parent.parent().and_then(|p| p.parent()).unwrap_or(parent);
+        let inner = SqliteVectorBackend::open(wisp_dir, codec, Some(path))?;
+        Ok(VectorIndex { inner })
+    }
+
+    pub fn sync_from_hot(&mut self, hot: &Connection) -> Result<()> {
+        let codec = codec_for(self.inner.codec_id())?;
+        let rows = rows_from_hot(hot, codec.as_ref())?;
+        self.inner.replace_all(&rows)
+    }
+
+    pub fn search(&self, query_vec: &[f32], k: usize) -> Result<Vec<VectorHit>> {
+        Ok(self
+            .inner
+            .search(query_vec, k)?
+            .into_iter()
+            .map(|h| VectorHit {
+                concept: h.concept,
+                section: h.section,
+                path: h.path,
+                heading: h.heading,
+                body: h.body,
+                score: h.score,
+            })
+            .collect())
+    }
+}
+
+pub fn rows_from_hot(hot: &Connection, codec: &dyn EmbeddingCodec) -> Result<Vec<SectionVectorRow>> {
+    let mut out = Vec::new();
+    for c in Hot::concepts(hot)? {
+        for s in Hot::sections_of(hot, c.concept)? {
+            if s.level == 0 {
+                continue;
+            }
+            let text = format!("{}\n{}", s.heading, s.body);
+            let vector = codec.embed(&text)?;
+            out.push(SectionVectorRow {
+                concept: c.concept,
+                section: s.section,
+                version: s.version,
+                path: c.path.clone(),
+                heading: s.heading.clone(),
+                body: s.body.clone(),
+                vector,
+            });
+        }
+    }
+    Ok(out)
+}
+
+pub fn purge_sections(wisp_dir: &Path, codec: &str, sections: &[SectionId]) -> Result<()> {
+    if sections.is_empty() || !is_supported(codec) {
+        return Ok(());
+    }
+    let path = index_path(wisp_dir, codec);
+    if !path.is_file() {
+        return Ok(());
+    }
+    let mut backend = SqliteVectorBackend::open(wisp_dir, codec, None)?;
+    backend.delete_sections(sections)?;
+    backend.checkpoint()?;
+    Ok(())
+}
+
 fn blob16(v: Vec<u8>) -> [u8; 16] {
     let mut b = [0u8; 16];
     if v.len() == 16 {
@@ -178,7 +296,7 @@ fn blob16(v: Vec<u8>) -> [u8; 16] {
     b
 }
 
-pub fn index_path(wisp_dir: &Path, codec: &str) -> std::path::PathBuf {
+pub fn index_path(wisp_dir: &Path, codec: &str) -> PathBuf {
     let safe = codec.replace(':', "_");
     wisp_dir.join("cache").join("vectors").join(format!("{safe}.db"))
 }

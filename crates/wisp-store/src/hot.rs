@@ -932,6 +932,21 @@ impl Hot {
 
     // ---- purge (§10.5 Phase 1) ----
 
+    /// Section ids stored under `scope` (before purge).
+    pub fn section_ids_in_scope(conn: &Connection, scope: ScopeId) -> Result<Vec<SectionId>> {
+        let sb = scope.bytes().to_vec();
+        let mut st = conn
+            .prepare("SELECT section FROM state_sections WHERE scope = ?1")
+            .map_err(sql_err)?;
+        let rows = st
+            .query_map(params![sb], |r| r.get::<_, Vec<u8>>(0))
+            .map_err(sql_err)?
+            .filter_map(|r| r.ok())
+            .filter_map(|b| SectionId::from_slice(&b))
+            .collect();
+        Ok(rows)
+    }
+
     /// Delete every row belonging to `scope` from the state tables. Returns affected concept IDs.
     pub fn purge_scope(conn: &Connection, scope: ScopeId) -> Result<Vec<ConceptId>> {
         let sb = scope.bytes().to_vec();

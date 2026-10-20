@@ -213,9 +213,22 @@ pub fn run(cli: Cli) -> CliResult {
             r#ref,
             squash,
         } => {
-            if git.is_some() {
-                let _ = (path, r#ref, squash);
-                return wisp_git::import_git().map(Output::json);
+            if let Some(git_dir) = git {
+                let mut repo = open(&cli)?;
+                let out = wisp_git::import_git(
+                    &mut repo,
+                    git_dir,
+                    wisp_git::ImportGitOptions {
+                        prefix: path.clone(),
+                        git_ref: r#ref.clone(),
+                        squash_message: if *squash {
+                            Some("import --git --squash".into())
+                        } else {
+                            None
+                        },
+                    },
+                )?;
+                return Ok(Output::json(out));
             }
             let mut repo = open(&cli)?;
             let src = dir
@@ -768,10 +781,10 @@ pub fn run(cli: Cli) -> CliResult {
             let mut repo = open(&cli)?;
             let ref_name = ref_of(&repo, r#ref);
             let url = remote_url(&repo, remote)?;
-            let path = wisp_sync::parse_local_url(&url)?;
-            Ok(Output::json(wisp_sync::push(
+            let target = wisp_sync::parse_remote_url(&url)?;
+            Ok(Output::json(wisp_sync::push_remote(
                 &mut repo,
-                &path,
+                &target,
                 &ref_name,
                 &unlock(&cli),
             )?))
@@ -780,10 +793,10 @@ pub fn run(cli: Cli) -> CliResult {
             let mut repo = open(&cli)?;
             let ref_name = ref_of(&repo, r#ref);
             let url = remote_url(&repo, remote)?;
-            let path = wisp_sync::parse_local_url(&url)?;
-            Ok(Output::json(wisp_sync::pull(
+            let target = wisp_sync::parse_remote_url(&url)?;
+            Ok(Output::json(wisp_sync::pull_remote(
                 &mut repo,
-                &path,
+                &target,
                 &ref_name,
                 &unlock(&cli),
             )?))
@@ -830,26 +843,15 @@ pub fn run(cli: Cli) -> CliResult {
                     Ok(Output::json(wisp_git::export_git(&mut repo, &ref_name, dir)?))
                 }
                 (None, Some(file)) => {
-                    // A plain directory export; the archive is left to the caller's tar (DECISIONS.md).
                     let mut repo = open(&cli)?;
                     let ref_name = ref_of(&repo, r#ref);
-                    let dir = file.with_extension("");
-                    let idx = wisp_engine::checkout::checkout_with_profile(
+                    Ok(Output::json(wisp_git::export_archive(
                         &mut repo,
                         &ref_name,
-                        Some(&dir),
+                        file,
                         profile.as_deref(),
                         *strip_anchors,
-                        false,
-                    )?;
-                    Ok(Output::json(
-                        json!({
-                            "exported_dir": dir.display().to_string(),
-                            "profile": profile,
-                            "files": idx.files.len(),
-                            "note": "tar.zst packaging is not built in; the directory is a complete OKF bundle"
-                        }),
-                    ))
+                    )?))
                 }
                 (None, None) => Err(WispError::usage("export --git <dir> | --archive <file>")),
             }

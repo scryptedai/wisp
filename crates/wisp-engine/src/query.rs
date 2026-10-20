@@ -248,6 +248,7 @@ pub fn search(
     k: usize,
 ) -> Result<Value> {
     let codec = repo.manifest.codecs.default_embedding.clone();
+    let vector_index = repo.manifest.vector_index.clone();
     let wisp_dir = repo.wisp_dir.clone();
     let hot = repo.hot(ref_name)?;
     let kw_hits = Hot::search_keyword(hot.conn(), query, k)?;
@@ -262,28 +263,20 @@ pub fn search(
         }
         "vector" | "hybrid" => match codec.as_deref() {
             Some(c) if wisp_sub_embed::is_supported(c) => {
-                let path = wisp_sub_embed::index_path(&wisp_dir, c);
-                let mut idx = wisp_sub_embed::VectorIndex::open(&path, c)?;
-                idx.sync_from_hot(hot.conn())?;
-                let qv = wisp_sub_embed::embed_text(query, wisp_sub_embed::DIM);
+                let embed = wisp_sub_embed::codec_for(c)?;
+                let mut idx = crate::vector::open_index(&wisp_dir, &vector_index, c)?;
+                let rows = wisp_sub_embed::rows_from_hot(hot.conn(), embed.as_ref())?;
+                idx.replace_all(&rows)?;
+                let qv = embed.embed(query)?;
                 let vhits = idx.search(&qv, k)?;
                 if mode == "vector" {
                     let results = vhits
                         .into_iter()
-                        .map(|h| {
-                            json!({
-                                "concept": h.concept.to_string(),
-                                "path": h.path,
-                                "section": h.section.to_string(),
-                                "heading": h.heading,
-                                "score": h.score,
-                                "tokens": count_tokens(&h.body),
-                            })
-                        })
+                        .map(|h| search_vector_hit_json(&h))
                         .collect();
                     ("vector", results)
                 } else {
-                    let results = hybrid_merge(kw_hits, vhits, k);
+                    let results = hybrid_merge(kw_hits, &vhits, k);
                     ("hybrid", results)
                 }
             }
@@ -302,6 +295,17 @@ pub fn search(
     Ok(json!({ "mode": mode_used, "requested_mode": mode, "query": query, "results": results }))
 }
 
+fn search_vector_hit_json(h: &wisp_index::VectorSearchHit) -> Value {
+    json!({
+        "concept": h.concept.to_string(),
+        "path": h.path,
+        "section": h.section.to_string(),
+        "heading": h.heading,
+        "score": h.score,
+        "tokens": count_tokens(&h.body),
+    })
+}
+
 fn search_hit_json(h: &wisp_store::SearchHit) -> Value {
     json!({
         "concept": h.concept.to_string(),
@@ -315,7 +319,7 @@ fn search_hit_json(h: &wisp_store::SearchHit) -> Value {
 
 fn hybrid_merge(
     kw: Vec<wisp_store::SearchHit>,
-    vec: Vec<wisp_sub_embed::VectorHit>,
+    vec: &[wisp_index::VectorSearchHit],
     k: usize,
 ) -> Vec<Value> {
     use std::collections::HashMap;
@@ -325,7 +329,7 @@ fn hybrid_merge(
         let rrf = 1.0 / (60.0 + i as f64);
         scores.insert(key, (rrf, h));
     }
-    for (i, v) in vec.into_iter().enumerate() {
+    for (i, v) in vec.iter().enumerate() {
         let key = v.section.to_string();
         let rrf = 1.0 / (60.0 + i as f64);
         if let Some((s, _)) = scores.get_mut(&key) {
@@ -338,10 +342,10 @@ fn hybrid_merge(
                     wisp_store::SearchHit {
                         concept: v.concept,
                         section: v.section,
-                        path: v.path,
-                        heading: v.heading,
+                        path: v.path.clone(),
+                        heading: v.heading.clone(),
                         score: v.score as f64,
-                        body: v.body,
+                        body: v.body.clone(),
                     },
                 ),
             );

@@ -68,7 +68,7 @@ Deviations from *Differential OKF Store — v1 Technical Design* (Oct 17, 2026),
 
 ## §11 Concurrency
 
-- Linked worktrees (§11.4) are implemented minimally: `worktree add|list|remove`, checkout under `.wisp/worktrees/<name>/` (or `--path`) with `.wisp-checkout.idx`, ledger `worktrees` bookkeeping, and one ref per checkout. Merge (§11.5): fast-forward, disjoint replay, `--resolutions` JSON (`take`: `ours`|`theirs` per conflict), `--abort` clears `.wisp/merge.json`; resolved merges persist skip lists under `cache/refs/<ref>/merge-skip.json` for hot rebuild/check. Sync (§11.6) is minimal trusted `file://` push/pull plus a stdio Hello/Ack skeleton (`wisp serve --stdio`). Branches, `switch`, headless writes, `apply` batches, read assertions, and `--assert-head` are.
+- Linked worktrees (§11.4) are implemented minimally: `worktree add|list|remove`, checkout under `.wisp/worktrees/<name>/` (or `--path`) with `.wisp-checkout.idx`, ledger `worktrees` bookkeeping, and one ref per checkout. Merge (§11.5): fast-forward, disjoint replay, `--resolutions` JSON (`take`: `ours`|`theirs` per conflict), `--abort` clears `.wisp/merge.json`; resolved merges persist skip lists under `cache/refs/<ref>/merge-skip.json` for hot rebuild/check. Sync (§11.6): `file://` push/pull, dumb HTTPS pack at `{remote}/wisp/v1/pack.zst`, SSH via `rsync` + local transport, and stdio Hello/Ack (`wisp serve --stdio`). See `docs/EXTENSIONS.md`. Branches, `switch`, headless writes, `apply` batches, read assertions, and `--assert-head` are.
 - `--base any` is honored for headless operations; a policy rule with `unconditional = true` can deny it.
 
 ## §12 Profiles
@@ -78,7 +78,7 @@ Deviations from *Differential OKF Store — v1 Technical Design* (Oct 17, 2026),
 ## §13 Views and git interop
 
 - Erasure markers for a section whose preceding section no longer exists are rendered after the preamble; for a concept with no sections left they follow the frontmatter.
-- `export --archive` renders a complete bundle directory; it does not produce a `.tar.zst`. `export --git` renders and runs `git init` + one commit (no per-changeset history). `import --git` remains deferred (use `wisp import <dir>`). `import <dir>` copies a plain bundle into the working tree and records it.
+- `export --archive` writes a `.tar.zst` of the rendered bundle. `export --git` renders and runs `git init` + one commit. `import --git` imports a **snapshot** via `git archive` + `record` (no per-commit history mapping yet). `import <dir>` copies a plain bundle into the working tree and records it.
 
 ## §14 Feed, subscribers, codecs
 

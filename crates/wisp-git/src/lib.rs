@@ -1,7 +1,7 @@
 //! `wisp-git`: git import and export as transports (§13.2, §13.3).
-//!
-//! Full history import (`import --git`) is deferred; `export --git` renders the bundle and
-//! initializes a single-commit git repository (no per-changeset history).
+
+mod archive;
+mod import_git;
 
 use serde_json::{json, Value};
 use std::path::Path;
@@ -10,11 +10,8 @@ use wisp_engine::checkout;
 use wisp_engine::repo::Repository;
 use wisp_model::*;
 
-pub fn import_git() -> Result<Value> {
-    Err(WispError::not_implemented(
-        "import --git (M8): history-preserving import needs gix; use `wisp import <dir>` for a checked-out bundle",
-    ))
-}
+pub use archive::export_archive;
+pub use import_git::{import_git, ImportGitOptions};
 
 /// Render `ref_name` into `dir`, `git init`, add all, one commit.
 pub fn export_git(repo: &mut Repository, ref_name: &str, dir: &Path) -> Result<Value> {

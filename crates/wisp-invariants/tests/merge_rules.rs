@@ -1,4 +1,5 @@
-//! §11.5 rule battery: one integration test per `wisp_merge::RULES` row (see contrib/merge-rules/cases.toml).
+//! §11.5 rule battery: one integration test per `wisp_merge::RULES` row (see contrib/merge-rules/cases.toml),
+//! plus resolution/replay contracts not tied to a single RULES row. See docs/MERGE.md.
 
 mod spy_harness;
 

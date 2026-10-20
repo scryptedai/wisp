@@ -95,10 +95,10 @@ The keystore unlocks from, in order: `WISP_MASTER_KEY` (64 hex chars; CI), `--pa
 | M4 Lifecycle and erase (retract/restore, groups, erase, fsck, policies, revert, backup) | done |
 | M5 Feed and search | feed, search (trigram/RI/semantic), pack, tokens (approx codec), external subscriber host done |
 | M6 Profiles and migration | okf-0.1 profile, 0.1→0.2 migration plan, down-export (`export --profile 0.1`) done |
-| M7 Concurrency and branches | headless writes, read assertions, branches, switch, worktrees, merge (fast-forward, disjoint replay, erase-wins, layered section order, `wisp mv` conflicts, `--resolutions`, `--abort`); full §11.5 `RULES` battery in `merge_rules` |
+| M7 Concurrency and branches | headless writes, read assertions, branches, switch, worktrees, merge (fast-forward, disjoint replay, erase-wins, layered/nested replay, change-chain resolutions, `wisp mv` conflicts, `--resolutions`, `--abort`); see `docs/MERGE.md`, `merge_playbook` + `merge_rules` |
 | M8 Sync, git interop, release | `file://` + HTTPS pack + SSH/rsync remotes, `export --archive` tar.zst, `import --git` (snapshot or `--history`), `export --git`, `serve --stdio` skeleton |
 
-Invariants exercised in `cargo test`: I1, I2, I3 (parse layer and strip-anchors round-trip), I4, I5, I7, I12, I13, I16, I17, I19, I21, I22, I23, I24, I25 (staging flush on open); §11.5 `merge_playbook` + `merge_rules` and §11.6 sync roundtrip integration tests in `wisp-invariants`.
+Invariants exercised in `cargo test`: I1, I2, I3 (parse layer and strip-anchors round-trip), I4, I5, I7, I12, I13, I16, I17, I19, I21, I22, I23, I24, I25 (staging flush on open); §11.5 merge (`merge_playbook`, `merge_rules`, `contrib/merge-rules/cases.toml`) and §11.6 sync roundtrip integration tests in `wisp-invariants`.
 
 The **`wisp-corpus`** crate holds versioned OKF bundles (including a **SPY calls / news-signals** desk playbook under `bundles/spy-options/`), parse fixtures, and matcher scenarios (`catalog.toml`). **`wisp-invariants`** runs them on every CI build: record → validate → fsck → lossless strip (where tagged), plus §7.5 scenario tables. Add fixtures first, then implement until `cargo test -p wisp-invariants` passes.
 

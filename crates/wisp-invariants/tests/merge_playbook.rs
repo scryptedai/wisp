@@ -1,7 +1,8 @@
-//! Ref merge contracts (§11.5): fast-forward, disjoint replay, scope conflicts.
+//! Ref merge contracts (§11.5): fast-forward, disjoint replay, scope conflicts,
+//! nested merge, retract replay, resolutions + hot_check.
 //!
 //! Scenario metadata: `wisp-corpus/data/scenarios/merge/*/scenario.toml`
-//! Narrative: `wisp-corpus/data/scenarios/merge/README.md`
+//! Narrative: `wisp-corpus/data/scenarios/merge/README.md` and `docs/MERGE.md`
 
 mod spy_harness;
 

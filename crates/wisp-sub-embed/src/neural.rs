@@ -1,4 +1,4 @@
-//! Tier 3: optional CPU dense embeddings (`fastembed`).
+//! Tier 4: optional CPU dense embeddings (`fastembed`).
 
 use rusqlite::Connection;
 use std::path::Path;
@@ -20,16 +20,23 @@ pub fn search_semantic(
     use std::sync::OnceLock;
 
     static EMBEDDER: OnceLock<TextEmbedding> = OnceLock::new();
-    let model_dir = wisp_dir.join("cache").join("models");
+    let model_dir = std::env::var_os("FASTEMBED_CACHE_DIR")
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|| wisp_dir.join("cache").join("models"));
     std::fs::create_dir_all(&model_dir).map_err(|e| WispError::internal(e.to_string()))?;
-    let embedder = EMBEDDER.get_or_init(|| {
-        TextEmbedding::try_new(
-            InitOptions::new(EmbeddingModel::BGESmallENV15)
-                .with_cache_dir(model_dir)
-                .with_show_download_progress(false),
-        )
-        .expect("fastembed init")
-    });
+    let embedder = match EMBEDDER.get() {
+        Some(e) => e,
+        None => {
+            let e = TextEmbedding::try_new(
+                InitOptions::new(EmbeddingModel::BGESmallENV15)
+                    .with_cache_dir(model_dir)
+                    .with_show_download_progress(false),
+            )
+            .map_err(|e| WispError::internal(format!("semantic model init: {e}")))?;
+            let _ = EMBEDDER.set(e);
+            EMBEDDER.get().expect("embedder set above")
+        }
+    };
 
     sync_dense(conn, embedder, wisp_dir)?;
     let qv = embedder

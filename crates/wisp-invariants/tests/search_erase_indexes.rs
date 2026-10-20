@@ -52,16 +52,13 @@ fn erase_purges_search_indexes() {
         assert!(!Hot::section_row_exists(conn, section_id).unwrap());
         assert_eq!(Hot::dense_embedding_rows(conn, section_id).unwrap(), 0);
         assert_eq!(wisp_store::ri::vector_rows(conn, section_id).unwrap(), 0);
-        assert!(
-            Hot::search_substring_fts(conn, "memory", 5)
-                .unwrap()
-                .iter()
-                .all(|h| h.section != section_id)
-        );
+        assert!(Hot::search_substring_fts(conn, "memory", 5)
+            .unwrap()
+            .iter()
+            .all(|h| h.section != section_id));
     }
     assert!(
-        search(&mut repo, MAIN_REF, "out of memory", "auto", 5)
-            .unwrap()["results"]
+        search(&mut repo, MAIN_REF, "out of memory", "auto", 5).unwrap()["results"]
             .as_array()
             .unwrap()
             .is_empty()

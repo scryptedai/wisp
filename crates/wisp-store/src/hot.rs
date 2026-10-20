@@ -213,7 +213,8 @@ impl Hot {
         conn.execute_batch("PRAGMA journal_mode = WAL; PRAGMA secure_delete = ON; PRAGMA auto_vacuum = INCREMENTAL; PRAGMA synchronous = NORMAL;")
             .map_err(sql_err)?;
         conn.execute_batch(SCHEMA).map_err(sql_err)?;
-        conn.execute_batch(crate::ri::schema_sql()).map_err(sql_err)?;
+        conn.execute_batch(crate::ri::schema_sql())
+            .map_err(sql_err)?;
         // FTS5 secure-delete mode removes deleted tokens immediately (§6.2).
         let _ = conn.execute_batch(
             "INSERT INTO state_search_fts(state_search_fts, rank) VALUES ('secure-delete', 1);
@@ -281,6 +282,8 @@ impl Hot {
              DELETE FROM state_verified; DELETE FROM state_erased_markers; DELETE FROM state_concepts; DELETE FROM hot_meta;",
         )
         .map_err(sql_err)?;
+        conn.execute("DELETE FROM section_dense_embeddings", [])
+            .map_err(sql_err)?;
         crate::ri::clear(conn)?;
         Ok(())
     }
@@ -485,6 +488,11 @@ impl Hot {
         )
         .map_err(sql_err)?;
         crate::ri::reindex_section(conn, s)?;
+        conn.execute(
+            "DELETE FROM section_dense_embeddings WHERE section = ?1",
+            params![s.section.bytes().to_vec()],
+        )
+        .map_err(sql_err)?;
         Ok(())
     }
     pub fn delete_section(conn: &Connection, section: SectionId) -> Result<()> {

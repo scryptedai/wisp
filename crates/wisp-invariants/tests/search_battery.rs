@@ -322,15 +322,8 @@ fn search_battery_hybrid_keyword_vector() {
             local_only: true,
         };
         for c in cases.iter().filter(|c| c.expect == Expect::AbsentTopK) {
-            let v = search_with_params(
-                &mut repo,
-                MAIN_REF,
-                &c.query,
-                "auto",
-                k,
-                &params,
-            )
-            .expect("local-only auto");
+            let v = search_with_params(&mut repo, MAIN_REF, &c.query, "auto", k, &params)
+                .expect("local-only auto");
             let results = v["results"].as_array().cloned().unwrap_or_default();
             assert!(
                 ranks_for_query(&results, &c.anchor).is_empty(),

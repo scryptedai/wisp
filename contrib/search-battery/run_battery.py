@@ -232,7 +232,10 @@ def main() -> int:
     args = parser.parse_args()
     k, cases = load_cases()
     neural = not args.airgap
-    modes = MODES_DEFAULT if args.mode == "all" else (args.mode,)
+    if args.mode == "all":
+        modes = tuple(m for m in MODES_DEFAULT if neural or m != "semantic")
+    else:
+        modes = (args.mode,)
     total_fail = 0
     for mode in modes:
         total_fail += run_mode(mode, k, cases, neural, args.local_only)

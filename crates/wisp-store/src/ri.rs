@@ -39,17 +39,15 @@ CREATE TABLE IF NOT EXISTS ri_meta (
 }
 
 fn corpus_sections(conn: &Connection) -> Result<i64> {
-    Ok(
-        conn
-            .query_row(
-                "SELECT value FROM ri_meta WHERE key = 'n_sections'",
-                [],
-                |r| r.get::<_, i64>(0),
-            )
-            .optional()
-            .map_err(sql_err)?
-            .unwrap_or(0),
-    )
+    Ok(conn
+        .query_row(
+            "SELECT value FROM ri_meta WHERE key = 'n_sections'",
+            [],
+            |r| r.get::<_, i64>(0),
+        )
+        .optional()
+        .map_err(sql_err)?
+        .unwrap_or(0))
 }
 
 fn set_corpus_sections(conn: &Connection, n: i64) -> Result<()> {
@@ -172,10 +170,16 @@ pub fn unindex_section(conn: &Connection, section: SectionId) -> Result<()> {
         }
     }
 
-    conn.execute("DELETE FROM ri_section_terms WHERE section = ?1", params![sb])
-        .map_err(sql_err)?;
-    conn.execute("DELETE FROM ri_section_vectors WHERE section = ?1", params![sb])
-        .map_err(sql_err)?;
+    conn.execute(
+        "DELETE FROM ri_section_terms WHERE section = ?1",
+        params![sb],
+    )
+    .map_err(sql_err)?;
+    conn.execute(
+        "DELETE FROM ri_section_vectors WHERE section = ?1",
+        params![sb],
+    )
+    .map_err(sql_err)?;
 
     let n = corpus_sections(conn)?;
     set_corpus_sections(conn, (n - 1).max(0))?;
@@ -241,7 +245,10 @@ pub fn reindex_section(conn: &Connection, s: &SectionState) -> Result<()> {
         term_random_add(&mut vec, term, w);
     }
     l2_normalize(&mut vec);
-    let blob = vec.iter().flat_map(|f| f.to_le_bytes()).collect::<Vec<u8>>();
+    let blob = vec
+        .iter()
+        .flat_map(|f| f.to_le_bytes())
+        .collect::<Vec<u8>>();
     conn.execute(
         "INSERT INTO ri_section_vectors (section, dimensions, vector) VALUES (?1, ?2, ?3)",
         params![sb, RI_DIM as i32, blob],
@@ -327,7 +334,10 @@ fn query_vector(conn: &Connection, query: &str) -> Result<Vec<f32>> {
 }
 
 fn cosine(a: &[f32], b: &[f32]) -> f64 {
-    a.iter().zip(b).map(|(x, y)| (*x as f64) * (*y as f64)).sum()
+    a.iter()
+        .zip(b)
+        .map(|(x, y)| (*x as f64) * (*y as f64))
+        .sum()
 }
 
 fn blob_to_vec(blob: &[u8], dim: usize) -> Result<Vec<f32>> {
@@ -462,11 +472,9 @@ mod tests {
         Hot::upsert_section(conn, &s).unwrap();
         assert_eq!(vector_rows(conn, section).unwrap(), 1);
         let df: i64 = conn
-            .query_row(
-                "SELECT df FROM ri_term_df WHERE term = 'memory'",
-                [],
-                |r| r.get(0),
-            )
+            .query_row("SELECT df FROM ri_term_df WHERE term = 'memory'", [], |r| {
+                r.get(0)
+            })
             .unwrap();
         assert_eq!(df, 1);
         Hot::delete_section(conn, section).unwrap();

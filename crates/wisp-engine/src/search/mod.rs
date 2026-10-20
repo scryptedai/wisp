@@ -102,7 +102,9 @@ fn auto_search(
         return Ok(("ri".to_string(), lexical_json(ri)));
     }
     if !effective_local_only(params) && wisp_sub_embed::semantic_enabled() {
-        return semantic_search(repo, ref_name, query, k, params);
+        if let Ok(v) = semantic_search(repo, ref_name, query, k, params) {
+            return Ok(v);
+        }
     }
     Ok(("auto".to_string(), Vec::new()))
 }

@@ -86,11 +86,9 @@ impl SqliteVectorBackend {
         )
         .map_err(|e| WispError::internal(e.to_string()))?;
         let dim: usize = conn
-            .query_row(
-                "SELECT length(vec) / 4 FROM vectors LIMIT 1",
-                [],
-                |r| r.get::<_, i64>(0),
-            )
+            .query_row("SELECT length(vec) / 4 FROM vectors LIMIT 1", [], |r| {
+                r.get::<_, i64>(0)
+            })
             .optional()
             .map_err(|e| WispError::internal(e.to_string()))?
             .unwrap_or(384) as usize;
@@ -286,4 +284,3 @@ pub fn index_path(wisp_dir: &Path, codec: &str) -> PathBuf {
         .join("vectors")
         .join(format!("{safe}.db"))
 }
-

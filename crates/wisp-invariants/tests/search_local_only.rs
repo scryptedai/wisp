@@ -16,16 +16,9 @@ fn local_only_rejects_semantic_mode() {
         threshold: None,
         local_only: true,
     };
-    let err = search_with_params(
-        &mut repo,
-        MAIN_REF,
-        "RAM depleted",
-        "semantic",
-        5,
-        &params,
-    )
-    .unwrap_err()
-    .to_string();
+    let err = search_with_params(&mut repo, MAIN_REF, "RAM depleted", "semantic", 5, &params)
+        .unwrap_err()
+        .to_string();
     assert!(
         err.contains("local-only"),
         "expected local-only error, got: {err}"

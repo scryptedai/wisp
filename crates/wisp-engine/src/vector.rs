@@ -66,7 +66,7 @@ pub fn purge_vectors_for_sections(
         .default_embedding
         .as_deref()
         .unwrap_or("");
-    if codec.is_empty() || !wisp_sub_embed::is_supported(codec) {
+    if codec.is_empty() {
         return Ok(());
     }
     let wisp_dir = repo.wisp_dir.clone();

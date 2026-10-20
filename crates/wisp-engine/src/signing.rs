@@ -12,13 +12,12 @@ pub fn seed_path(wisp_dir: &Path, actor: ActorId) -> PathBuf {
     wisp_dir
         .join("keys")
         .join("signing")
-        .join(format!("{}.seed", actor))
+        .join(format!("{actor}.seed"))
 }
 
 fn parse_seed_hex(text: &str) -> Result<[u8; 32]> {
-    let b = hex::decode(text.trim()).map_err(|_| {
-        WispError::usage("signing seed must be 64 hex characters (32 bytes)")
-    })?;
+    let b = hex::decode(text.trim())
+        .map_err(|_| WispError::usage("signing seed must be 64 hex characters (32 bytes)"))?;
     b.try_into()
         .map_err(|_| WispError::usage("signing seed must be 32 bytes"))
 }

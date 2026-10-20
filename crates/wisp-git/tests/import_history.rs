@@ -13,7 +13,11 @@ fn import_git_history_maps_commits() {
         .current_dir(&git_dir)
         .output()
         .unwrap();
-    std::fs::write(git_dir.join("a.md"), "---\ntype: Note\ntitle: A\n---\n\n## One\n\nv1\n").unwrap();
+    std::fs::write(
+        git_dir.join("a.md"),
+        "---\ntype: Note\ntitle: A\n---\n\n## One\n\nv1\n",
+    )
+    .unwrap();
     Command::new("git")
         .args(["add", "a.md"])
         .current_dir(&git_dir)
@@ -28,7 +32,11 @@ fn import_git_history_maps_commits() {
         .env("GIT_COMMITTER_EMAIL", "t@t")
         .output()
         .unwrap();
-    std::fs::write(git_dir.join("a.md"), "---\ntype: Note\ntitle: A\n---\n\n## One\n\nv2\n").unwrap();
+    std::fs::write(
+        git_dir.join("a.md"),
+        "---\ntype: Note\ntitle: A\n---\n\n## One\n\nv2\n",
+    )
+    .unwrap();
     Command::new("git")
         .args(["commit", "-am", "second"])
         .current_dir(&git_dir)

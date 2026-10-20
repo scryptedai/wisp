@@ -107,7 +107,7 @@ fn init_record_checkout_roundtrip_and_identity() {
     assert!(read(&f.root, "tables/log.md").contains("Creation"));
     // Idempotent: recording again produces no second change (I23).
     let r2 = rec(&mut repo, "human:alex");
-    assert_eq!(r2.ops, 0, "{:?}", r2);
+    assert_eq!(r2.ops, 0, "{r2:?}");
     // I7: an OS rename keeps wisp_id, history, and inbound links; a full rewrite keeps the SectionId.
     let parsed = wisp_parse::parse_file(&text);
     let schema_id = match &parsed.sections()[1].anchor {
@@ -563,7 +563,7 @@ fn erase_whole_concept_and_group_and_actor() {
     assert!(log.contains("Erasure: an erasure occurred"));
     assert!(!log.contains("alice"));
     // I24: erase the actor; name disappears, kind-based policy still applies, fsck passes.
-    assert!(!scan_for(&f.root, "human:dpo").is_empty() || true);
+    assert!(!scan_for(&f.root, "human:dpo").is_empty());
     crate::erase::erase(
         &mut repo,
         MAIN_REF,
@@ -851,7 +851,8 @@ fn diff_between_changesets() {
         }),
         "{d}"
     );
-    let empty = crate::record::diff_between_changesets(&mut repo, MAIN_REF, cs2, cs2, None).unwrap();
+    let empty =
+        crate::record::diff_between_changesets(&mut repo, MAIN_REF, cs2, cs2, None).unwrap();
     assert!(empty["changes"].as_object().unwrap().is_empty());
 }
 
@@ -863,8 +864,8 @@ fn search_pack_and_feed() {
     write(&f.root, "tables/customers.md", CUSTOMERS);
     let mut repo = open(&f.root);
     rec(&mut repo, "human:alex");
-    let s = crate::query::search(&mut repo, MAIN_REF, "append-only rows", "hybrid", 5).unwrap();
-    assert_eq!(s["mode"], "hybrid");
+    let s = crate::query::search(&mut repo, MAIN_REF, "append-only rows", "auto", 5).unwrap();
+    assert!(s["mode"].as_str().unwrap() == "auto" || s["mode"].as_str().unwrap() == "exact");
     assert_eq!(s["results"][0]["heading"], "Behavior");
     let p =
         crate::query::pack(&mut repo, MAIN_REF, &["tables/orders.md".into()], Some(20)).unwrap();
@@ -1059,14 +1060,8 @@ fn worktree_add_list_remove() {
     write(&f.root, "tables/orders.md", ORDERS);
     let mut repo = open(&f.root);
     rec(&mut repo, "human:alex");
-    let added = crate::worktree::add(
-        &mut repo,
-        "side",
-        Some("task/side"),
-        Some(MAIN_REF),
-        None,
-    )
-    .unwrap();
+    let added =
+        crate::worktree::add(&mut repo, "side", Some("task/side"), Some(MAIN_REF), None).unwrap();
     assert_eq!(added["name"], "side");
     assert_eq!(added["ref"], "task/side");
     let wt_path = f.root.join(".wisp/worktrees/side");

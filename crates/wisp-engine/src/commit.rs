@@ -877,11 +877,7 @@ pub fn record_merge(
             reason: None,
         });
     }
-    let message = repo.prepare_payload(
-        repo.repo_scope(),
-        PayloadKind::Message,
-        b"merge",
-    )?;
+    let message = repo.prepare_payload(repo.repo_scope(), PayloadKind::Message, b"merge")?;
     let parents = vec![into_head, source_head];
     let mut parent_digests = Vec::new();
     let payloads_dir = repo.ledger.payloads_dir();

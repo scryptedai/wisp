@@ -51,7 +51,7 @@ fn run_git(dir: &Path, args: &[&str]) -> Result<()> {
         .args(args)
         .current_dir(dir)
         .output()
-        .map_err(|e| WispError::internal(format!("git {:?}: {e}", args)))?;
+        .map_err(|e| WispError::internal(format!("git {args:?}: {e}")))?;
     if !out.status.success() {
         let stderr = String::from_utf8_lossy(&out.stderr);
         return Err(WispError::internal(format!(

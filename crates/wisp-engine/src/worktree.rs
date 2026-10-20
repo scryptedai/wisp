@@ -37,7 +37,9 @@ fn resolve_path(repo: &Repository, name: &str, path: Option<&Path>) -> Result<Pa
     })?;
     let root = std::fs::canonicalize(&repo.root)?;
     if !canonical.starts_with(&root) {
-        return Err(WispError::usage("worktree path must be inside the repository"));
+        return Err(WispError::usage(
+            "worktree path must be inside the repository",
+        ));
     }
     let wisp = std::fs::canonicalize(&repo.wisp_dir)?;
     if canonical.starts_with(&wisp) && canonical != wisp {
@@ -91,7 +93,8 @@ pub fn add(
         query::branch(repo, b, from)?;
         b.to_string()
     } else {
-        from.map(|s| s.to_string()).unwrap_or_else(|| query::current_ref(repo))
+        from.map(|s| s.to_string())
+            .unwrap_or_else(|| query::current_ref(repo))
     };
 
     if Ledger::head(repo.ledger.conn(), &ref_name)?.is_none() {

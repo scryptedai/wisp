@@ -50,10 +50,7 @@ pub fn section_at(
 
 pub fn head_changeset(repo: &mut Repository) -> ChangesetId {
     let hot = repo.hot(MAIN_REF).unwrap();
-    Hot::meta(hot.conn())
-        .unwrap()
-        .expect("hot meta")
-        .head
+    Hot::meta(hot.conn()).unwrap().expect("hot meta").head
 }
 
 pub fn update_section_ref(
@@ -69,7 +66,7 @@ pub fn update_section_ref(
 ) -> Result<serde_json::Value, wisp_model::WispError> {
     let op = ApplyOp {
         op: "update_section".into(),
-        path: format!("{}.md", path),
+        path: format!("{path}.md"),
         section: Some(section),
         base_version: Some(base.to_string()),
         heading: None,
@@ -110,7 +107,9 @@ pub fn update_section(
     message: &str,
     inputs: Vec<ApplyInput>,
 ) -> Result<serde_json::Value, wisp_model::WispError> {
-    update_section_ref(repo, MAIN_REF, actor, path, section, base, content, message, inputs)
+    update_section_ref(
+        repo, MAIN_REF, actor, path, section, base, content, message, inputs,
+    )
 }
 
 pub fn rec(repo: &mut Repository, actor: &str, message: &str) -> wisp_engine::record::RecordResult {

@@ -11,6 +11,9 @@
 *.db-shm
 *.db-journal
 
+# CI / dev fastembed model cache (see FASTEMBED_CACHE_DIR)
+.ci-fastembed-cache/
+
 # wisp repositories created while trying things out
 .wisp/
 .wispignore

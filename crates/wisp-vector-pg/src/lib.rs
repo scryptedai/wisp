@@ -4,15 +4,14 @@
 
 mod schema;
 
-use wisp_index::{SectionVectorRow, VectorIndexBackend, VectorSearchHit};
-use wisp_model::{ConceptId, Result, SectionId, WispError};
+use wisp_index::VectorIndexBackend;
+use wisp_model::{Result, WispError};
 
-pub use schema::PGVECTOR_DDL;
+pub use schema::{PGVECTOR_DDL, REAL_ARRAY_DDL};
 
 pub fn open_from_env(codec_id: &str, url_env: &str) -> Result<Box<dyn VectorIndexBackend>> {
-    let dsn = std::env::var(url_env).map_err(|_| {
-        WispError::usage(format!("set {url_env} for postgres vector index"))
-    })?;
+    let dsn = std::env::var(url_env)
+        .map_err(|_| WispError::usage(format!("set {url_env} for postgres vector index")))?;
     open(codec_id, &dsn)
 }
 
@@ -135,12 +134,10 @@ impl VectorIndexBackend for PostgresVectorBackend {
             .map_err(|e| WispError::internal(e.to_string()))?;
         let mut hits = Vec::new();
         for row in rows {
-            let concept = ConceptId::from_slice(row.get::<_, Vec<u8>>(0)).ok_or_else(|| {
-                WispError::integrity("postgres vector row: bad concept id")
-            })?;
-            let section = SectionId::from_slice(row.get::<_, Vec<u8>>(1)).ok_or_else(|| {
-                WispError::integrity("postgres vector row: bad section id")
-            })?;
+            let concept = ConceptId::from_slice(row.get::<_, Vec<u8>>(0))
+                .ok_or_else(|| WispError::integrity("postgres vector row: bad concept id"))?;
+            let section = SectionId::from_slice(row.get::<_, Vec<u8>>(1))
+                .ok_or_else(|| WispError::integrity("postgres vector row: bad section id"))?;
             let blob: Vec<u8> = row.get(5);
             let Some(vec) = Self::blob_vec(&blob, self.dim) else {
                 continue;
@@ -155,7 +152,11 @@ impl VectorIndexBackend for PostgresVectorBackend {
                 score,
             });
         }
-        hits.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
+        hits.sort_by(|a, b| {
+            b.score
+                .partial_cmp(&a.score)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
         hits.truncate(k);
         Ok(hits)
     }

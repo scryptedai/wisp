@@ -136,7 +136,8 @@ fn spy_fail_assert_observation_version_mismatch() {
     let cat = catalog();
     let spec = cat.bundle("spy-options").expect("spy-options");
     let (_dir, _root, mut repo) = fresh_spy_repo(spec);
-    let (entry_sec, entry_ver) = section_at(&mut repo, "strategy/spy-calls-overview", "Entry rules");
+    let (entry_sec, entry_ver) =
+        section_at(&mut repo, "strategy/spy-calls-overview", "Entry rules");
     let bogus = ChangeId::new();
     let batch = ApplyBatch {
         r#ref: None,
@@ -179,7 +180,8 @@ fn spy_fail_assert_head_after_concurrent_commit() {
     let spec = cat.bundle("spy-options").expect("spy-options");
     let (_dir, _root, mut repo) = fresh_spy_repo(spec);
     let head_before = head_changeset(&mut repo);
-    let (entry_sec, entry_ver) = section_at(&mut repo, "strategy/spy-calls-overview", "Entry rules");
+    let (entry_sec, entry_ver) =
+        section_at(&mut repo, "strategy/spy-calls-overview", "Entry rules");
     update_section(
         &mut repo,
         "process:risk-bot/0.2",
@@ -229,7 +231,9 @@ fn spy_fail_duplicate_wisp_id_incremental_record_treats_copy_as_move() {
     let (_dir, root, mut repo) = fresh_spy_repo(spec);
     let src = std::fs::read_to_string(root.join("observations/2026-10-18-cpi-print.md")).unwrap();
     let parsed = wisp_parse::parse_file(&src);
-    let original_id = parsed.wisp_id("wisp_id").expect("cpi has wisp_id after record");
+    let original_id = parsed
+        .wisp_id("wisp_id")
+        .expect("cpi has wisp_id after record");
     std::fs::write(root.join("observations/cpi-print-copy.md"), &src).unwrap();
     record(
         &mut repo,
@@ -245,8 +249,7 @@ fn spy_fail_duplicate_wisp_id_incremental_record_treats_copy_as_move() {
         .unwrap()
         .expect("concept at copy path");
     assert_eq!(
-        moved.concept,
-        original_id,
+        moved.concept, original_id,
         "incremental record sees one dirty file → §7.4.1 move, not §7.4.2 copy"
     );
     assert!(
@@ -264,7 +267,9 @@ fn spy_fail_duplicate_wisp_id_full_record_remints_copy() {
     let (_dir, root, mut repo) = fresh_spy_repo(spec);
     let src = std::fs::read_to_string(root.join("observations/2026-10-18-cpi-print.md")).unwrap();
     let parsed = wisp_parse::parse_file(&src);
-    let original_id = parsed.wisp_id("wisp_id").expect("cpi has wisp_id after record");
+    let original_id = parsed
+        .wisp_id("wisp_id")
+        .expect("cpi has wisp_id after record");
     std::fs::write(root.join("observations/cpi-print-copy.md"), &src).unwrap();
     record(
         &mut repo,
@@ -284,7 +289,10 @@ fn spy_fail_duplicate_wisp_id_full_record_remints_copy() {
         .unwrap()
         .expect("copy path");
     assert_eq!(orig.concept, original_id);
-    assert_ne!(copy.concept, original_id, "§7.4.2 remint when both files recorded");
+    assert_ne!(
+        copy.concept, original_id,
+        "§7.4.2 remint when both files recorded"
+    );
 }
 
 #[test]
@@ -312,8 +320,7 @@ fn spy_fail_retract_twice() {
     .unwrap_err();
     assert!(
         err.code == ExitCode::Conflict || err.code == ExitCode::NotFound,
-        "{:?}",
-        err
+        "{err:?}"
     );
 }
 
@@ -324,7 +331,9 @@ fn spy_fail_headless_update_on_retracted_observation() {
     let (_dir, _root, mut repo) = fresh_spy_repo(spec);
     let path = "observations/2026-10-17-premarket";
     let hot = repo.hot(MAIN_REF).unwrap();
-    let c = Hot::concept_by_path(hot.conn(), path).unwrap().expect("obs");
+    let c = Hot::concept_by_path(hot.conn(), path)
+        .unwrap()
+        .expect("obs");
     let sec = Hot::sections_of(hot.conn(), c.concept)
         .unwrap()
         .into_iter()
@@ -359,8 +368,7 @@ fn spy_fail_headless_update_on_retracted_observation() {
     .unwrap_err();
     assert!(
         err.code == ExitCode::Conflict || err.code == ExitCode::NotFound,
-        "{:?}",
-        err
+        "{err:?}"
     );
 }
 

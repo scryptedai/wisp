@@ -283,12 +283,12 @@ pub fn run(cli: Cli) -> CliResult {
         } => {
             let mut repo = open(&cli)?;
             if from.is_some() || to.is_some() {
-                let from = from
-                    .as_deref()
-                    .ok_or_else(|| WispError::usage("diff --from and --to are required together"))?;
-                let to = to
-                    .as_deref()
-                    .ok_or_else(|| WispError::usage("diff --from and --to are required together"))?;
+                let from = from.as_deref().ok_or_else(|| {
+                    WispError::usage("diff --from and --to are required together")
+                })?;
+                let to = to.as_deref().ok_or_else(|| {
+                    WispError::usage("diff --from and --to are required together")
+                })?;
                 use std::str::FromStr;
                 let from_id = ChangesetId::from_str(from)
                     .map_err(|e| WispError::usage(format!("invalid --from changeset: {e}")))?;
@@ -720,18 +720,14 @@ pub fn run(cli: Cli) -> CliResult {
             abort,
         } => {
             let mut repo = open(&cli)?;
-            let into_name = into
-                .clone()
-                .unwrap_or_else(|| query::current_ref(&repo));
-            Ok(Output::json(
-                wisp_merge::merge(
-                    &mut repo,
-                    source,
-                    &into_name,
-                    resolutions.as_deref(),
-                    *abort,
-                )?,
-            ))
+            let into_name = into.clone().unwrap_or_else(|| query::current_ref(&repo));
+            Ok(Output::json(wisp_merge::merge(
+                &mut repo,
+                source,
+                &into_name,
+                resolutions.as_deref(),
+                *abort,
+            )?))
         }
         Command::Worktree { cmd } => {
             let mut repo = open(&cli)?;
@@ -807,7 +803,7 @@ pub fn run(cli: Cli) -> CliResult {
             let unlock = unlock(&cli);
             if let Some(bind) = http {
                 let repo = open(&cli)?;
-                wisp_sync::serve_http(&bind, &repo.root, &unlock)?;
+                wisp_sync::serve_http(bind, &repo.root, &unlock)?;
                 return Ok(Output::text(
                     json!({ "serve": "http", "bind": bind, "pack": "/wisp/v1/pack.zst" }),
                     format!("HTTP pack server stopped ({bind})"),
@@ -846,27 +842,27 @@ pub fn run(cli: Cli) -> CliResult {
             profile,
             r#ref,
             strip_anchors,
-        } => {
-            match (git, archive) {
-                (Some(dir), _) => {
-                    let mut repo = open(&cli)?;
-                    let ref_name = ref_of(&repo, r#ref);
-                    Ok(Output::json(wisp_git::export_git(&mut repo, &ref_name, dir)?))
-                }
-                (None, Some(file)) => {
-                    let mut repo = open(&cli)?;
-                    let ref_name = ref_of(&repo, r#ref);
-                    Ok(Output::json(wisp_git::export_archive(
-                        &mut repo,
-                        &ref_name,
-                        file,
-                        profile.as_deref(),
-                        *strip_anchors,
-                    )?))
-                }
-                (None, None) => Err(WispError::usage("export --git <dir> | --archive <file>")),
+        } => match (git, archive) {
+            (Some(dir), _) => {
+                let mut repo = open(&cli)?;
+                let ref_name = ref_of(&repo, r#ref);
+                Ok(Output::json(wisp_git::export_git(
+                    &mut repo, &ref_name, dir,
+                )?))
             }
-        }
+            (None, Some(file)) => {
+                let mut repo = open(&cli)?;
+                let ref_name = ref_of(&repo, r#ref);
+                Ok(Output::json(wisp_git::export_archive(
+                    &mut repo,
+                    &ref_name,
+                    file,
+                    profile.as_deref(),
+                    *strip_anchors,
+                )?))
+            }
+            (None, None) => Err(WispError::usage("export --git <dir> | --archive <file>")),
+        },
         Command::Index { rebuild } => {
             let mut repo = open(&cli)?;
             let built = query::index(&mut repo, rebuild.as_deref())?;
@@ -896,13 +892,19 @@ pub fn run(cli: Cli) -> CliResult {
             query: q,
             mode,
             k,
+            threshold,
+            local_only,
             codec,
             r#ref,
         } => {
             let _ = codec;
             let mut repo = open(&cli)?;
             let ref_name = ref_of(&repo, r#ref);
-            let v = query::search(&mut repo, &ref_name, q, mode, *k)?;
+            let params = wisp_engine::search::SearchParams {
+                threshold: *threshold,
+                local_only: *local_only,
+            };
+            let v = query::search_with_params(&mut repo, &ref_name, q, mode, *k, &params)?;
             let human = v["results"]
                 .as_array()
                 .map(|rs| {

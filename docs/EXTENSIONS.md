@@ -1,10 +1,8 @@
-# Extension API (embeddings, vector index, sync)
+# Extension API
 
-The default `wisp` binary ships a **reference** stack: SQLite ledger/hot, `emb:hash:64`, and a SQLite vector table under `.wisp/cache/vectors/`. Products can replace or augment pieces without forking core.
+Community **wisp** ships one retrieval stack (see **`docs/SEARCH.md`**). This document defines **optional** hooks for products that store embeddings outside hot.db or use remote models.
 
-## Repository layout (`wisp init`)
-
-Like `git init`, `wisp init` creates **`.wisp/`** in the bundle root and treats the surrounding directory as the OKF working tree. Commands discover the nearest `.wisp/` upward from the current directory.
+Built-in `wisp search` never calls these traits.
 
 ## Embedding codecs
 
@@ -12,13 +10,11 @@ Trait: `wisp_index::EmbeddingCodec`
 
 | Method | Role |
 |--------|------|
-| `id()` | Manifest codec string (`emb:…`) |
+| `id()` | Manifest codec string (`emb:<provider>:<model>@<rev>/<dims>`) |
 | `dimension()` | Vector length |
 | `embed(text)` | Dense vector |
 
-Built-in: `emb:hash:64` in `wisp-sub-embed`.
-
-Register additional codecs in `manifest.toml` under `[codecs]` and implement the trait in your crate. Wire search via `wisp engine` or a `command` subscriber that updates an external index.
+Register codecs in `manifest.toml` under `[codecs.embedding]` and wire a matching `[vector_index.backends."<id>"]` block. Implement the trait in your crate; load it from a `command` subscriber or your own binary.
 
 ## Vector index backends
 
@@ -27,48 +23,42 @@ Trait: `wisp_index::VectorIndexBackend`
 | Method | Role |
 |--------|------|
 | `upsert` / `replace_all` | Sync from hot tier or an external ETL |
-| `delete_sections` | Purge on erase (core calls this for the default backend) |
-| `search` | Similarity query |
+| `delete_sections` | Purge on erase |
+| `search` | Similarity query (your product’s search UX) |
 
-Configure per codec in `manifest.toml`:
+Example manifest:
 
 ```toml
-[vector_index.backends."emb:hash:64"]
-driver = "sqlite"
-# path = "cache/vectors/custom.db"   # optional; default derived from codec id
+[codecs]
+embedding = ["emb:openai:text-embedding-3-small@1/1536"]
+default_embedding = "emb:openai:text-embedding-3-small@1/1536"
 
-[vector_index.backends."emb:openai:3-small"]
+[vector_index.backends."emb:openai:text-embedding-3-small@1/1536"]
 driver = "postgres"
 url_env = "WISP_VECTOR_DSN"
 ```
 
-| `driver` | Status in reference binary |
-|----------|----------------------------|
-| `sqlite` | Implemented (`wisp-sub-embed`) |
-| `postgres` / `pgvector` | `crates/wisp-vector-pg` — build `wisp` with `--features postgres-vector` |
-| `command` | Extension point — JSON-lines helper on stdin/stdout |
+| `driver` | Reference implementation |
+|----------|-------------------------|
+| `sqlite` | `wisp-sub-embed::SqliteVectorBackend` (`.wisp/cache/vectors/<codec>.db`) |
+| `postgres` / `pgvector` | `crates/wisp-vector-pg` — `wisp-cli --features postgres-vector` |
+| `command` | Your process implementing JSON-lines `VectorIndexBackend` |
 
-## Erase / vector purge
-
-When scopes are shredded, the engine collects section ids in those scopes and calls `delete_sections` on the configured default embedding index. External Postgres indexes should subscribe to the same feed events or mirror this hook.
+On erase, the engine calls `delete_sections` on **every** configured `[vector_index.backends]` entry.
 
 ## Sync transports
 
 | URL | Behaviour |
 |-----|-----------|
-| `file:///path`, plain path | Trusted local replica copy (`wisp-sync::local`) |
-| `https://host/repo` | Dumb HTTP: `GET/PUT {base}/wisp/v1/pack.zst` (cold-tier tar.zst) |
-| `ssh://user@host/path` | `rsync -az -e ssh` of bundle dir + `wisp pull`/`push` file transport |
-
-HTTP expects your product to serve or accept the pack at that path (similar to git dumb HTTP). SSH expects `rsync`, `ssh`, and `wisp` on the remote for the rsync-based path.
+| `file:///path`, plain path | Local replica (`wisp-sync::local`) |
+| `https://host/repo` | Dumb HTTP: `GET/PUT {base}/wisp/v1/pack.zst` |
+| `ssh://user@host/path` | `rsync` + local `wisp pull`/`push` |
 
 ## Git interop
 
 | Command | Behaviour |
 |---------|-----------|
-| `export --archive out.tar.zst` | Render ref → tar.zst (like `git archive`) |
-| `import --git <repo>` | Snapshot via `git archive`, or `--history` for one changeset per commit + `.wisp/meta/git-map.json` |
-| `wisp serve --http ADDR` | Dumb `GET`/`PUT` `/wisp/v1/pack.zst` for HTTPS remotes |
+| `export --archive out.tar.zst` | Render ref → tar.zst |
+| `import --git <repo>` | Snapshot via `git archive`, or `--history` for per-commit import |
+| `wisp serve --http ADDR` | Dumb `GET`/`PUT` `/wisp/v1/pack.zst` |
 | `export --git <dir>` | Single-commit git repo |
-
-Per-commit git history import remains a product extension; snapshot import is built in.

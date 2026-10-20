@@ -4,7 +4,7 @@ Guidance for AI coding agents (Cursor, CodeRabbit, Claude Code, etc.) working on
 
 ## What this is
 
-**wisp** is a local-first differential OKF (Open Knowledge Format) store: section-level changesets, encrypted cold storage, hot SQLite tiers, agent-friendly CLI (`wisp --json`). Release **0.1.0** implements the v1 design in `docs/references/Differential OKF Store — v1 Proposal.pdf` (not in git; see maintainer). Deviations live in **`DECISIONS.md`** — read before changing behavior.
+**wisp** is a local-first differential OKF (Open Knowledge Format) store: section-level changesets, encrypted cold storage, hot SQLite tiers, agent-friendly CLI (`wisp --json`). Release **0.1.0** retrieval: **`docs/SEARCH.md`**. Optional embedding backends: **`docs/EXTENSIONS.md`**. OKF/store deltas: **`DECISIONS.md`** — read before changing behavior.
 
 Do not confuse:
 
@@ -25,7 +25,7 @@ Do not confuse:
 | `crates/wisp-invariants` | Integration tests (CI gate) |
 | `crates/wisp-sync`, `wisp-git`, `wisp-feed`, `wisp-sub-*`, `wisp-index` | M5–M8 modules |
 | `DECISIONS.md` | Spec deviations (required reading for behavior changes) |
-| `docs/EXTENSIONS.md`, `docs/MERGE.md` | Extension API + merge rules |
+| `docs/SEARCH.md`, `docs/EXTENSIONS.md`, `docs/MERGE.md` | Built-in search, extension API, merge rules |
 
 ## Build and test (required before PR)
 
@@ -37,7 +37,7 @@ cargo test -p wisp-invariants
 cargo build --release
 ```
 
-Rust **1.80+**. If `libsqlite3-sys` bindgen fails in a sandbox, use  
+Rust **1.88+** (see workspace `rust-version`). If `libsqlite3-sys` bindgen fails in a sandbox, use  
 `CARGO_TARGET_DIR=./target cargo test --workspace`.
 
 ## TDD contract
@@ -48,6 +48,8 @@ Rust **1.80+**. If `libsqlite3-sys` bindgen fails in a sandbox, use
 4. Record spec deviations in **`DECISIONS.md`** (§18 style).
 
 SPY desk narrative: `wisp-invariants/tests/spy_options_*.rs`, bundle `spy-options`.
+
+Search IR battery: edit **`contrib/search-battery/cases.toml` only** (Rust `search_battery.rs` and `run_battery.py` load it). See `contrib/search-battery/README.md`.
 
 ## Coding norms
 
@@ -76,4 +78,4 @@ SPY desk narrative: `wisp-invariants/tests/spy_options_*.rs`, bundle `spy-option
 
 ## Human contribution flow
 
-See **`CONTRIBUTING.md`** (fork, branch, git worktree, PR checklist).
+See **`CONTRIBUTING.md`** — GitHub Flow (`main` + topic branches + PRs; no `develop` branch).

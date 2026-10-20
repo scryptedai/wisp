@@ -1,4 +1,4 @@
-//! Vector index factory (manifest-driven backends).
+//! Extension vector index factory (`docs/EXTENSIONS.md`). Built-in search uses hot.db only.
 
 use crate::manifest::VectorIndexSection;
 use crate::repo::Repository;
@@ -21,9 +21,8 @@ pub fn open_index(
             url_env: None,
             command: None,
         });
-    let driver = VectorDriver::parse(&cfg.driver).ok_or_else(|| {
-        WispError::usage(format!("unknown vector_index driver {:?}", cfg.driver))
-    })?;
+    let driver = VectorDriver::parse(&cfg.driver)
+        .ok_or_else(|| WispError::usage(format!("unknown vector_index driver {:?}", cfg.driver)))?;
     match driver {
         VectorDriver::Sqlite => {
             let path_override = cfg.path.as_deref().map(Path::new);
@@ -43,9 +42,9 @@ pub fn open_index(
             #[cfg(not(feature = "postgres-vector"))]
             {
                 let _ = url_env;
-                return Err(WispError::not_implemented(
+                Err(WispError::not_implemented(
                     "postgres vector backend: build wisp with --features postgres-vector",
-                ));
+                ))
             }
         }
         VectorDriver::ExternalCommand => Err(WispError::not_implemented(
@@ -54,6 +53,7 @@ pub fn open_index(
     }
 }
 
+/// Purge extension indexes configured in the manifest (not built-in hot.db search).
 pub fn purge_vectors_for_sections(
     repo: &Repository,
     sections: &[wisp_model::SectionId],
@@ -61,16 +61,15 @@ pub fn purge_vectors_for_sections(
     if sections.is_empty() {
         return Ok(());
     }
-    let codec = repo
-        .manifest
-        .codecs
-        .default_embedding
-        .as_deref()
-        .unwrap_or(wisp_sub_embed::HASH_CODEC);
     let wisp_dir = repo.wisp_dir.clone();
-    let vector_index = repo.manifest.vector_index.clone();
-    let mut idx = open_index(&wisp_dir, &vector_index, codec)?;
-    idx.delete_sections(sections)?;
-    idx.checkpoint()?;
+    let backends = repo.manifest.vector_index.backends.clone();
+    if backends.is_empty() {
+        return Ok(());
+    }
+    for codec in backends.keys() {
+        let mut idx = open_index(&wisp_dir, &repo.manifest.vector_index, codec)?;
+        idx.delete_sections(sections)?;
+        idx.checkpoint()?;
+    }
     Ok(())
 }

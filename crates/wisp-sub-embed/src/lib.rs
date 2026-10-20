@@ -1,62 +1,26 @@
-//! `wisp-sub-embed`: reference embedding codec and SQLite vector backend (§14.4).
+//! Built-in neural search (`section_dense_embeddings`) and reference extension backends.
 
-use rusqlite::{params, Connection};
-use sha2::{Digest, Sha256};
+use rusqlite::{params, Connection, OptionalExtension};
 use std::path::{Path, PathBuf};
 use wisp_index::{EmbeddingCodec, SectionVectorRow, VectorIndexBackend, VectorSearchHit};
 use wisp_model::{ConceptId, Result, SectionId, WispError};
 use wisp_store::Hot;
 
 pub const CODEC_PREFIX: &str = "emb:";
-pub const HASH_CODEC: &str = "emb:hash:64";
-pub const DIM: usize = 64;
+pub const NEURAL_MIN_COSINE: f32 = 0.60;
 
-pub fn is_supported(codec: &str) -> bool {
-    codec == HASH_CODEC
+mod neural;
+
+pub fn semantic_enabled() -> bool {
+    cfg!(feature = "semantic")
 }
+
+pub use neural::search_semantic;
 
 pub fn codec_for(id: &str) -> Result<Box<dyn EmbeddingCodec>> {
-    if id == HASH_CODEC {
-        Ok(Box::new(HashEmbeddingCodec))
-    } else {
-        Err(WispError::usage(format!(
-            "embedding codec {id} is not built in; register an external codec in your product"
-        )))
-    }
-}
-
-pub struct HashEmbeddingCodec;
-
-impl EmbeddingCodec for HashEmbeddingCodec {
-    fn id(&self) -> &str {
-        HASH_CODEC
-    }
-    fn dimension(&self) -> usize {
-        DIM
-    }
-    fn embed(&self, text: &str) -> Result<Vec<f32>> {
-        Ok(embed_text(text, DIM))
-    }
-}
-
-/// Deterministic bag-of-words hash embedding, L2-normalized.
-pub fn embed_text(text: &str, dim: usize) -> Vec<f32> {
-    let mut v = vec![0f32; dim];
-    for token in text.split_whitespace() {
-        let mut h = Sha256::new();
-        h.update(token.as_bytes());
-        let digest = h.finalize();
-        let bucket = (digest[0] as usize) % dim;
-        let sign = if digest[1] & 1 == 0 { 1.0 } else { -1.0 };
-        v[bucket] += sign;
-    }
-    let norm = (v.iter().map(|x| x * x).sum::<f32>()).sqrt();
-    if norm > 0.0 {
-        for x in &mut v {
-            *x /= norm;
-        }
-    }
-    v
+    Err(WispError::usage(format!(
+        "embedding codec {id} is not built in; use `wisp search` or implement EmbeddingCodec in your product (see docs/EXTENSIONS.md)"
+    )))
 }
 
 fn vec_to_blob(v: &[f32]) -> Vec<u8> {
@@ -97,9 +61,6 @@ pub struct SqliteVectorBackend {
 
 impl SqliteVectorBackend {
     pub fn open(wisp_dir: &Path, codec: &str, path_override: Option<&Path>) -> Result<Self> {
-        if !is_supported(codec) {
-            return Err(WispError::usage(format!("unsupported embedding codec {codec}")));
-        }
         let path = path_override
             .map(PathBuf::from)
             .unwrap_or_else(|| index_path(wisp_dir, codec));
@@ -119,10 +80,17 @@ impl SqliteVectorBackend {
             );",
         )
         .map_err(|e| WispError::internal(e.to_string()))?;
+        let dim: usize = conn
+            .query_row("SELECT length(vec) / 4 FROM vectors LIMIT 1", [], |r| {
+                r.get::<_, i64>(0)
+            })
+            .optional()
+            .map_err(|e| WispError::internal(e.to_string()))?
+            .unwrap_or(384) as usize;
         Ok(SqliteVectorBackend {
             codec: codec.to_string(),
             conn,
-            dim: DIM,
+            dim,
         })
     }
 }
@@ -153,7 +121,8 @@ impl VectorIndexBackend for SqliteVectorBackend {
             )
             .map_err(|e| WispError::internal(e.to_string()))?;
         }
-        tx.commit().map_err(|e| WispError::internal(e.to_string()))?;
+        tx.commit()
+            .map_err(|e| WispError::internal(e.to_string()))?;
         Ok(())
     }
 
@@ -209,7 +178,11 @@ impl VectorIndexBackend for SqliteVectorBackend {
                 score,
             });
         }
-        hits.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
+        hits.sort_by(|a, b| {
+            b.score
+                .partial_cmp(&a.score)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
         hits.truncate(k);
         Ok(hits)
     }
@@ -251,7 +224,10 @@ impl VectorIndex {
     }
 }
 
-pub fn rows_from_hot(hot: &Connection, codec: &dyn EmbeddingCodec) -> Result<Vec<SectionVectorRow>> {
+pub fn rows_from_hot(
+    hot: &Connection,
+    codec: &dyn EmbeddingCodec,
+) -> Result<Vec<SectionVectorRow>> {
     let mut out = Vec::new();
     for c in Hot::concepts(hot)? {
         for s in Hot::sections_of(hot, c.concept)? {
@@ -275,7 +251,7 @@ pub fn rows_from_hot(hot: &Connection, codec: &dyn EmbeddingCodec) -> Result<Vec
 }
 
 pub fn purge_sections(wisp_dir: &Path, codec: &str, sections: &[SectionId]) -> Result<()> {
-    if sections.is_empty() || !is_supported(codec) {
+    if sections.is_empty() {
         return Ok(());
     }
     let path = index_path(wisp_dir, codec);
@@ -298,19 +274,8 @@ fn blob16(v: Vec<u8>) -> [u8; 16] {
 
 pub fn index_path(wisp_dir: &Path, codec: &str) -> PathBuf {
     let safe = codec.replace(':', "_");
-    wisp_dir.join("cache").join("vectors").join(format!("{safe}.db"))
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn embed_is_deterministic() {
-        let a = embed_text("append only rows orders", DIM);
-        let b = embed_text("append only rows orders", DIM);
-        assert_eq!(a, b);
-        let c = embed_text("unrelated quantum physics", DIM);
-        assert!(cosine(&a, &c) < 0.5);
-    }
+    wisp_dir
+        .join("cache")
+        .join("vectors")
+        .join(format!("{safe}.db"))
 }

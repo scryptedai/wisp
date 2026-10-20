@@ -8,7 +8,7 @@ Copyright © 2026 Scrypted. Author: Tim Cotten (tcotten@scrypted.ai).
 
 wisp stores a bundle as an append-only log of **section-level** changes with encrypted, destroyable payloads, and materializes a conformant OKF directory on demand. It is built for fleets of agents: many writers commit without locks, every change carries provenance, and any section, concept, or group can be provably erased while the integrity chain still verifies.
 
-Release **0.1.0** implements the **v1 technical design** in `docs/references/Differential OKF Store — v1 Proposal.pdf` (Oct 17 2026). See [Status](#status), [DECISIONS.md](DECISIONS.md), [EXTENSIONS.md](docs/EXTENSIONS.md), and [MERGE.md](docs/MERGE.md).
+Release **0.1.0** behavior is specified in **[docs/SEARCH.md](docs/SEARCH.md)** (retrieval), **[docs/EXTENSIONS.md](docs/EXTENSIONS.md)** (optional product hooks), **[DECISIONS.md](DECISIONS.md)** (OKF/store deltas), and **[docs/MERGE.md](docs/MERGE.md)**.
 
 ## Contributing
 
@@ -19,10 +19,10 @@ Fork, use **git worktrees** for parallel branches, and open PRs — see **[CONTR
 ```sh
 cargo build --release        # one static binary: target/release/wisp
 cargo test                   # unit + engine invariant tests (§17)
-cargo test -p wisp-invariants  # OKF corpus integration tests (see crates/wisp-corpus/)
+cargo test -p wisp-invariants  # OKF corpus + search IR (semantic on by default; first run may fetch ~128MiB model)
 ```
 
-Rust 1.80+. No services, no daemons: SQLite (bundled), XChaCha20-Poly1305, Ed25519, FTS5.
+Rust 1.88+. No services, no daemons: SQLite (bundled), XChaCha20-Poly1305, Ed25519, FTS5.
 
 ## Five-minute tour
 
@@ -48,7 +48,8 @@ wisp --actor sl-bot/0.3 update tables/orders.md#01JAD2V7… --base 01JAB7Q3M9…
 Context for a model (§14):
 
 ```sh
-wisp search "door behavior"                 # BM25 over current sections
+wisp search "door behavior"                 # auto: BM25 + fuzzy → RI → semantic when built in
+wisp search "RAM depleted" --local-only   # same through RI; no neural model load
 wisp pack tables/orders.md --budget 4000    # JSON, within a token budget, reports what it omitted
 wisp why tables/orders.md#01JAD2V7… --depth 2   # actors, origins, the input graph
 ```
@@ -92,10 +93,10 @@ The keystore unlocks from, in order: `WISP_MASTER_KEY` (64 hex chars; CI), `--pa
 | M2 Cold tier and crypto (ledger, payload envelope, keystore, staging, changeset signing) | done |
 | M3 Hot tier, optimistic commits, record, checkout, views, okf-0.2 | done |
 | M4 Lifecycle and erase (retract/restore, groups, erase, fsck, policies, revert, backup) | done |
-| M5 Feed and search | feed, keyword/vector/hybrid search (`emb:hash:64`), pack, tokens (approx codec), external subscriber host done; external embed models pending |
+| M5 Feed and search | feed, search (trigram/RI/semantic), pack, tokens (approx codec), external subscriber host done |
 | M6 Profiles and migration | okf-0.1 profile, 0.1→0.2 migration plan, down-export (`export --profile 0.1`) done |
 | M7 Concurrency and branches | headless writes, read assertions, branches, switch, worktrees, merge (fast-forward, disjoint replay, `--resolutions`, `--abort`) done; full §11.5 rule table still partial |
-| M8 Sync, git interop, release | `file://` + HTTPS pack + SSH/rsync remotes, `export --archive` tar.zst, `import --git` snapshot, `export --git`, `serve --stdio` skeleton |
+| M8 Sync, git interop, release | `file://` + HTTPS pack + SSH/rsync remotes, `export --archive` tar.zst, `import --git` (snapshot or `--history`), `export --git`, `serve --stdio` skeleton |
 
 Invariants exercised in `cargo test`: I1, I2, I3 (parse layer and strip-anchors round-trip), I4, I5, I7, I12, I13, I16, I17, I19, I21, I22, I23, I24, I25 (staging flush on open); §11.5 merge playbook and §11.6 sync roundtrip integration tests in `wisp-invariants`.
 

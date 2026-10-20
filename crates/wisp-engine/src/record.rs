@@ -1295,7 +1295,7 @@ fn change_path(hot: &Hot, c: &Change) -> String {
             .ok()
             .flatten()
             .map(|a| a.path)
-            .unwrap_or_else(|| format!("asset:{}", asset));
+            .unwrap_or_else(|| format!("asset:{asset}"));
     }
     if let Some(cp) = c.target.concept() {
         if let Ok(Some(st)) = Hot::concept(hot.conn(), cp) {

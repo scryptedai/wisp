@@ -68,7 +68,8 @@ pub fn persist_merge_skips(
     fs::create_dir_all(path.parent().unwrap()).map_err(|e| WispError::internal(e.to_string()))?;
     let skip_list: Vec<String> = skip.iter().map(|c| c.to_string()).collect();
     let v = json!({ "head": head.to_string(), "skip": skip_list });
-    fs::write(&path, serde_json::to_vec_pretty(&v)?).map_err(|e| WispError::internal(e.to_string()))?;
+    fs::write(&path, serde_json::to_vec_pretty(&v)?)
+        .map_err(|e| WispError::internal(e.to_string()))?;
     Ok(())
 }
 
@@ -144,15 +145,7 @@ pub fn merge_refs(
     let conflicts = divergent_conflicts(conn, &into_keys, &source_keys)?;
     if !conflicts.is_empty() {
         if resolutions.is_none() {
-            write_merge_state(
-                repo,
-                source,
-                into,
-                base,
-                into_head,
-                source_head,
-                &conflicts,
-            )?;
+            write_merge_state(repo, source, into, base, into_head, source_head, &conflicts)?;
             return Err(WispError::conflict(
                 "merge conflicts",
                 json!({
@@ -228,9 +221,8 @@ fn write_merge_state(
         "source_head": source_head.to_string(),
         "conflicts": conflicts,
     });
-    fs::write(merge_state_path(repo), serde_json::to_vec_pretty(&v)?).map_err(|e| {
-        WispError::internal(format!("write merge state: {e}"))
-    })?;
+    fs::write(merge_state_path(repo), serde_json::to_vec_pretty(&v)?)
+        .map_err(|e| WispError::internal(format!("write merge state: {e}")))?;
     Ok(())
 }
 
@@ -266,12 +258,9 @@ struct ResolutionEntry {
     take: String,
 }
 
-fn skip_changes_from_resolutions(
-    conflicts: &[Value],
-    path: &Path,
-) -> Result<HashSet<ChangeId>> {
-    let text = fs::read_to_string(path)
-        .map_err(|e| WispError::usage(format!("read resolutions: {e}")))?;
+fn skip_changes_from_resolutions(conflicts: &[Value], path: &Path) -> Result<HashSet<ChangeId>> {
+    let text =
+        fs::read_to_string(path).map_err(|e| WispError::usage(format!("read resolutions: {e}")))?;
     let file: ResolutionFile = serde_json::from_str(&text)
         .map_err(|e| WispError::usage(format!("parse resolutions: {e}")))?;
     let mut skip = HashSet::new();
@@ -321,7 +310,11 @@ fn fast_forward(
     Ok(())
 }
 
-pub fn is_ancestor(conn: &rusqlite::Connection, ancestor: ChangesetId, desc: ChangesetId) -> Result<bool> {
+pub fn is_ancestor(
+    conn: &rusqlite::Connection,
+    ancestor: ChangesetId,
+    desc: ChangesetId,
+) -> Result<bool> {
     if ancestor == desc {
         return Ok(true);
     }
@@ -390,7 +383,11 @@ fn ancestry_with_seq(
 }
 
 /// Changesets on the `based_on` chain from `base` (exclusive) to `head` (inclusive), oldest first.
-pub fn changesets_since(conn: &rusqlite::Connection, head: ChangesetId, base: ChangesetId) -> Vec<ChangesetId> {
+pub fn changesets_since(
+    conn: &rusqlite::Connection,
+    head: ChangesetId,
+    base: ChangesetId,
+) -> Vec<ChangesetId> {
     let mut path = Vec::new();
     let mut cur = Some(head);
     while let Some(id) = cur {
@@ -420,9 +417,10 @@ enum ScopeKey {
 fn scope_key(c: &Change) -> ScopeKey {
     match &c.target {
         Target::Section { concept, section } => ScopeKey::Section(*concept, *section),
-        Target::FrontmatterKey { concept, key_commit } => {
-            ScopeKey::Frontmatter(*concept, hex::encode(key_commit.0))
-        }
+        Target::FrontmatterKey {
+            concept,
+            key_commit,
+        } => ScopeKey::Frontmatter(*concept, hex::encode(key_commit.0)),
         Target::Concept { concept } => ScopeKey::ConceptPath(*concept),
         Target::Source { concept, source } => ScopeKey::Source(*concept, source.clone()),
         Target::Asset { asset } => ScopeKey::Asset(*asset),

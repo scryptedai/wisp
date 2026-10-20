@@ -16,4 +16,4 @@
 
 ## License
 
-I license this contribution under the project's **GPLv2** (Community Release).
+- [ ] I agree to the [contribution terms](https://github.com/scryptedai/wisp/blob/main/CONTRIBUTING.md#contribution-terms): **GPLv2** for the Community Release, plus the **grant to Scrypted** for use in other licensed editions.

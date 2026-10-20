@@ -51,12 +51,12 @@ pub struct Sectioned {
 
 /// Format an anchor comment for a section (§7.3).
 pub fn anchor_text(id: SectionId) -> String {
-    format!("<!-- ^{} -->", id)
+    format!("<!-- ^{id} -->")
 }
 
 /// Format an erasure marker (§7.3).
 pub fn erasure_marker(id: SectionId, reason: &str) -> String {
-    format!("<!-- ^{} [erased: {}] -->", id, reason)
+    format!("<!-- ^{id} [erased: {reason}] -->")
 }
 
 /// Try to parse `<!-- ^XXXXXXXXXXXXXXXXXXXXXXXXXX -->` exactly.
@@ -283,7 +283,7 @@ pub fn section(body: &str) -> Sectioned {
         } else {
             ""
         };
-        let heading_line = format!("{}{}{}", first_no_anchor, ending, rest_lines);
+        let heading_line = format!("{first_no_anchor}{ending}{rest_lines}");
         let is_atx = first_no_anchor.trim_start().starts_with('#');
         let heading = if is_atx {
             atx_heading_text(&first_no_anchor)

@@ -61,7 +61,7 @@ fn parse_ssh(rest: &str) -> Result<RemoteTarget> {
     Ok(RemoteTarget::Ssh(SshRemote {
         user,
         host: host.to_string(),
-        path: PathBuf::from(format!("/{}", path)),
+        path: PathBuf::from(format!("/{path}")),
     }))
 }
 
@@ -182,7 +182,7 @@ fn ssh_sync(
         remote.path.to_string_lossy().trim_end_matches('/')
     );
     if is_push {
-        init_trusted_replica(&bundle, local, unlock)?;
+        init_trusted_replica(&bundle, &local.root, unlock)?;
         push(local, &bundle, ref_name, unlock)?;
         rsync(&bundle, &remote_spec, true)?;
         Ok(json!({
@@ -209,9 +209,11 @@ fn rsync(local_bundle: &Path, remote_spec: &str, to_remote: bool) -> Result<()> 
     let mut cmd = Command::new("rsync");
     cmd.arg("-az").arg("-e").arg("ssh");
     if to_remote {
-        cmd.arg(format!("{}/", local_bundle.display())).arg(remote_spec);
+        cmd.arg(format!("{}/", local_bundle.display()))
+            .arg(remote_spec);
     } else {
-        cmd.arg(remote_spec).arg(format!("{}/", local_bundle.display()));
+        cmd.arg(remote_spec)
+            .arg(format!("{}/", local_bundle.display()));
     }
     let out = cmd
         .output()

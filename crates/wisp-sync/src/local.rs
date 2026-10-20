@@ -20,29 +20,37 @@ pub fn parse_local_url(url: &str) -> Result<PathBuf> {
         } else {
             PathBuf::from(rest)
         };
-        return path.canonicalize().map_err(|e| {
-            WispError::not_found(format!("remote path {}: {e}", path.display()))
-        });
+        return path
+            .canonicalize()
+            .map_err(|e| WispError::not_found(format!("remote path {}: {e}", path.display())));
     }
     PathBuf::from(url)
         .canonicalize()
         .map_err(|e| WispError::not_found(format!("remote path {url}: {e}")))
 }
 
-/// Empty replica with the same repo identity and keys as `template` (trusted peer).
+/// Empty replica with the same repo identity and keys as `template_root` (trusted peer).
 pub fn init_trusted_replica(
     dst_root: &Path,
-    template: &Repository,
+    template_root: &Path,
     unlock: &Unlock,
 ) -> Result<Repository> {
-    let mut dst = Repository::init(dst_root, template.profile.okf_version(), unlock)?;
-    dst.manifest.repo.id = template.manifest.repo.id;
-    dst.manifest.repo.scope = template.manifest.repo.scope;
+    let template = Repository::open(template_root, unlock)?;
+    let profile_ver = template.profile.okf_version();
+    let repo_id = template.manifest.repo.id;
+    let repo_scope = template.manifest.repo.scope;
+    let keys_src = template.wisp_dir.join("keys");
+    drop(template);
+
+    let mut dst = Repository::init(dst_root, profile_ver, unlock)?;
+    dst.manifest.repo.id = repo_id;
+    dst.manifest.repo.scope = repo_scope;
     dst.manifest.save(&dst.wisp_dir.join("manifest.toml"))?;
-    let keys = template.wisp_dir.join("keys");
     let dst_keys = dst.wisp_dir.join("keys");
+    drop(dst);
+
     fs::remove_dir_all(&dst_keys)?;
-    copy_dir_all(&keys, &dst_keys)?;
+    copy_dir_all(&keys_src, &dst_keys)?;
     Repository::open(dst_root, unlock)
 }
 
@@ -169,7 +177,10 @@ fn transfer_cold(src: &Repository, dst: &mut Repository) -> Result<TransferStats
 
     for (gid, label) in Ledger::groups(src_conn)? {
         let members = Ledger::group_members(src_conn, gid)?;
-        if Ledger::groups(dst.ledger.conn())?.iter().all(|(g, _)| *g != gid) {
+        if Ledger::groups(dst.ledger.conn())?
+            .iter()
+            .all(|(g, _)| *g != gid)
+        {
             stats.payloads += copy_payload(src, dst, &label, src.repo_scope())?;
             Ledger::insert_group(dst.ledger.conn(), gid, &label)?;
             for (m, kind) in members {
@@ -193,8 +204,7 @@ fn transfer_cold(src: &Repository, dst: &mut Repository) -> Result<TransferStats
             if Ledger::get_changeset(dst.ledger.conn(), *p)?.is_none() {
                 return Err(WispError::integrity(format!(
                     "missing parent {} when transferring {}",
-                    p,
-                    row.changeset.id
+                    p, row.changeset.id
                 )));
             }
         }
@@ -202,8 +212,7 @@ fn transfer_cold(src: &Repository, dst: &mut Repository) -> Result<TransferStats
             if Ledger::get_changeset(dst.ledger.conn(), b)?.is_none() {
                 return Err(WispError::integrity(format!(
                     "missing based_on {} when transferring {}",
-                    b,
-                    row.changeset.id
+                    b, row.changeset.id
                 )));
             }
         }
@@ -252,11 +261,7 @@ fn copy_payload(
         Some(info) => info,
         None => return Ok(0),
     };
-    let Some(ct) = Ledger::read_payload_at(
-        src.ledger.conn(),
-        &src.ledger.payloads_dir(),
-        pr.id,
-    )?
+    let Some(ct) = Ledger::read_payload_at(src.ledger.conn(), &src.ledger.payloads_dir(), pr.id)?
     else {
         return Err(WispError::integrity(format!(
             "payload {} listed in ledger but bytes missing on source",
@@ -320,4 +325,3 @@ fn is_ancestor(
     }
     Ok(false)
 }
-

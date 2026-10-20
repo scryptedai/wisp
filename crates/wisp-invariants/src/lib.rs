@@ -18,9 +18,8 @@ pub fn init_and_record_bundle(
     unlock: &Unlock,
 ) -> Result<Repository> {
     std::fs::create_dir_all(dest)?;
-    wisp_corpus::copy_bundle(spec, dest).map_err(|e| {
-        wisp_model::WispError::internal(format!("corpus copy: {e}"))
-    })?;
+    wisp_corpus::copy_bundle(spec, dest)
+        .map_err(|e| wisp_model::WispError::internal(format!("corpus copy: {e}")))?;
     let mut repo = Repository::init(dest, &spec.profile, unlock)?;
     record(
         &mut repo,
@@ -34,9 +33,8 @@ pub fn init_and_record_bundle(
 }
 
 fn parse_findings(v: &serde_json::Value) -> Result<Vec<wisp_profile::Finding>> {
-    serde_json::from_value(v["findings"].clone()).map_err(|e| {
-        wisp_model::WispError::internal(format!("validate findings json: {e}"))
-    })
+    serde_json::from_value(v["findings"].clone())
+        .map_err(|e| wisp_model::WispError::internal(format!("validate findings json: {e}")))
 }
 
 /// MUST-level profile findings for the whole bundle at `MAIN_REF`.
@@ -70,10 +68,7 @@ pub fn assert_lossless_strip(
     for (rel, orig) in before {
         let out_path = export_dir.join(rel);
         let out = std::fs::read_to_string(&out_path).map_err(|e| {
-            wisp_model::WispError::internal(format!(
-                "missing export {}: {e}",
-                out_path.display()
-            ))
+            wisp_model::WispError::internal(format!("missing export {}: {e}", out_path.display()))
         })?;
         let stripped = wisp_corpus::strip_managed_and_anchors(&out);
         let expect = wisp_corpus::strip_managed_and_anchors(orig);

@@ -11,8 +11,8 @@ mod transport;
 
 pub use http::serve_http;
 pub use local::{init_trusted_replica, parse_local_url, pull, push};
-pub use transport::{parse_remote_url, pull_remote, push_remote, RemoteTarget};
 pub use protocol::{client_hello_frames, server_ack_line, Message};
+pub use transport::{parse_remote_url, pull_remote, push_remote, RemoteTarget};
 
 pub const PROTOCOL_VERSION: u32 = 1;
 
@@ -74,10 +74,7 @@ mod tests {
             frames[0],
             include_str!("../tests/data/hello_golden.json").trim()
         );
-        assert_eq!(
-            frames[1],
-            r#"{"type":"push_ref","ref":"main"}"#
-        );
+        assert_eq!(frames[1], r#"{"type":"push_ref","ref":"main"}"#);
         assert_eq!(
             server_ack_line(),
             include_str!("../tests/data/ack_golden.json").trim()
@@ -107,7 +104,9 @@ mod tests {
         let head_a = wisp_store::Ledger::head(a.ledger.conn(), MAIN_REF)
             .unwrap()
             .unwrap();
-        let mut b = init_trusted_replica(&b_root, &a, &Unlock::default()).unwrap();
+        drop(a);
+        let mut b = init_trusted_replica(&b_root, &a_root, &Unlock::default()).unwrap();
+        let mut a = wisp_engine::Repository::open(&a_root, &Unlock::default()).unwrap();
         let push = push(&mut a, &b_root, MAIN_REF, &Unlock::default()).unwrap();
         assert_eq!(push["changesets"].as_u64(), Some(1));
         let head_b = wisp_store::Ledger::head(b.ledger.conn(), MAIN_REF)
@@ -115,8 +114,11 @@ mod tests {
             .unwrap();
         assert_eq!(head_a, head_b);
 
-        std::fs::write(a_root.join("doc.md"), "---\ntype: Note\ntitle: Sync\n---\n\n## One\n\nbody2\n")
-            .unwrap();
+        std::fs::write(
+            a_root.join("doc.md"),
+            "---\ntype: Note\ntitle: Sync\n---\n\n## One\n\nbody2\n",
+        )
+        .unwrap();
         record(
             &mut a,
             &RecordOptions {
@@ -141,13 +143,11 @@ mod tests {
         let (_dir, root) = fixture();
         let repo = wisp_engine::Repository::init(&root, "0.2", &Unlock::default()).unwrap();
         let id = repo.repo_id().to_string();
-        let mut input = Cursor::new(
-            format!(
-                "{}\n{}\n",
-                client_hello_frames(&id, "main")[0],
-                client_hello_frames(&id, "main")[1],
-            ),
-        );
+        let mut input = Cursor::new(format!(
+            "{}\n{}\n",
+            client_hello_frames(&id, "main")[0],
+            client_hello_frames(&id, "main")[1],
+        ));
         let r = protocol::server_handshake(&repo, &mut input).unwrap();
         assert_eq!(r, "main");
     }

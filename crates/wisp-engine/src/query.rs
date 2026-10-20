@@ -247,121 +247,25 @@ pub fn search(
     mode: &str,
     k: usize,
 ) -> Result<Value> {
-    let codec = repo.manifest.codecs.default_embedding.clone();
-    let vector_index = repo.manifest.vector_index.clone();
-    let wisp_dir = repo.wisp_dir.clone();
-    let hot = repo.hot(ref_name)?;
-    let kw_hits = Hot::search_keyword(hot.conn(), query, k)?;
-
-    let (mode_used, results) = match mode {
-        "keyword" => {
-            let results = kw_hits
-                .into_iter()
-                .map(|h| search_hit_json(&h))
-                .collect();
-            ("keyword", results)
-        }
-        "vector" | "hybrid" => match codec.as_deref() {
-            Some(c) if wisp_sub_embed::is_supported(c) => {
-                let embed = wisp_sub_embed::codec_for(c)?;
-                let mut idx = crate::vector::open_index(&wisp_dir, &vector_index, c)?;
-                let rows = wisp_sub_embed::rows_from_hot(hot.conn(), embed.as_ref())?;
-                idx.replace_all(&rows)?;
-                let qv = embed.embed(query)?;
-                let vhits = idx.search(&qv, k)?;
-                if mode == "vector" {
-                    let results = vhits
-                        .into_iter()
-                        .map(|h| search_vector_hit_json(&h))
-                        .collect();
-                    ("vector", results)
-                } else {
-                    let results = hybrid_merge(kw_hits, &vhits, k);
-                    ("hybrid", results)
-                }
-            }
-            Some(c) => {
-                return Err(WispError::usage(format!(
-                    "embedding codec {c} is not supported in this build"
-                )));
-            }
-            None => {
-                let results = kw_hits.into_iter().map(|h| search_hit_json(&h)).collect();
-                ("keyword", results)
-            }
-        }
-        other => return Err(WispError::usage(format!("unknown search mode {other:?}"))),
-    };
-    Ok(json!({ "mode": mode_used, "requested_mode": mode, "query": query, "results": results }))
+    crate::search::execute(
+        repo,
+        ref_name,
+        query,
+        mode,
+        k,
+        &crate::search::SearchParams::default(),
+    )
 }
 
-fn search_vector_hit_json(h: &wisp_index::VectorSearchHit) -> Value {
-    json!({
-        "concept": h.concept.to_string(),
-        "path": h.path,
-        "section": h.section.to_string(),
-        "heading": h.heading,
-        "score": h.score,
-        "tokens": count_tokens(&h.body),
-    })
-}
-
-fn search_hit_json(h: &wisp_store::SearchHit) -> Value {
-    json!({
-        "concept": h.concept.to_string(),
-        "path": h.path,
-        "section": h.section.to_string(),
-        "heading": h.heading,
-        "score": h.score,
-        "tokens": count_tokens(&h.body),
-    })
-}
-
-fn hybrid_merge(
-    kw: Vec<wisp_store::SearchHit>,
-    vec: &[wisp_index::VectorSearchHit],
+pub fn search_with_params(
+    repo: &mut Repository,
+    ref_name: &str,
+    query: &str,
+    mode: &str,
     k: usize,
-) -> Vec<Value> {
-    use std::collections::HashMap;
-    let mut scores: HashMap<String, (f64, wisp_store::SearchHit)> = HashMap::new();
-    for (i, h) in kw.into_iter().enumerate() {
-        let key = h.section.to_string();
-        let rrf = 1.0 / (60.0 + i as f64);
-        scores.insert(key, (rrf, h));
-    }
-    for (i, v) in vec.iter().enumerate() {
-        let key = v.section.to_string();
-        let rrf = 1.0 / (60.0 + i as f64);
-        if let Some((s, _)) = scores.get_mut(&key) {
-            *s += rrf;
-        } else {
-            scores.insert(
-                key,
-                (
-                    rrf,
-                    wisp_store::SearchHit {
-                        concept: v.concept,
-                        section: v.section,
-                        path: v.path.clone(),
-                        heading: v.heading.clone(),
-                        score: v.score as f64,
-                        body: v.body.clone(),
-                    },
-                ),
-            );
-        }
-    }
-    let mut ranked: Vec<_> = scores.into_iter().collect();
-    ranked.sort_by(|a, b| b.1.0.partial_cmp(&a.1.0).unwrap_or(std::cmp::Ordering::Equal));
-    ranked
-        .into_iter()
-        .take(k)
-        .map(|(_, (score, h))| {
-            let mut o = search_hit_json(&h);
-            o.as_object_mut().unwrap().insert("score".into(), json!(score));
-            o
-        })
-        .collect()
+    params: &crate::search::SearchParams,
+) -> Result<Value> {
+    crate::search::execute(repo, ref_name, query, mode, k, params)
 }
 
 /// `wisp pack [<path>...] [--budget <tokens>]` (§14.5).
@@ -657,10 +561,8 @@ pub fn fsck(repo: &mut Repository) -> Result<Value> {
                     }
                 }
             }
-        } else {
-            if on_disk.is_some() {
-                problems.push(json!({ "kind": "erased_payload_present", "payload": id.to_string(), "scope": scope.to_string() }));
-            }
+        } else if on_disk.is_some() {
+            problems.push(json!({ "kind": "erased_payload_present", "payload": id.to_string(), "scope": scope.to_string() }));
         }
     }
     // Tombstoned scopes fully shredded.
@@ -830,8 +732,8 @@ pub fn mv(
                         )
                     }
                 };
-                body = body.replace(&format!("]({})", l.dest), &format!("]({})", new_dest));
-                body = body.replace(&format!("]: {}", l.dest), &format!("]: {}", new_dest));
+                body = body.replace(&format!("]({})", l.dest), &format!("]({new_dest})"));
+                body = body.replace(&format!("]: {}", l.dest), &format!("]: {new_dest}"));
             }
         }
         if body != sec.body {
@@ -1368,11 +1270,7 @@ pub fn actors(repo: &Repository) -> Result<Value> {
 }
 
 /// Generate an Ed25519 keypair, store the seed locally, and register the public key on the actor.
-pub fn actor_gen_key(
-    repo: &mut Repository,
-    ref_name: &str,
-    actor: &str,
-) -> Result<Value> {
+pub fn actor_gen_key(repo: &mut Repository, ref_name: &str, actor: &str) -> Result<Value> {
     let row = repo.find_actor(actor)?.ok_or_else(|| {
         WispError::not_found(format!(
             "no actor {actor}; it registers on its first commit"

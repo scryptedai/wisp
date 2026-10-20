@@ -453,8 +453,7 @@ pub fn replay_asset(reader: &Reader<'_>, conn: &Connection, asset: AssetId) -> R
 /// Rebuild the hot tier of `ref_name` from the cold tier (§6.3). Byte-identical given the same log (I2, I13).
 pub fn rebuild_hot(repo: &mut Repository, ref_name: &str) -> Result<()> {
     let head = repo.head(ref_name)?;
-    let skip = head
-        .and_then(|h| crate::merge::merge_skips_for_head(repo, ref_name, h));
+    let skip = head.and_then(|h| crate::merge::merge_skips_for_head(repo, ref_name, h));
     rebuild_hot_inner(repo, ref_name, skip.as_ref())
 }
 

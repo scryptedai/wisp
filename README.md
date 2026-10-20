@@ -8,7 +8,7 @@ Copyright © 2026 Scrypted. Author: Tim Cotten (tcotten@scrypted.ai).
 
 wisp stores a bundle as an append-only log of **section-level** changes with encrypted, destroyable payloads, and materializes a conformant OKF directory on demand. It is built for fleets of agents: many writers commit without locks, every change carries provenance, and any section, concept, or group can be provably erased while the integrity chain still verifies.
 
-Release **0.1.0** implements the **v1 technical design** in `docs/references/Differential OKF Store — v1 Technical Design.md` (local; the Oct 17 proposal PDF is an earlier draft). See [Status](#status), [DECISIONS.md](DECISIONS.md), [EXTENSIONS.md](docs/EXTENSIONS.md), and [MERGE.md](docs/MERGE.md).
+Release **0.1.0** behavior is specified in **[docs/SEARCH.md](docs/SEARCH.md)** (retrieval), **[docs/EXTENSIONS.md](docs/EXTENSIONS.md)** (optional product hooks), **[DECISIONS.md](DECISIONS.md)** (OKF/store deltas), and **[docs/MERGE.md](docs/MERGE.md)**.
 
 ## Contributing
 

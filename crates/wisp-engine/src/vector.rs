@@ -1,4 +1,4 @@
-//! Vector index factory (manifest-driven backends).
+//! Extension vector index factory (`docs/EXTENSIONS.md`). Built-in search uses hot.db only.
 
 use crate::manifest::VectorIndexSection;
 use crate::repo::Repository;
@@ -53,6 +53,7 @@ pub fn open_index(
     }
 }
 
+/// Purge extension indexes configured in the manifest (not built-in hot.db search).
 pub fn purge_vectors_for_sections(
     repo: &Repository,
     sections: &[wisp_model::SectionId],
@@ -60,19 +61,15 @@ pub fn purge_vectors_for_sections(
     if sections.is_empty() {
         return Ok(());
     }
-    let codec = repo
-        .manifest
-        .codecs
-        .default_embedding
-        .as_deref()
-        .unwrap_or("");
-    if codec.is_empty() {
+    let wisp_dir = repo.wisp_dir.clone();
+    let backends = repo.manifest.vector_index.backends.clone();
+    if backends.is_empty() {
         return Ok(());
     }
-    let wisp_dir = repo.wisp_dir.clone();
-    let vector_index = repo.manifest.vector_index.clone();
-    let mut idx = open_index(&wisp_dir, &vector_index, codec)?;
-    idx.delete_sections(sections)?;
-    idx.checkpoint()?;
+    for codec in backends.keys() {
+        let mut idx = open_index(&wisp_dir, &repo.manifest.vector_index, codec)?;
+        idx.delete_sections(sections)?;
+        idx.checkpoint()?;
+    }
     Ok(())
 }

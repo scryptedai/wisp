@@ -28,7 +28,7 @@ pub struct VectorSearchHit {
     pub score: f32,
 }
 
-/// Text → dense vector for a named codec (`emb:hash:64`, `emb:openai:…`, …).
+/// Text → dense vector for a named codec (`emb:openai:…`, …). Not used by built-in `wisp search`.
 pub trait EmbeddingCodec: Send + Sync {
     fn id(&self) -> &str;
     fn dimension(&self) -> usize;

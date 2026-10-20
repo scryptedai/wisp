@@ -295,7 +295,7 @@ fn print_summary(mode: &str, k: usize, by_cat: &HashMap<String, CatStats>) {
 }
 
 #[test]
-fn search_battery_hybrid_keyword_vector() {
+fn search_battery_modes() {
     let (k, cases) = load_cases();
     let cat = catalog();
     let spec = cat

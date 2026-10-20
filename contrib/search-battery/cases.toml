@@ -1,6 +1,6 @@
 # Canonical search IR battery probes (single source of truth).
 # Loaded by: crates/wisp-invariants/tests/search_battery.rs, contrib/search-battery/run_battery.py
-# Contract: docs/references/... Technical Design.md §14.7, contrib/search-battery/README.md
+# Contract: docs/SEARCH.md, contrib/search-battery/README.md
 
 k = 5
 

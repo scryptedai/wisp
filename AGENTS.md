@@ -4,7 +4,7 @@ Guidance for AI coding agents (Cursor, CodeRabbit, Claude Code, etc.) working on
 
 ## What this is
 
-**wisp** is a local-first differential OKF (Open Knowledge Format) store: section-level changesets, encrypted cold storage, hot SQLite tiers, agent-friendly CLI (`wisp --json`). Release **0.1.0** design: `docs/references/Differential OKF Store — v1 Technical Design.md` (local; not in git). Deviations from that design live in **`DECISIONS.md`** — read before changing behavior.
+**wisp** is a local-first differential OKF (Open Knowledge Format) store: section-level changesets, encrypted cold storage, hot SQLite tiers, agent-friendly CLI (`wisp --json`). Release **0.1.0** retrieval: **`docs/SEARCH.md`**. Optional embedding backends: **`docs/EXTENSIONS.md`**. OKF/store deltas: **`DECISIONS.md`** — read before changing behavior.
 
 Do not confuse:
 
@@ -25,7 +25,7 @@ Do not confuse:
 | `crates/wisp-invariants` | Integration tests (CI gate) |
 | `crates/wisp-sync`, `wisp-git`, `wisp-feed`, `wisp-sub-*`, `wisp-index` | M5–M8 modules |
 | `DECISIONS.md` | Spec deviations (required reading for behavior changes) |
-| `docs/EXTENSIONS.md`, `docs/MERGE.md` | Extension API + merge rules |
+| `docs/SEARCH.md`, `docs/EXTENSIONS.md`, `docs/MERGE.md` | Built-in search, extension API, merge rules |
 
 ## Build and test (required before PR)
 

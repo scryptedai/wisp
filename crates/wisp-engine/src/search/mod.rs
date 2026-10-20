@@ -1,20 +1,20 @@
 //! Multi-tier search: exact → lexical/trigram → RI → optional neural.
 
 mod exact;
-mod hybrid;
+mod lexical_rrf;
 
 use crate::repo::Repository;
 use serde_json::{json, Value};
 use wisp_model::{Result, WispError};
 use wisp_store::{Hot, RI_MIN_COSINE, RI_STANDALONE_MIN_COSINE};
 
-pub use hybrid::rrf_merge_lexical;
+pub use lexical_rrf::rrf_merge_lexical;
 
 /// Optional overrides from CLI (`--threshold`).
 #[derive(Clone, Debug, Default)]
 pub struct SearchParams {
     pub threshold: Option<f32>,
-    /// Skip Tier 4 neural (no model load/download). Honored for `semantic` mode and `WISP_LOCAL_ONLY=1`.
+    /// Skip neural tier (no model load/download). Honored for `semantic` mode and `WISP_LOCAL_ONLY=1`.
     pub local_only: bool,
 }
 
@@ -26,9 +26,8 @@ pub fn execute(
     k: usize,
     params: &SearchParams,
 ) -> Result<Value> {
-    let normalized = normalize_mode(mode);
-    let (mode_used, results) = match normalized.as_str() {
-        "auto" | "hybrid" => auto_search(repo, ref_name, query, k, params)?,
+    let (mode_used, results) = match mode {
+        "auto" => auto_search(repo, ref_name, query, k, params)?,
         "semantic" => semantic_search(repo, ref_name, query, k, params)?,
         other => {
             let hot = repo.hot(ref_name)?;
@@ -48,13 +47,15 @@ pub fn execute(
                     let merged = rrf_merge_lexical(query, bm25, tri, k);
                     ("fuzzy".to_string(), merged)
                 }
-                "ri" | "vector" => {
+                "ri" => {
                     let floor = ri_floor(params);
                     let hits = Hot::search_ri(conn, query, k, floor, true)?;
                     ("ri".to_string(), lexical_json(hits))
                 }
                 unknown => {
-                    return Err(WispError::usage(format!("unknown search mode {unknown:?}")));
+                    return Err(WispError::usage(format!(
+                        "unknown search mode {unknown:?}; use auto, exact, fuzzy, keyword, ri, or semantic"
+                    )));
                 }
             }
         }
@@ -124,14 +125,6 @@ fn local_only_from_env() -> bool {
 
 pub fn effective_local_only(params: &SearchParams) -> bool {
     params.local_only || local_only_from_env()
-}
-
-fn normalize_mode(mode: &str) -> String {
-    match mode {
-        "hybrid" => "auto".to_string(),
-        "vector" => "ri".to_string(),
-        m => m.to_string(),
-    }
 }
 
 fn lexical_json(hits: Vec<wisp_store::SearchHit>) -> Vec<Value> {

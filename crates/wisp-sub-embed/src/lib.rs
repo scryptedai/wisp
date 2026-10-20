@@ -1,4 +1,4 @@
-//! `wisp-sub-embed`: reference embedding codec and SQLite vector backend (§14.4).
+//! Built-in neural search (`section_dense_embeddings`) and reference extension backends.
 
 use rusqlite::{params, Connection, OptionalExtension};
 use std::path::{Path, PathBuf};
@@ -17,14 +17,9 @@ pub fn semantic_enabled() -> bool {
 
 pub use neural::search_semantic;
 
-/// Built-in search vectors live in hot.db (RI); neural uses `section_dense_embeddings`.
-pub fn is_supported(_codec: &str) -> bool {
-    false
-}
-
 pub fn codec_for(id: &str) -> Result<Box<dyn EmbeddingCodec>> {
     Err(WispError::usage(format!(
-        "embedding codec {id} is not built in; use `wisp search` (trigram/RI/semantic) or register an external codec"
+        "embedding codec {id} is not built in; use `wisp search` or implement EmbeddingCodec in your product (see docs/EXTENSIONS.md)"
     )))
 }
 
@@ -256,7 +251,7 @@ pub fn rows_from_hot(
 }
 
 pub fn purge_sections(wisp_dir: &Path, codec: &str, sections: &[SectionId]) -> Result<()> {
-    if sections.is_empty() || !is_supported(codec) {
+    if sections.is_empty() {
         return Ok(());
     }
     let path = index_path(wisp_dir, codec);

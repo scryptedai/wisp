@@ -1,6 +1,6 @@
 # DECISIONS.md
 
-Deviations from the **v0.1.0 product design** in `docs/references/Differential OKF Store — v1 Technical Design.md` (local; not in git), recorded with the section they affect, as §18's build guidance requires. The Oct 17 2026 proposal PDF is an earlier draft. Each entry says what the design asks for, what this build does, and why.
+Deviations from the OKF store v1 design (ledger, parse, merge, sync, profiles), recorded with the section they affect. **Search and retrieval are specified in `docs/SEARCH.md`** — not listed here as deltas. Each entry states what the OKF design expects, what this build does, and why.
 
 ## §5 Data model
 
@@ -23,7 +23,7 @@ Deviations from the **v0.1.0 product design** in `docs/references/Differential O
 
 - **Commit order inside the critical section.** The spec commits the ledger, then the hot tier. This build commits the hot tier first, then the ledger, both while holding the ledger write lock. Reason: with ledger-first, a writer acquiring the lock between the two commits sees a head whose changes are not yet in the tier and would wrongly conclude the tier is stale. If a process dies between the commits the tier is ahead of the ledger; `Repository::hot` sees an unknown head and rebuilds.
 - **Rebuild holds the ledger write lock.** A rebuild computed from a stale head could otherwise be committed over a newer tier state.
-- Search indexes (FTS, trigram FTS, RI, optional dense embeddings) live in each ref’s `hot.db` under `cache/refs/` (see local Technical Design §6.2). Separate `.wisp/cache/vectors/` sqlite-vec files are not used in the community release. Token rollup DBs are not fully materialized; `pack` uses `tok:approx:chars4`.
+- Built-in search indexes live in each ref’s `hot.db` under `cache/refs/` (`docs/SEARCH.md`). Token rollup DBs are not fully materialized; `pack` uses `tok:approx:chars4`.
 
 ## §7.2 Frontmatter CST
 
@@ -80,14 +80,10 @@ Deviations from the **v0.1.0 product design** in `docs/references/Differential O
 - Erasure markers for a section whose preceding section no longer exists are rendered after the preamble; for a concept with no sections left they follow the frontmatter.
 - `export --archive` writes a `.tar.zst` of the rendered bundle. `export --git` renders and runs `git init` + one commit. `import --git` imports a **snapshot** via `git archive` + `record` (no per-commit history mapping yet). `import <dir>` copies a plain bundle into the working tree and records it.
 
-## §14–§15 Feed and search
+## §14–§16 Feed, search, CLI
 
-- **Normative spec:** `docs/references/Differential OKF Store — v1 Technical Design.md` (§6.2, §10.5, §14–§15). Built-in search: FTS + trigram + RI + optional neural in `hot.db`; no `emb:hash:64`; external `emb:*` via `docs/EXTENSIONS.md`.
-- **Search IR battery:** `contrib/search-battery/cases.toml` only (see `contrib/search-battery/README.md`).
-
-## §16 CLI
-
-- **Search:** see Technical Design §14.5–§16. `--local-only` / `WISP_LOCAL_ONLY` skip neural only (RI still runs in `auto`). Default `wisp-cli` / `wisp-invariants` features include `semantic`.
+- **Search:** `docs/SEARCH.md`. **Extensions:** `docs/EXTENSIONS.md`.
+- **Search IR battery:** `contrib/search-battery/cases.toml` only.
 - Erase targets an actor with `--actor-id <actor>` (the global `--actor` names the acting identity).
 - `record --resolve` clears `.wisp/merge.json` after a successful record on the merge target ref; finish the merge with `wisp merge <source> <into> --resolutions <file>`.
 - `wisp diff --from/--to` compares section-level ops along the `based_on` chain between two changesets; `diff` without those flags compares the working tree with its base.

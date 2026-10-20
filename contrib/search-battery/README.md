@@ -22,7 +22,7 @@ When you add or change a probe, update `cases.toml` once, then run both runners.
 | **T3.1** paraphrase → OOM | **rank 1** (`mode_used: semantic`) | miss | **miss** |
 | **T3.2** GDPR → shred | miss | miss | miss |
 
-Documented in **`docs/references/Differential OKF Store — v1 Technical Design.md`** §14.7 and **`README.md`** (search tour).
+Documented in **`docs/SEARCH.md`** and **`README.md`** (search tour).
 
 Fields in `cases.toml`:
 

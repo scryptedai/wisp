@@ -234,12 +234,24 @@ fn write_merge_state(
     Ok(())
 }
 
-fn clear_merge_state(repo: &Repository) -> Result<()> {
+pub fn clear_merge_state(repo: &Repository) -> Result<()> {
     let p = merge_state_path(repo);
     if p.is_file() {
         fs::remove_file(&p).map_err(|e| WispError::internal(format!("clear merge state: {e}")))?;
     }
     Ok(())
+}
+
+/// Pending merge metadata from `.wisp/merge.json` after a conflicted `wisp merge`.
+pub fn read_merge_state(repo: &Repository) -> Result<Option<Value>> {
+    let p = merge_state_path(repo);
+    if !p.is_file() {
+        return Ok(None);
+    }
+    let text = fs::read_to_string(&p).map_err(|e| WispError::internal(e.to_string()))?;
+    let v: Value = serde_json::from_str(&text)
+        .map_err(|e| WispError::internal(format!("parse merge.json: {e}")))?;
+    Ok(Some(v))
 }
 
 #[derive(Debug, Deserialize)]

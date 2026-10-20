@@ -50,6 +50,23 @@ fn rec(repo: &mut Repository, actor: &str) -> crate::record::RecordResult {
     .unwrap()
 }
 
+#[test]
+fn signed_changeset_verifies_in_fsck() {
+    let f = fixture();
+    Repository::init(&f.root, "0.2", &Unlock::default()).unwrap();
+    write(&f.root, "tables/orders.md", ORDERS);
+    let mut repo = open(&f.root);
+    rec(&mut repo, "human:alex");
+    crate::query::actor_gen_key(&mut repo, MAIN_REF, "human:alex").unwrap();
+    write(&f.root, "tables/customers.md", CUSTOMERS);
+    let r = rec(&mut repo, "human:alex");
+    let fsck = crate::query::fsck(&mut repo).unwrap();
+    assert!(fsck["problems"].as_array().unwrap().is_empty());
+    let cs_id: ChangesetId = r.changeset.unwrap().parse().unwrap();
+    let detail = crate::query::show(&mut repo, MAIN_REF, cs_id).unwrap();
+    assert_eq!(detail["signed"], true);
+}
+
 const ORDERS: &str = "---\ntype: BigQuery Table\ntitle: Customer Orders\ntags:\n  - sales\n---\nOrders placed by customers.\n\n## Schema\n\n| col | type |\n|---|---|\n| id | INT64 |\n\n## Behavior\n\nRows are append-only. See [customers](customers.md).\n";
 const CUSTOMERS: &str =
     "---\ntype: BigQuery Table\ntitle: Customers\n---\n\n## Schema\n\ncustomer_id, name\n";

@@ -157,6 +157,15 @@ pub mod sig {
     pub fn generate() -> SigningKey {
         SigningKey::generate(&mut rand::rngs::OsRng)
     }
+    pub fn from_seed(seed: &[u8; 32]) -> SigningKey {
+        SigningKey::from_bytes(seed)
+    }
+    pub fn seed_bytes(key: &SigningKey) -> [u8; 32] {
+        key.to_bytes()
+    }
+    pub fn verify_key_bytes(key: &SigningKey) -> [u8; 32] {
+        key.verifying_key().to_bytes()
+    }
     pub fn sign(key: &SigningKey, digest: &[u8; 32]) -> Vec<u8> {
         key.sign(digest).to_bytes().to_vec()
     }

@@ -644,6 +644,13 @@ fn try_commit_inner(
         message_ref.as_ref(),
         &changes,
     );
+    let reader = Reader {
+        conn: &tx,
+        payloads_dir: payloads_dir.clone(),
+        keystore,
+        repo_id,
+    };
+    let sig = crate::signing::sign_digest(&repo.wisp_dir, &reader, actor_id, &digest)?;
     let cs = Changeset {
         id: cs_id,
         parents,
@@ -652,7 +659,7 @@ fn try_commit_inner(
         at: now.clone(),
         message: message_ref,
         digest,
-        sig: None,
+        sig,
     };
 
     // Scopes, actors, payloads.
@@ -877,6 +884,10 @@ pub fn record_merge(
     )?;
     let parents = vec![into_head, source_head];
     let mut parent_digests = Vec::new();
+    let payloads_dir = repo.ledger.payloads_dir();
+    let repo_id = repo.repo_id();
+    let keystore = &repo.keystore;
+    let wisp_dir = repo.wisp_dir.clone();
     let tx = repo.ledger.begin_immediate()?;
     for p in &parents {
         let row = Ledger::get_changeset(&tx, *p)?
@@ -892,6 +903,13 @@ pub fn record_merge(
         Some(&message.reference),
         &changes,
     );
+    let reader = Reader {
+        conn: &tx,
+        payloads_dir,
+        keystore,
+        repo_id,
+    };
+    let sig = crate::signing::sign_digest(&wisp_dir, &reader, actor_id, &digest)?;
     let cs = Changeset {
         id: cs_id,
         parents,
@@ -900,7 +918,7 @@ pub fn record_merge(
         at: now,
         message: Some(message.reference),
         digest,
-        sig: None,
+        sig,
     };
     if let Some((row, name_payload)) = &new_actor {
         Ledger::insert_scope(&tx, row.scope, &ScopeKind::Actor { actor: row.id })?;

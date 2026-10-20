@@ -305,11 +305,6 @@ pub fn run(cli: Cli) -> CliResult {
             keep_format,
             resolve,
         } => {
-            if *resolve {
-                return Err(WispError::not_implemented(
-                    "record --resolve (interactive merge)",
-                ));
-            }
             let mut repo = open(&cli)?;
             let actor = actor_of(&cli, &repo);
             let mut inputs = Vec::new();
@@ -352,6 +347,7 @@ pub fn run(cli: Cli) -> CliResult {
                 allow_nonconformant: *allow_nonconformant,
                 adopt_generated: *adopt_generated,
                 keep_format: *keep_format,
+                resolve_merge: *resolve,
             };
             let r = wisp_engine::record::record(&mut repo, &opts)?;
             let human = match (&r.changeset, r.ops) {
@@ -977,6 +973,12 @@ pub fn run(cli: Cli) -> CliResult {
             let mut repo = open(&cli)?;
             match cmd {
                 ActorCmd::List => Ok(Output::json(query::actors(&repo)?)),
+                ActorCmd::GenKey { actor, r#ref } => {
+                    let ref_name = ref_of(&repo, r#ref);
+                    Ok(Output::json(query::actor_gen_key(
+                        &mut repo, &ref_name, actor,
+                    )?))
+                }
                 ActorCmd::Key {
                     actor,
                     public_key_file,

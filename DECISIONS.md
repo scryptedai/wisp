@@ -55,7 +55,7 @@ Deviations from *Differential OKF Store — v1 Technical Design* (Oct 17, 2026),
 ## §10.1 Keys
 
 - The default master-key source is a key file at `.wisp/keys/master.key` (mode 0600) instead of the OS keychain. `WISP_MASTER_KEY` and `--passphrase` (Argon2id with the specified parameters) work as specified. A keystore check value detects a wrong master key early (exit 9).
-- Ed25519 signing of changesets is not wired to the CLI: `wisp actor key` registers a verifying key and `fsck` verifies signatures when present, but no command signs yet.
+- Ed25519 signing: `wisp actor gen-key` generates a keypair, stores the seed at `.wisp/keys/signing/<actor>.seed` (or use `WISP_SIGNING_SEED` in CI), and registers the public key; `wisp actor key` still registers an external public key only. Commits sign the changeset digest when a matching local seed exists. `fsck` verifies signatures when the actor’s public key payload is present.
 
 ## §10.4 Erasure groups
 
@@ -88,4 +88,5 @@ Deviations from *Differential OKF Store — v1 Technical Design* (Oct 17, 2026),
 ## §16 CLI
 
 - Erase targets an actor with `--actor-id <actor>` (the global `--actor` names the acting identity).
+- `record --resolve` clears `.wisp/merge.json` after a successful record on the merge target ref; finish the merge with `wisp merge <source> <into> --resolutions <file>`.
 - `wisp diff --from/--to` compares section-level ops along the `based_on` chain between two changesets; `diff` without those flags compares the working tree with its base.

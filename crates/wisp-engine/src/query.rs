@@ -1363,6 +1363,36 @@ pub fn actors(repo: &Repository) -> Result<Value> {
     Ok(json!(out))
 }
 
+/// Generate an Ed25519 keypair, store the seed locally, and register the public key on the actor.
+pub fn actor_gen_key(
+    repo: &mut Repository,
+    ref_name: &str,
+    actor: &str,
+) -> Result<Value> {
+    let row = repo.find_actor(actor)?.ok_or_else(|| {
+        WispError::not_found(format!(
+            "no actor {actor}; it registers on its first commit"
+        ))
+    })?;
+    if row.public_key.is_some() {
+        return Err(WispError::usage(
+            "actor already has a public key; use `wisp actor key` to rotate from a file",
+        ));
+    }
+    let sk = wisp_crypto::sig::generate();
+    let seed = wisp_crypto::sig::seed_bytes(&sk);
+    let pk = wisp_crypto::sig::verify_key_bytes(&sk);
+    crate::signing::save_signing_seed(&repo.wisp_dir, row.id, &seed)?;
+    let out = actor_key(repo, ref_name, actor, pk.as_slice())?;
+    let seed_path = crate::signing::seed_path(&repo.wisp_dir, row.id);
+    Ok(json!({
+        "changeset": out["changeset"],
+        "actor": out["actor"],
+        "public_key": hex::encode(pk),
+        "seed": seed_path.display().to_string(),
+    }))
+}
+
 pub fn actor_key(
     repo: &mut Repository,
     ref_name: &str,

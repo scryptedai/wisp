@@ -111,6 +111,7 @@ pub enum Command {
         adopt_generated: bool,
         #[arg(long)]
         keep_format: bool,
+        /// After recording, clear `.wisp/merge.json` (commit working-tree resolutions before `merge --resolutions`)
         #[arg(long)]
         resolve: bool,
     },
@@ -547,6 +548,12 @@ pub enum RemoteCmd {
 #[derive(Subcommand, Debug)]
 pub enum ActorCmd {
     List,
+    /// Generate a signing keypair, save the seed under `.wisp/keys/signing/`, register the public key
+    GenKey {
+        actor: String,
+        #[arg(long)]
+        r#ref: Option<String>,
+    },
     Key {
         actor: String,
         public_key_file: PathBuf,

@@ -32,6 +32,8 @@ pub struct RecordOptions {
     pub allow_nonconformant: bool,
     pub adopt_generated: bool,
     pub keep_format: bool,
+    /// After a successful record, clear `.wisp/merge.json` when the recorded ref matches `into`.
+    pub resolve_merge: bool,
 }
 
 /// What `status` reports (§16).
@@ -1203,6 +1205,24 @@ pub fn record(repo: &mut Repository, opts: &RecordOptions) -> Result<RecordResul
     let _lock = checkout::WorktreeLock::acquire(&repo.wisp_dir)?;
     let idx = checkout::write_tree(repo, &ref_name, &root, false, false, true)?;
     idx.save(&checkout::checkout_idx_path(repo, &root))?;
+    if opts.resolve_merge {
+        match merge::read_merge_state(repo)? {
+            Some(state) => {
+                let into = state["into"].as_str().unwrap_or_default();
+                if into != ref_name {
+                    return Err(WispError::usage(format!(
+                        "merge in progress on ref {into}; record --resolve on that ref or `wisp merge --abort`"
+                    )));
+                }
+                merge::clear_merge_state(repo)?;
+            }
+            None => {
+                return Err(WispError::usage(
+                    "record --resolve requires `.wisp/merge.json` from a conflicted merge",
+                ));
+            }
+        }
+    }
     Ok(RecordResult {
         changeset: Some(out.changeset.to_string()),
         seq: Some(out.seq),

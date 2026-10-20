@@ -1,0 +1,21 @@
+name: Feature request
+description: Propose behavior for a future change (may need DECISIONS.md)
+title: "[feature]: "
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Link to v1 PDF sections if applicable. Large features are easier to review after a short design note in the issue.
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem / use case
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed approach
+    validations:
+      required: false

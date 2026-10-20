@@ -1,0 +1,28 @@
+name: Bug report
+description: Something is broken or incorrect vs spec/docs
+title: "[bug]: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting. Include steps to reproduce and `wisp --version` / rustc version if relevant.
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      placeholder: Expected vs actual behavior
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Steps to reproduce
+      placeholder: Commands, minimal corpus, or test name
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs / output
+      render: shell

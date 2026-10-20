@@ -3,6 +3,9 @@ on:
   push:
     branches: [main]
   pull_request:
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 jobs:
   test:
     name: test (${{ matrix.os }})
@@ -19,5 +22,6 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - run: cargo fmt --all -- --check
       - run: cargo clippy --all-targets -- -D warnings -A clippy::type_complexity -A clippy::too_many_arguments -A clippy::manual_div_ceil -A clippy::collapsible_match -A clippy::redundant_closure -A clippy::unnecessary_get_then_check -A clippy::unnecessary_unwrap
-      - run: cargo test --all
-      - run: cargo build --release
+      - run: cargo test --workspace
+      - run: cargo test -p wisp-invariants
+      - run: cargo build --release -p wisp-cli

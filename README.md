@@ -10,6 +10,10 @@ wisp stores a bundle as an append-only log of **section-level** changes with enc
 
 Release **0.1.0** implements the **v1 technical design** in `docs/references/Differential OKF Store — v1 Proposal.pdf` (Oct 17 2026). See [Status](#status), [DECISIONS.md](DECISIONS.md), [EXTENSIONS.md](docs/EXTENSIONS.md), and [MERGE.md](docs/MERGE.md).
 
+## Contributing
+
+Fork, use **git worktrees** for parallel branches, and open PRs — see **[CONTRIBUTING.md](CONTRIBUTING.md)**. AI/review tools: **[AGENTS.md](AGENTS.md)**.
+
 ## Build
 
 ```sh

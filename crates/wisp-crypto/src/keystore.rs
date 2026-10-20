@@ -217,6 +217,15 @@ impl Keystore {
     /// Write a scope key in its own transaction (§10.2 step 1). Idempotent for the same key.
     pub fn put(&self, scope: ScopeId, key: &ScopeKey) -> Result<(), WispError> {
         let wrapped = self.wrap_raw(&scope.bytes(), &key.0);
+        self.put_wrapped(scope, &wrapped)
+    }
+
+    /// Copy a wrapped scope key from a trusted peer (same master key).
+    pub fn put_wrapped(&self, scope: ScopeId, wrapped: &[u8]) -> Result<(), WispError> {
+        let pt = self.unwrap_raw(&scope.bytes(), wrapped)?;
+        if pt.len() != 32 {
+            return Err(WispError::integrity("scope key wrong length"));
+        }
         self.conn
             .execute(
                 "INSERT OR IGNORE INTO scope_keys (scope, wrapped) VALUES (?1, ?2)",
@@ -224,6 +233,18 @@ impl Keystore {
             )
             .map_err(sql_err)?;
         Ok(())
+    }
+
+    /// Wrapped ciphertext for replication between trusted replicas.
+    pub fn wrapped_blob(&self, scope: ScopeId) -> Result<Option<Vec<u8>>, WispError> {
+        self.conn
+            .query_row(
+                "SELECT wrapped FROM scope_keys WHERE scope = ?1",
+                params![scope.bytes().to_vec()],
+                |r| r.get(0),
+            )
+            .optional()
+            .map_err(sql_err)
     }
 
     /// Fetch a scope key. `None` when the scope has no key (erased or never existed).
@@ -306,6 +327,29 @@ fn sql_err(e: rusqlite::Error) -> WispError {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn put_wrapped_roundtrip() {
+        let dir = tempfile::tempdir().unwrap();
+        let master = MasterKey::from_file(&dir.path().join("master.key"), true).unwrap();
+        let a = Keystore::open(&dir.path().join("a.db"), master.clone()).unwrap();
+        let b = Keystore::open(&dir.path().join("b.db"), master).unwrap();
+        let s = ScopeId::new();
+        let k = ScopeKey::generate();
+        a.put(s, &k).unwrap();
+        let wrapped = a.wrapped_blob(s).unwrap().unwrap();
+        b.put_wrapped(s, &wrapped).unwrap();
+        assert_eq!(b.get(s).unwrap().unwrap().0, k.0);
+    }
+
+    #[test]
+    fn put_wrapped_rejects_bad_ciphertext() {
+        let dir = tempfile::tempdir().unwrap();
+        let master = MasterKey::from_file(&dir.path().join("master.key"), true).unwrap();
+        let ks = Keystore::open(&dir.path().join("keystore.db"), master).unwrap();
+        let s = ScopeId::new();
+        assert!(ks.put_wrapped(s, b"too-short").is_err());
+    }
 
     #[test]
     fn put_get_delete() {

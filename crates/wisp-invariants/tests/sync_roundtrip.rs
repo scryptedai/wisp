@@ -29,8 +29,10 @@ fn sync_push_pull_same_head() {
     )
     .unwrap();
     let head0 = Ledger::head(a.ledger.conn(), MAIN_REF).unwrap().unwrap();
+    drop(a);
 
     let mut b = init_trusted_replica(&b_root, &a_root, &Unlock::default()).unwrap();
+    let mut a = Repository::open(&a_root, &Unlock::default()).unwrap();
     push(&mut a, &b_root, MAIN_REF, &Unlock::default()).unwrap();
     assert_eq!(
         Ledger::head(b.ledger.conn(), MAIN_REF).unwrap(),

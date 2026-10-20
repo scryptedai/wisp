@@ -1,6 +1,22 @@
 # Contributing to wisp (Community Release)
 
-Thank you for helping improve wisp. This project is **Scrypted’s GPLv2 Community Release** — contributions are accepted under the same license (see [LICENSE](LICENSE)).
+Thank you for helping improve wisp. This project is **Scrypted’s GPLv2 Community Release** (see [LICENSE](LICENSE)).
+
+## Contribution terms
+
+**By opening a pull request, posting a patch, or otherwise submitting work to this repository, you agree to the following.**
+
+1. **Community Release (GPLv2).** Your contribution may be merged and distributed with this tree under the **GNU General Public License version 2** (or, if you clearly mark otherwise, a GPL-compatible license that allows inclusion in GPLv2 works).
+
+2. **Grant to Scrypted.** You grant **Scrypted, Inc.** and its affiliates a **perpetual, worldwide, non-exclusive, royalty-free, irrevocable** license to use, reproduce, modify, merge, distribute, and sublicense your contribution—including in **other editions or products** of wisp or related offerings that are **not** limited to GPLv2—without further permission or compensation from you.
+
+3. **Authority.** You created the contribution or have the right to submit it, and it does not knowingly infringe third-party rights or violate agreements that would block the grants above.
+
+4. **Employer / agent.** If you contribute on behalf of an employer or client, you represent that you are authorized to make these grants on their behalf (or that their policies allow it).
+
+If you cannot agree, **do not submit** contributions here; contact the maintainers in [NOTICE](NOTICE) to discuss alternatives.
+
+These terms are in addition to GPLv2 for what ships in the Community Release; they clarify Scrypted’s inbound rights so community improvements can also be used in separately licensed offerings, as described in [README.md](README.md).
 
 ## Before you start
 
@@ -67,7 +83,7 @@ Inspired by [Git’s patch submission](https://git-scm.com/docs/SubmittingPatche
    ```
 
 5. **Update docs** when you change user-visible behavior (`README`, `DECISIONS.md`, `docs/`).
-6. **Sign-off**: by opening a PR you license your contribution under **GPLv2** (same as the project).
+6. **Contribution terms**: confirm you agree to [Contribution terms](#contribution-terms) (GPLv2 for this tree + grant to Scrypted for other editions).
 
 We merge via **GitHub pull requests**; rebase or merge commits are both acceptable if history stays readable.
 
@@ -85,7 +101,7 @@ We merge via **GitHub pull requests**; rebase or merge commits are both acceptab
 
 ## Community vs other editions
 
-This repository is only the **Community Release**. Scrypted may ship other editions under separate terms; do not assume those terms apply here.
+This repository is only the **Community Release** (GPLv2). Scrypted may ship **other editions** under separate terms; those editions are not covered by this repo’s license. The [contribution grant](#contribution-terms) is what allows Scrypted to reuse merged community work outside GPLv2 when permitted by that grant.
 
 ## Questions
 

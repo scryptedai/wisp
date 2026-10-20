@@ -47,6 +47,8 @@ pub fn init_trusted_replica(
     dst.manifest.repo.scope = repo_scope;
     dst.manifest.save(&dst.wisp_dir.join("manifest.toml"))?;
     let dst_keys = dst.wisp_dir.join("keys");
+    drop(dst);
+
     fs::remove_dir_all(&dst_keys)?;
     copy_dir_all(&keys_src, &dst_keys)?;
     Repository::open(dst_root, unlock)

@@ -29,20 +29,26 @@ pub fn parse_local_url(url: &str) -> Result<PathBuf> {
         .map_err(|e| WispError::not_found(format!("remote path {url}: {e}")))
 }
 
-/// Empty replica with the same repo identity and keys as `template` (trusted peer).
+/// Empty replica with the same repo identity and keys as `template_root` (trusted peer).
 pub fn init_trusted_replica(
     dst_root: &Path,
-    template: &Repository,
+    template_root: &Path,
     unlock: &Unlock,
 ) -> Result<Repository> {
-    let mut dst = Repository::init(dst_root, template.profile.okf_version(), unlock)?;
-    dst.manifest.repo.id = template.manifest.repo.id;
-    dst.manifest.repo.scope = template.manifest.repo.scope;
+    let template = Repository::open(template_root, unlock)?;
+    let profile_ver = template.profile.okf_version();
+    let repo_id = template.manifest.repo.id;
+    let repo_scope = template.manifest.repo.scope;
+    let keys_src = template.wisp_dir.join("keys");
+    drop(template);
+
+    let mut dst = Repository::init(dst_root, profile_ver, unlock)?;
+    dst.manifest.repo.id = repo_id;
+    dst.manifest.repo.scope = repo_scope;
     dst.manifest.save(&dst.wisp_dir.join("manifest.toml"))?;
-    let keys = template.wisp_dir.join("keys");
     let dst_keys = dst.wisp_dir.join("keys");
     fs::remove_dir_all(&dst_keys)?;
-    copy_dir_all(&keys, &dst_keys)?;
+    copy_dir_all(&keys_src, &dst_keys)?;
     Repository::open(dst_root, unlock)
 }
 

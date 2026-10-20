@@ -182,7 +182,7 @@ fn ssh_sync(
         remote.path.to_string_lossy().trim_end_matches('/')
     );
     if is_push {
-        init_trusted_replica(&bundle, local, unlock)?;
+        init_trusted_replica(&bundle, &local.root, unlock)?;
         push(local, &bundle, ref_name, unlock)?;
         rsync(&bundle, &remote_spec, true)?;
         Ok(json!({

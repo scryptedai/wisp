@@ -104,7 +104,7 @@ mod tests {
         let head_a = wisp_store::Ledger::head(a.ledger.conn(), MAIN_REF)
             .unwrap()
             .unwrap();
-        let mut b = init_trusted_replica(&b_root, &a, &Unlock::default()).unwrap();
+        let mut b = init_trusted_replica(&b_root, &a_root, &Unlock::default()).unwrap();
         let push = push(&mut a, &b_root, MAIN_REF, &Unlock::default()).unwrap();
         assert_eq!(push["changesets"].as_u64(), Some(1));
         let head_b = wisp_store::Ledger::head(b.ledger.conn(), MAIN_REF)

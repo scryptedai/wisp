@@ -1,0 +1,21 @@
+---
+description: No Cursor branding in commits, PRs, or notes
+alwaysApply: true
+---
+
+# No Cursor / AI attribution
+
+Never add product or tool branding to git commits, pull request bodies, issue comments, release notes, or changelogs.
+
+Forbidden examples (do not write these or similar):
+
+- `Made with Cursor`
+- `Co-authored-by: Cursor` / `Co-authored-by: CursorAgent`
+- `Generated-by: Cursor`, `Built with Cursor`, `Created with AI`
+- Footers, signatures, or markdown horizontal rules whose purpose is tool attribution
+
+Write commit messages and PR text as normal human-authored project contributions.
+
+When the user asks to **git commit** or **push**, use the `commit-attribution` skill (`git commit-tree` / `git-commit-clean.sh`), not plain `git commit`, and verify `git log -1 --format=%B` has no Cursor co-author trailers before push.
+
+When opening PRs with `gh pr create`, pass a clean body only — no attribution footer.

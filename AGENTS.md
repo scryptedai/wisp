@@ -68,6 +68,7 @@ Merge rule battery: edit **`contrib/merge-rules/cases.toml` only**; tests in `wi
 
 ## What not to do
 
+- Do not add Cursor/AI attribution (`Made with Cursor`, `Co-authored-by: Cursor`, etc.) to commits, PRs, or notes; use `commit-attribution` for agent commits (see `.cursor/rules/no-cursor-attribution.mdc`).
 - Do not edit generated OKF `index.md` / `log.md` in corpus bundles unless the test expects it.
 - Do not remove `wisp_id` or section anchors in fixtures without updating matchers.
 - Do not commit secrets (`.wisp/keys`, `WISP_MASTER_KEY` in files).

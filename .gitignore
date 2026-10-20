@@ -21,8 +21,10 @@
 # VS Code
 .vscode/
 
-# Cursor
-.cursor/
+# Cursor (keep shared agent rules)
+.cursor/*
+!.cursor/rules/
+!.cursor/rules/**
 
 # Local reference material (not for version control)
 docs/references/

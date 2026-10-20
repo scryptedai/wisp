@@ -76,4 +76,4 @@ SPY desk narrative: `wisp-invariants/tests/spy_options_*.rs`, bundle `spy-option
 
 ## Human contribution flow
 
-See **`CONTRIBUTING.md`** (fork, branch, git worktree, PR checklist).
+See **`CONTRIBUTING.md`** — GitHub Flow (`main` + topic branches + PRs; no `develop` branch).

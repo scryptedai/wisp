@@ -18,6 +18,17 @@ cargo build
 cargo test --workspace
 ```
 
+## Branching (GitHub Flow)
+
+We use **GitHub Flow**, similar to the [Git project](https://git-scm.com/docs/gitworkflows): one long-lived integration branch, short-lived topic branches, merge via PR.
+
+| Branch | Role |
+|--------|------|
+| **`main`** | Default branch; always buildable; CI on every push and PR; release tags point here. |
+| **`feature/…`, `fix/…`, `docs/…`, `chore/…`** | Your change; branch from `main`, open a PR back to `main`, delete after merge. |
+
+There is **no** `develop` or `release/*` integration line for now. Maintainers and contributors use the same model.
+
 ## Git worktrees (recommended, Git-style)
 
 Use **git worktrees** when you juggle multiple branches without stashing — same idea as [Git’s own workflow](https://git-scm.com/docs/git-worktree):

@@ -55,6 +55,7 @@ Merge rule battery: edit **`contrib/merge-rules/cases.toml` only**; tests in `wi
 
 ## Coding norms
 
+- **`.wisp/cache/` and Windows:** hot SQLite files stay open until `Repository` is dropped or `close_all_hots()` runs. Never `remove_dir_all` on `cache/` (or delete `hot.db` / `merge-skip.json`) while a repo handle is open — use `wisp_engine::cache::reopen_without_cache` in tests. See `docs/MERGE.md` (cache lifecycle).
 - Match existing style in the file you edit; minimal diffs.
 - GPLv2 Community Release: preserve `LICENSE` / copyright headers on new files where the project uses them.
 - Do not add proprietary or alternate licenses in this repo.

@@ -1,6 +1,7 @@
 //! `wisp-engine`: orchestrates record, checkout, erase, headless writes, and queries; owns transactions.
 
 pub mod apply;
+pub mod cache;
 pub mod checkout;
 pub mod commit;
 pub mod erase;

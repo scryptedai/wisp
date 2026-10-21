@@ -181,4 +181,38 @@ mod tests {
         assert_eq!(hot::fts_query("door behavior"), "\"door\" \"behavior\"");
         assert_eq!(hot::fts_query("a-b \"x\""), "\"a-b\" \"x\"");
     }
+
+    #[test]
+    fn merge_replay_skips_round_trip_and_per_merge_changeset() {
+        let dir = tempfile::tempdir().unwrap();
+        let wisp = dir.path().join(".wisp");
+        std::fs::create_dir_all(&wisp).unwrap();
+        let l = Ledger::open(&wisp, 1000).unwrap();
+        let conn = l.conn();
+        let m1 = ChangesetId::new();
+        let m2 = ChangesetId::new();
+        let c1 = ChangeId::new();
+        let c2 = ChangeId::new();
+        let c3 = ChangeId::new();
+        let c4 = ChangeId::new();
+
+        Ledger::set_merge_replay_skips(conn, "main", m1, &[c1, c2]).unwrap();
+        let got = Ledger::merge_replay_skips(conn, "main", m1).unwrap();
+        assert_eq!(got.len(), 2);
+        assert!(got.contains(&c1));
+        assert!(got.contains(&c2));
+
+        Ledger::set_merge_replay_skips(conn, "main", m2, &[c3]).unwrap();
+        assert_eq!(Ledger::merge_replay_skips(conn, "main", m2).unwrap(), vec![c3]);
+        let m1_after = Ledger::merge_replay_skips(conn, "main", m1).unwrap();
+        assert_eq!(m1_after.len(), 2);
+
+        Ledger::set_merge_replay_skips(conn, "main", m1, &[c4]).unwrap();
+        assert_eq!(Ledger::merge_replay_skips(conn, "main", m1).unwrap(), vec![c4]);
+        assert_eq!(Ledger::merge_replay_skips(conn, "main", m2).unwrap(), vec![c3]);
+
+        Ledger::clear_merge_replay_skips(conn, "main").unwrap();
+        assert!(Ledger::merge_replay_skips(conn, "main", m1).unwrap().is_empty());
+        assert!(Ledger::merge_replay_skips(conn, "main", m2).unwrap().is_empty());
+    }
 }

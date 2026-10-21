@@ -123,6 +123,14 @@ CREATE TABLE IF NOT EXISTS ledger_flags (
   name TEXT PRIMARY KEY,
   value INTEGER NOT NULL
 );
+-- Replay skips chosen at merge resolution (durable; cache file is optional).
+CREATE TABLE IF NOT EXISTS merge_replay_skips (
+  ref_name TEXT NOT NULL,
+  merge_changeset BLOB NOT NULL,
+  change_id BLOB NOT NULL,
+  PRIMARY KEY (ref_name, merge_changeset, change_id)
+);
+CREATE INDEX IF NOT EXISTS merge_replay_skips_by_head ON merge_replay_skips(ref_name, merge_changeset);
 
 -- Insert-only log tables (I1)
 CREATE TRIGGER IF NOT EXISTS changesets_no_update BEFORE UPDATE ON changesets BEGIN SELECT RAISE(ABORT, 'ledger is append-only'); END;
@@ -1278,6 +1286,63 @@ impl Ledger {
             "INSERT INTO ledger_flags (name, value) VALUES (?1, ?2)
              ON CONFLICT(name) DO UPDATE SET value = excluded.value",
             params![Self::ERASE_REWRITE_PENDING, if pending { 1 } else { 0 }],
+        )
+        .map_err(sql_err)?;
+        Ok(())
+    }
+
+    // ---- merge replay skips (§11.5) ----
+
+    pub fn set_merge_replay_skips(
+        conn: &Connection,
+        ref_name: &str,
+        merge_changeset: ChangesetId,
+        skip: &[ChangeId],
+    ) -> Result<()> {
+        conn.execute(
+            "DELETE FROM merge_replay_skips WHERE ref_name = ?1 AND merge_changeset = ?2",
+            params![ref_name, merge_changeset.bytes().to_vec()],
+        )
+        .map_err(sql_err)?;
+        for c in skip {
+            conn.execute(
+                "INSERT INTO merge_replay_skips (ref_name, merge_changeset, change_id) VALUES (?1, ?2, ?3)",
+                params![
+                    ref_name,
+                    merge_changeset.bytes().to_vec(),
+                    c.bytes().to_vec()
+                ],
+            )
+            .map_err(sql_err)?;
+        }
+        Ok(())
+    }
+
+    pub fn merge_replay_skips(
+        conn: &Connection,
+        ref_name: &str,
+        merge_changeset: ChangesetId,
+    ) -> Result<Vec<ChangeId>> {
+        let mut st = conn
+            .prepare(
+                "SELECT change_id FROM merge_replay_skips WHERE ref_name = ?1 AND merge_changeset = ?2",
+            )
+            .map_err(sql_err)?;
+        let rows = st
+            .query_map(params![ref_name, merge_changeset.bytes().to_vec()], |r| {
+                r.get::<_, Vec<u8>>(0)
+            })
+            .map_err(sql_err)?
+            .filter_map(|r| r.ok())
+            .filter_map(|b| ChangeId::from_slice(&b))
+            .collect();
+        Ok(rows)
+    }
+
+    pub fn clear_merge_replay_skips(conn: &Connection, ref_name: &str) -> Result<()> {
+        conn.execute(
+            "DELETE FROM merge_replay_skips WHERE ref_name = ?1",
+            params![ref_name],
         )
         .map_err(sql_err)?;
         Ok(())

@@ -19,7 +19,7 @@ pub fn serve_http(bind: &str, root: &Path, unlock: &Unlock) -> Result<()> {
     let server = tiny_http::Server::http(bind)
         .map_err(|e| WispError::internal(format!("http bind {bind}: {e}")))?;
     eprintln!(
-        "wisp http: GET/PUT http://{bind}{PACK_PATH} (trusted transport; add auth in production)"
+        "wisp http: GET/PUT http://{bind}{PACK_PATH} (set WISP_HTTP_TOKEN for Bearer auth; packs omit keys unless WISP_PACK_INCLUDE_KEYS=1)"
     );
     for request in server.incoming_requests() {
         if let Err(e) = dispatch(&state, request) {
@@ -34,7 +34,32 @@ struct HttpState {
     unlock: Unlock,
 }
 
+fn http_token_required() -> Option<String> {
+    std::env::var("WISP_HTTP_TOKEN")
+        .ok()
+        .filter(|s| !s.is_empty())
+}
+
+fn authorize(request: &tiny_http::Request) -> bool {
+    match http_token_required() {
+        None => true,
+        Some(expected) => request
+            .headers()
+            .iter()
+            .find(|h| h.field.as_str() == "Authorization" || h.field.as_str() == "authorization")
+            .and_then(|h| h.value.as_str().strip_prefix("Bearer "))
+            .map(|t| t == expected)
+            .unwrap_or(false),
+    }
+}
+
 fn dispatch(state: &Arc<Mutex<HttpState>>, mut request: tiny_http::Request) -> Result<()> {
+    if !authorize(&request) {
+        request
+            .respond(tiny_http::Response::from_string("unauthorized").with_status_code(401))
+            .map_err(|e| WispError::internal(e.to_string()))?;
+        return Ok(());
+    }
     let url = request.url();
     if url != PACK_PATH {
         request

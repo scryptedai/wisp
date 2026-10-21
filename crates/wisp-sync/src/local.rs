@@ -243,6 +243,13 @@ fn finish_deletions_mirror(src: &Repository, dst: &mut Repository) -> Result<()>
     reconcile_scope_flags(src, dst)?;
     apply_shredded_scopes(src, dst)?;
     erase::recover(dst)?;
+    // Shred on a replica does not set erase_rewrite_pending; refresh managed plaintext anyway.
+    let needs_rewrite = Ledger::all_scopes(dst.ledger.conn())?
+        .iter()
+        .any(|s| s.erased);
+    if needs_rewrite {
+        erase::rewrite_all_managed_worktrees(dst, true)?;
+    }
     dst.ledger.checkpoint()?;
     dst.keystore.checkpoint()?;
     Ok(())

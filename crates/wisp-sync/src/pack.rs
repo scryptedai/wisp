@@ -2,7 +2,7 @@
 
 use std::fs::File;
 use std::io::{Read, Write};
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 use tar::{Archive, Builder};
 use wisp_engine::repo::{Repository, Unlock};
 use wisp_model::*;
@@ -10,7 +10,12 @@ use zstd::stream::{read::Decoder, write::Encoder};
 
 const PACK_ROOT: &str = "wisp-cold";
 
-/// Write `.wisp/` cold tier (ledger db, payloads, keys) to a zstd tar.
+/// When unset or not `1`, packs omit `keys/` (scope keys stay local; use `file://` sync for keys).
+pub fn pack_includes_keys() -> bool {
+    std::env::var("WISP_PACK_INCLUDE_KEYS").ok().as_deref() == Some("1")
+}
+
+/// Write `.wisp/` cold tier (ledger db, payloads; keys only when `WISP_PACK_INCLUDE_KEYS=1`).
 pub fn write_cold_pack(repo: &Repository, dest: &Path) -> Result<()> {
     let wisp = &repo.wisp_dir;
     if let Some(parent) = dest.parent() {
@@ -35,7 +40,8 @@ pub fn read_cold_pack(repo: &mut Repository, pack: &Path) -> Result<()> {
     let file = File::open(pack)?;
     let dec = Decoder::new(file)?;
     let mut archive = Archive::new(dec);
-    let extract_to = repo.wisp_dir.parent().unwrap();
+    let wisp_dir = repo.wisp_dir.clone();
+    let extract_root = wisp_dir.clone();
     for entry in archive
         .entries()
         .map_err(|e| WispError::internal(e.to_string()))?
@@ -48,8 +54,13 @@ pub fn read_cold_pack(repo: &mut Repository, pack: &Path) -> Result<()> {
         if !path.starts_with(PACK_ROOT) {
             continue;
         }
-        let rel = path.strip_prefix(PACK_ROOT).unwrap();
-        let out = extract_to.join(".wisp").join(rel);
+        let rel = path
+            .strip_prefix(PACK_ROOT)
+            .map_err(|e| WispError::usage(format!("pack entry: {e}")))?;
+        if !pack_includes_keys() && rel.starts_with("keys") {
+            continue;
+        }
+        let out = safe_wisp_path(&extract_root, rel)?;
         if let Some(parent) = out.parent() {
             std::fs::create_dir_all(parent)?;
         }
@@ -59,6 +70,23 @@ pub fn read_cold_pack(repo: &mut Repository, pack: &Path) -> Result<()> {
         }
     }
     Ok(())
+}
+
+/// Reject `..` and absolute path components; destination must stay under `wisp_dir`.
+pub fn safe_wisp_path(wisp_dir: &Path, rel: &Path) -> Result<PathBuf> {
+    for c in rel.components() {
+        match c {
+            Component::ParentDir | Component::RootDir | Component::Prefix(_) => {
+                return Err(WispError::usage(format!(
+                    "illegal pack member path {}",
+                    rel.display()
+                )));
+            }
+            _ => {}
+        }
+    }
+    let out = wisp_dir.join(rel);
+    Ok(out)
 }
 
 pub fn pack_bytes(repo: &Repository) -> Result<Vec<u8>> {
@@ -87,7 +115,9 @@ fn cold_paths(wisp: &Path) -> Result<Vec<PathBuf>> {
         }
     }
     walk_files(&wisp.join("payloads"), &mut out, Path::new("payloads"))?;
-    walk_files(&wisp.join("keys"), &mut out, Path::new("keys"))?;
+    if pack_includes_keys() {
+        walk_files(&wisp.join("keys"), &mut out, Path::new("keys"))?;
+    }
     Ok(out)
 }
 
@@ -106,4 +136,40 @@ fn walk_files(dir: &Path, out: &mut Vec<PathBuf>, prefix: &Path) -> Result<()> {
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use wisp_engine::repo::{Repository, Unlock};
+
+    #[test]
+    fn safe_wisp_path_rejects_parent_dir() {
+        let dir = tempfile::tempdir().unwrap();
+        let wisp = dir.path().join(".wisp");
+        std::fs::create_dir_all(&wisp).unwrap();
+        assert!(safe_wisp_path(&wisp, Path::new("../ledger.db")).is_err());
+        assert!(safe_wisp_path(&wisp, Path::new("payloads/ab/x")).is_ok());
+    }
+
+    #[test]
+    fn cold_pack_omits_keys_by_default() {
+        std::env::remove_var("WISP_PACK_INCLUDE_KEYS");
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().join("bundle");
+        std::fs::create_dir_all(&root).unwrap();
+        let repo = Repository::init(&root, "0.2", &Unlock::default()).unwrap();
+        std::fs::write(repo.wisp_dir.join("keys/master.key"), b"x").unwrap();
+        let pack = dir.path().join("p.zst");
+        write_cold_pack(&repo, &pack).unwrap();
+        let dec = Decoder::new(File::open(&pack).unwrap()).unwrap();
+        let mut archive = Archive::new(dec);
+        let names: Vec<_> = archive
+            .entries()
+            .unwrap()
+            .filter_map(|e| e.ok())
+            .filter_map(|e| e.path().ok().map(|p| p.to_string_lossy().to_string()))
+            .collect();
+        assert!(!names.iter().any(|n| n.contains("keys/")));
+    }
 }

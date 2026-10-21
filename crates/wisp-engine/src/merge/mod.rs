@@ -58,6 +58,12 @@ fn merge_skips_at_exact_head(
     ref_name: &str,
     head: ChangesetId,
 ) -> Option<HashSet<ChangeId>> {
+    let ledger = Ledger::merge_replay_skips(repo.ledger.conn(), ref_name, head)
+        .ok()
+        .filter(|v| !v.is_empty());
+    if let Some(ids) = ledger {
+        return Some(ids.into_iter().collect());
+    }
     let path = merge_skip_path(repo, ref_name);
     let Ok(text) = fs::read_to_string(&path) else {
         return None;
@@ -95,9 +101,11 @@ pub fn persist_merge_skips(
         }
         return Ok(());
     }
+    let skip_list: Vec<ChangeId> = skip.iter().copied().collect();
+    Ledger::set_merge_replay_skips(repo.ledger.conn(), ref_name, head, &skip_list)?;
     fs::create_dir_all(path.parent().unwrap()).map_err(|e| WispError::internal(e.to_string()))?;
-    let skip_list: Vec<String> = skip.iter().map(|c| c.to_string()).collect();
-    let v = json!({ "head": head.to_string(), "skip": skip_list });
+    let skip_str: Vec<String> = skip.iter().map(|c| c.to_string()).collect();
+    let v = json!({ "head": head.to_string(), "skip": skip_str });
     fs::write(&path, serde_json::to_vec_pretty(&v)?)
         .map_err(|e| WispError::internal(e.to_string()))?;
     Ok(())
@@ -105,6 +113,7 @@ pub fn persist_merge_skips(
 
 /// Remove merge skip metadata for a ref (fast-forward / clean merge).
 pub fn clear_merge_skips(repo: &Repository, ref_name: &str) -> Result<()> {
+    Ledger::clear_merge_replay_skips(repo.ledger.conn(), ref_name)?;
     let path = merge_skip_path(repo, ref_name);
     if path.is_file() {
         fs::remove_file(&path).map_err(|e| WispError::internal(e.to_string()))?;

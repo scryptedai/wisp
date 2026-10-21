@@ -87,7 +87,7 @@ pub fn prune_tracked_files_removed_from_index(
     new_idx: &CheckoutIndex,
 ) -> Result<()> {
     if let Some(old) = prior {
-        for (rel, _) in &old.files {
+        for rel in old.files.keys() {
             if !new_idx.files.contains_key(rel) {
                 let p = dir.join(rel);
                 if p.exists() {

@@ -22,18 +22,24 @@ pub fn bind_looks_loopback(bind: &str) -> bool {
     host == "127.0.0.1" || host == "localhost" || host == "[::1]" || host == "::1"
 }
 
+const PACK_KEYS_INSECURE_MSG: &str = "WISP_PACK_INCLUDE_KEYS=1 with a non-loopback bind would send keystore material over cleartext HTTP; use TLS in front, bind loopback, omit keys from packs, or set WISP_PACK_INCLUDE_KEYS_INSECURE=1 to override (unsafe)";
+
 /// Refuse cleartext HTTP pack export of keystore material on non-loopback binds.
 pub fn validate_http_serve_bind(bind: &str) -> Result<()> {
-    if pack_includes_keys() && !bind_looks_loopback(bind) {
-        let override_ok = std::env::var("WISP_PACK_INCLUDE_KEYS_INSECURE")
-            .ok()
-            .as_deref()
-            == Some("1");
-        if !override_ok {
-            return Err(WispError::usage(
-                "WISP_PACK_INCLUDE_KEYS=1 with a non-loopback bind would send keystore material over cleartext HTTP; use TLS in front, bind loopback, omit keys from packs, or set WISP_PACK_INCLUDE_KEYS_INSECURE=1 to override (unsafe)",
-            ));
-        }
+    let insecure_override = std::env::var("WISP_PACK_INCLUDE_KEYS_INSECURE")
+        .ok()
+        .as_deref()
+        == Some("1");
+    validate_http_serve_bind_policy(bind, pack_includes_keys(), insecure_override)
+}
+
+fn validate_http_serve_bind_policy(
+    bind: &str,
+    pack_includes_keys: bool,
+    insecure_override: bool,
+) -> Result<()> {
+    if pack_includes_keys && !bind_looks_loopback(bind) && !insecure_override {
+        return Err(WispError::usage(PACK_KEYS_INSECURE_MSG));
     }
     Ok(())
 }
@@ -134,13 +140,13 @@ mod tests {
 
     #[test]
     fn validate_http_serve_bind_blocks_keys_on_lan() {
-        std::env::set_var("WISP_PACK_INCLUDE_KEYS", "1");
-        std::env::remove_var("WISP_PACK_INCLUDE_KEYS_INSECURE");
-        assert!(validate_http_serve_bind("0.0.0.0:8080").is_err());
-        assert!(validate_http_serve_bind("127.0.0.1:8080").is_ok());
-        std::env::set_var("WISP_PACK_INCLUDE_KEYS_INSECURE", "1");
-        assert!(validate_http_serve_bind("0.0.0.0:8080").is_ok());
-        std::env::remove_var("WISP_PACK_INCLUDE_KEYS");
-        std::env::remove_var("WISP_PACK_INCLUDE_KEYS_INSECURE");
+        assert!(!bind_looks_loopback("0.0.0.0:8080"));
+        assert!(bind_looks_loopback("127.0.0.1:8080"));
+        assert!(
+            validate_http_serve_bind_policy("0.0.0.0:8080", true, false).is_err()
+        );
+        assert!(validate_http_serve_bind_policy("127.0.0.1:8080", true, false).is_ok());
+        assert!(validate_http_serve_bind_policy("0.0.0.0:8080", true, true).is_ok());
+        assert!(validate_http_serve_bind_policy("0.0.0.0:8080", false, false).is_ok());
     }
 }

@@ -31,7 +31,10 @@ pub fn write_cold_pack(repo: &Repository, dest: &Path) -> Result<()> {
                 .map_err(|e| WispError::internal(e.to_string()))?;
         }
     }
-    tar.finish()
+    let mut enc = tar
+        .into_inner()
+        .map_err(|e| WispError::internal(e.to_string()))?;
+    enc.finish()
         .map_err(|e| WispError::internal(e.to_string()))?;
     Ok(())
 }
@@ -150,6 +153,36 @@ mod tests {
         std::fs::create_dir_all(&wisp).unwrap();
         assert!(safe_wisp_path(&wisp, Path::new("../ledger.db")).is_err());
         assert!(safe_wisp_path(&wisp, Path::new("payloads/ab/x")).is_ok());
+    }
+
+    #[test]
+    fn pack_bytes_apply_roundtrip() {
+        std::env::remove_var("WISP_PACK_INCLUDE_KEYS");
+        std::env::remove_var("WISP_MASTER_KEY");
+        let dir = tempfile::tempdir().unwrap();
+        let a_root = dir.path().join("a");
+        let c_root = dir.path().join("c");
+        std::fs::create_dir_all(&a_root).unwrap();
+        std::fs::write(
+            a_root.join("doc.md"),
+            "---\ntype: Note\ntitle: P\n---\n\n## One\n\nx\n",
+        )
+        .unwrap();
+        let mut a = Repository::init(&a_root, "0.2", &Unlock::default()).unwrap();
+        wisp_engine::record::record(
+            &mut a,
+            &wisp_engine::record::RecordOptions {
+                actor: Some("human:t".into()),
+                message: Some("r".into()),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        drop(a);
+        let a = Repository::open(&a_root, &Unlock::default()).unwrap();
+        let body = pack_bytes(&a).unwrap();
+        let mut c = Repository::init(&c_root, "0.2", &Unlock::default()).unwrap();
+        apply_pack_bytes(&mut c, &body, &Unlock::default()).unwrap();
     }
 
     #[test]

@@ -1,1 +1,1 @@
-{"type":"hello","repo_id":"01J0000000000000000000000","protocol_version":1,"trusted":true}
+{"type":"hello","repo_id":"01J0000000000000000000000","protocol_version":1,"trusted":true,"transport":"local_path"}

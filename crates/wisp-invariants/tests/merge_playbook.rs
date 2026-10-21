@@ -32,6 +32,8 @@ fn section_body(repo: &mut Repository, ref_name: &str, section: SectionId) -> St
         .body
 }
 
+/// Remove `.wisp/cache` (simulate cold open without JSON skip files).
+/// Call only after `drop(repo)` — on Windows, open hot SQLite files under `cache/` block deletion.
 fn remove_wisp_cache(wisp_dir: &Path) {
     let cache = wisp_dir.join("cache");
     if cache.is_dir() {
@@ -248,8 +250,8 @@ fn merge_replay_skips_survive_cold_open_without_cache() {
     let skips_before = Ledger::merge_replay_skips(repo.ledger.conn(), MAIN_REF, merge_id).unwrap();
     assert!(!skips_before.is_empty());
 
-    remove_wisp_cache(&wisp_dir);
     drop(repo);
+    remove_wisp_cache(&wisp_dir);
 
     let mut repo = Repository::open(&root, &Unlock::default()).unwrap();
     assert!(
@@ -302,8 +304,12 @@ fn merge_abort_then_second_merge_keeps_per_changeset_skips() {
         skips1
     );
     assert!(section_body(&mut repo, MAIN_REF, ord_sec).contains("STRING"));
+    let root = repo.root.clone();
+    let wisp_dir = repo.wisp_dir.clone();
     repo.drop_hot(MAIN_REF);
-    remove_wisp_cache(&repo.wisp_dir);
+    drop(repo);
+    remove_wisp_cache(&wisp_dir);
+    let mut repo = Repository::open(&root, &Unlock::default()).unwrap();
     wisp_engine::apply::rebuild_hot(&mut repo, MAIN_REF).unwrap();
     assert!(section_body(&mut repo, MAIN_REF, ord_sec).contains("STRING"));
 }
@@ -312,6 +318,7 @@ fn merge_abort_then_second_merge_keeps_per_changeset_skips() {
 fn merge_resolved_content_survives_fast_forward_and_cold_reopen() {
     let (_dir, mut repo) = warehouse_repo();
     let root = repo.root.clone();
+    let wisp_dir = repo.wisp_dir.clone();
     let branch_name = "task/resolved-then-ff";
     let (ord_sec, res_path) = setup_orders_schema_conflict(_dir.path(), &mut repo, branch_name);
     merge_refs(&mut repo, branch_name, MAIN_REF, Some(&res_path), false).unwrap();
@@ -337,8 +344,8 @@ fn merge_resolved_content_survives_fast_forward_and_cold_reopen() {
     assert!(section_body(&mut repo, MAIN_REF, ord_sec).contains("STRING"));
     assert!(section_body(&mut repo, MAIN_REF, cust_sec).contains("loyalty_tier"));
 
-    remove_wisp_cache(&repo.wisp_dir);
     drop(repo);
+    remove_wisp_cache(&wisp_dir);
     let mut repo = Repository::open(&root, &Unlock::default()).unwrap();
     wisp_engine::apply::rebuild_hot(&mut repo, MAIN_REF).unwrap();
     assert!(section_body(&mut repo, MAIN_REF, ord_sec).contains("STRING"));

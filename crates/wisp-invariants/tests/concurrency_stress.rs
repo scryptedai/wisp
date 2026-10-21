@@ -107,5 +107,8 @@ fn stress_many_disjoint_writers() {
         h.join().expect("writer thread");
     }
     let mut repo = Repository::open(&root, &Unlock::default()).unwrap();
-    assert!(wisp_engine::query::fsck(&mut repo).is_ok());
+    match wisp_engine::query::fsck(&mut repo) {
+        Ok(_) => {}
+        Err(e) => panic!("fsck after concurrent writers: {e:?}"),
+    }
 }

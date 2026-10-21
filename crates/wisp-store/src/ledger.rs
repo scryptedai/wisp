@@ -1299,22 +1299,32 @@ impl Ledger {
         merge_changeset: ChangesetId,
         skip: &[ChangeId],
     ) -> Result<()> {
-        conn.execute(
-            "DELETE FROM merge_replay_skips WHERE ref_name = ?1 AND merge_changeset = ?2",
-            params![ref_name, merge_changeset.bytes().to_vec()],
-        )
-        .map_err(sql_err)?;
-        for c in skip {
+        conn.execute_batch("BEGIN IMMEDIATE")
+            .map_err(sql_err)?;
+        let outcome = (|| {
             conn.execute(
-                "INSERT INTO merge_replay_skips (ref_name, merge_changeset, change_id) VALUES (?1, ?2, ?3)",
-                params![
-                    ref_name,
-                    merge_changeset.bytes().to_vec(),
-                    c.bytes().to_vec()
-                ],
+                "DELETE FROM merge_replay_skips WHERE ref_name = ?1 AND merge_changeset = ?2",
+                params![ref_name, merge_changeset.bytes().to_vec()],
             )
             .map_err(sql_err)?;
+            for c in skip {
+                conn.execute(
+                    "INSERT INTO merge_replay_skips (ref_name, merge_changeset, change_id) VALUES (?1, ?2, ?3)",
+                    params![
+                        ref_name,
+                        merge_changeset.bytes().to_vec(),
+                        c.bytes().to_vec()
+                    ],
+                )
+                .map_err(sql_err)?;
+            }
+            Ok(())
+        })();
+        if outcome.is_err() {
+            let _ = conn.execute_batch("ROLLBACK");
+            return outcome;
         }
+        conn.execute_batch("COMMIT").map_err(sql_err)?;
         Ok(())
     }
 

@@ -43,6 +43,7 @@ fn erase_purges_search_indexes() {
         &EraseTarget::Path(format!("{path}#{section}")),
         Reason::Policy,
         true,
+        true,
         "human:test",
     )
     .unwrap();

@@ -19,7 +19,7 @@ Wisp only rewrites checkouts it knows about:
 | Primary worktree | `repository.root` when `query::current_ref` matches the ref being refreshed |
 | Linked worktrees | `worktrees` ledger table (`wisp worktree add`) |
 
-After shred, **`rewrite_worktrees_for_ref`** runs for the ref passed to `erase`. **`recover`** calls **`rewrite_all_managed_worktrees`** so every registered checkout is re-rendered from hot state.
+After shred, **`rewrite_all_managed_worktrees`** re-renders every registered checkout (primary + linked worktrees). Pass **`--discard`** on `wisp erase` when the managed tree has unrecorded edits that must be overwritten. **`recover`** on `Repository::open` always rewrites when a ledger **`erase_rewrite_pending`** flag is set or when shred was interrupted.
 
 Erase returns an error unless **`assert_erase_complete`**: every affected scope is **shredded** and none are **erased-but-not-shredded**.
 
@@ -31,7 +31,7 @@ On every `Repository::open`, **`erase::recover`** runs before other work:
 2. **`shred`** — For scopes with `erased = 1` and `shredded = 0` (crash after bookkeeping, before or during shred). Hot purge deletes rows by scope id **and** removes section ids recorded on the ledger scope row (so a stale `state_sections.scope` column cannot leave ciphertext in hot).
 3. **`rewrite_all_managed_worktrees`** — Re-render from hot, then **`prune_tracked_files_removed_from_index`** so concepts removed from hot disappear from disk even when the prior `checkout.idx` is still needed for `remove_stale` inside `write_tree`.
 
-Remaining gap (documented, not hidden): a crash **after** shred but **before** worktree rewrite can leave stale plaintext in a managed file until the next `open` (recover rewrites) or an explicit `rewrite_all_managed_worktrees`.
+A crash **after** shred but **before** worktree rewrite leaves **`erase_rewrite_pending`** set; the next **`open`** runs **`recover`** and rewrites all managed checkouts (no whole-disk scan).
 
 ## Sync and replicas
 

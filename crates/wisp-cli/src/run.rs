@@ -563,6 +563,7 @@ pub fn run(cli: Cli) -> CliResult {
             actor_target,
             reason,
             yes,
+            discard,
             r#ref,
         } => {
             let mut repo = open(&cli)?;
@@ -584,6 +585,7 @@ pub fn run(cli: Cli) -> CliResult {
                 &t,
                 parse_reason(reason)?,
                 *yes,
+                *discard,
                 &actor,
             )?;
             let pending = v["pending_subscribers"]

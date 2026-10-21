@@ -79,6 +79,17 @@ impl CheckoutIndex {
     }
 }
 
+fn remove_managed_file(path: &Path) -> Result<()> {
+    match std::fs::remove_file(path) {
+        Ok(()) => Ok(()),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(e) => Err(WispError::internal(format!(
+            "remove {}: {e}",
+            path.display()
+        ))),
+    }
+}
+
 /// Drop working-tree files that were tracked before a rewrite but are absent from the new index
 /// (for example when a purged concept no longer appears in hot).
 pub fn prune_tracked_files_removed_from_index(
@@ -90,9 +101,7 @@ pub fn prune_tracked_files_removed_from_index(
         for rel in old.files.keys() {
             if !new_idx.files.contains_key(rel) {
                 let p = dir.join(rel);
-                if p.exists() {
-                    let _ = std::fs::remove_file(&p);
-                }
+                remove_managed_file(&p)?;
             }
         }
     }

@@ -49,6 +49,7 @@ CREATE TABLE IF NOT EXISTS changes (
   UNIQUE (changeset, ordinal)
 );
 CREATE INDEX IF NOT EXISTS changes_by_concept ON changes(concept, section);
+CREATE INDEX IF NOT EXISTS changes_by_op ON changes(op);
 CREATE TABLE IF NOT EXISTS tombstones (
   erase_change BLOB PRIMARY KEY REFERENCES changes(id),
   target       BLOB NOT NULL,
@@ -117,6 +118,10 @@ CREATE TABLE IF NOT EXISTS erasure_markers (
   concept BLOB NOT NULL,
   after_section BLOB,
   reason TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS ledger_flags (
+  name TEXT PRIMARY KEY,
+  value INTEGER NOT NULL
 );
 
 -- Insert-only log tables (I1)
@@ -1232,6 +1237,50 @@ impl Ledger {
     /// Every change in ledger order (used for asset history and fsck).
     pub fn changes_all(conn: &Connection) -> Result<Vec<(i64, Change)>> {
         Self::changes_since(conn, 0)
+    }
+
+    /// Erase changes with no tombstone row yet (recovery bookkeeping).
+    pub fn erase_changes_without_tombstones(conn: &Connection) -> Result<Vec<Change>> {
+        let sql = format!(
+            "SELECT {} FROM changes c
+             JOIN changesets s ON s.id = c.changeset
+             WHERE c.op = 'erase'
+               AND NOT EXISTS (SELECT 1 FROM tombstones t WHERE t.erase_change = c.id)
+             ORDER BY s.seq, c.ordinal",
+            Self::CHANGE_COLS
+        );
+        let mut st = conn.prepare(&sql).map_err(sql_err)?;
+        let rows = st
+            .query_map([], Self::row_to_change)
+            .map_err(sql_err)?
+            .filter_map(|r| r.ok())
+            .collect();
+        Ok(rows)
+    }
+
+    const ERASE_REWRITE_PENDING: &'static str = "erase_rewrite_pending";
+
+    pub fn erase_rewrite_pending(conn: &Connection) -> Result<bool> {
+        Ok(conn
+            .query_row(
+                "SELECT value FROM ledger_flags WHERE name = ?1",
+                params![Self::ERASE_REWRITE_PENDING],
+                |r| r.get::<_, i64>(0),
+            )
+            .optional()
+            .map_err(sql_err)?
+            .unwrap_or(0)
+            != 0)
+    }
+
+    pub fn set_erase_rewrite_pending(conn: &Connection, pending: bool) -> Result<()> {
+        conn.execute(
+            "INSERT INTO ledger_flags (name, value) VALUES (?1, ?2)
+             ON CONFLICT(name) DO UPDATE SET value = excluded.value",
+            params![Self::ERASE_REWRITE_PENDING, if pending { 1 } else { 0 }],
+        )
+        .map_err(sql_err)?;
+        Ok(())
     }
 
     // ---- cursors and pending erasures ----

@@ -6,7 +6,7 @@ use crate::payloads::*;
 use crate::query;
 use crate::repo::{Repository, MAIN_REF};
 use serde_json::{json, Value};
-use std::collections::{BTreeSet, HashSet};
+use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 use wisp_model::*;
 use wisp_store::{Hot, Ledger, Tombstone};
@@ -359,6 +359,7 @@ pub fn erase(
     target: &EraseTarget,
     reason: Reason,
     yes: bool,
+    discard_unrecorded: bool,
     actor: &str,
 ) -> Result<Value> {
     let (scopes, tgt, covers) = resolve_scopes(repo, ref_name, target)?;
@@ -412,7 +413,7 @@ pub fn erase(
 
     // Phase 1 and Phase 2 (idempotent; recovery reruns them).
     shred(repo, &scopes, erase_change, &flagged)?;
-    rewrite_worktrees_for_ref(repo, ref_name)?;
+    finish_erase_worktree_rewrite(repo, discard_unrecorded)?;
     assert_erase_complete(repo, &scopes)?;
     repo.ledger.checkpoint()?;
     repo.keystore.checkpoint()?;
@@ -506,43 +507,63 @@ pub fn shred(
 pub fn recover(repo: &mut Repository) -> Result<()> {
     finish_erase_bookkeeping(repo)?;
     let pending = Ledger::scopes_erased_not_shredded(repo.ledger.conn())?;
-    if pending.is_empty() {
+    let rewrite_pending = Ledger::erase_rewrite_pending(repo.ledger.conn())?;
+    if pending.is_empty() && !rewrite_pending {
         return Ok(());
     }
-    let cause = Ledger::tombstones(repo.ledger.conn())?
-        .into_iter()
-        .find(|t| t.scopes.iter().any(|s| pending.contains(s)))
-        .map(|t| t.erase_change)
-        .unwrap_or_else(ChangeId::new);
-    shred(repo, &pending, cause, &[])?;
-    rewrite_all_managed_worktrees(repo)?;
-    assert_erase_complete(repo, &pending)?;
+    if !pending.is_empty() {
+        let cause = Ledger::tombstones(repo.ledger.conn())?
+            .into_iter()
+            .find(|t| t.scopes.iter().any(|s| pending.contains(s)))
+            .map(|t| t.erase_change)
+            .unwrap_or_else(ChangeId::new);
+        shred(repo, &pending, cause, &[])?;
+    }
+    if rewrite_pending || !pending.is_empty() {
+        finish_erase_worktree_rewrite(repo, true)?;
+    }
+    if !pending.is_empty() {
+        assert_erase_complete(repo, &pending)?;
+    }
     repo.ledger.checkpoint()?;
     repo.keystore.checkpoint()?;
     Ok(())
 }
 
+fn finish_erase_worktree_rewrite(repo: &mut Repository, discard_unrecorded: bool) -> Result<()> {
+    rewrite_all_managed_worktrees(repo, discard_unrecorded)?;
+    Ledger::set_erase_rewrite_pending(repo.ledger.conn(), false)?;
+    Ok(())
+}
+
 /// Re-render every Wisp-managed checkout (primary root and each registered linked worktree).
-pub fn rewrite_all_managed_worktrees(repo: &mut Repository) -> Result<()> {
+pub fn rewrite_all_managed_worktrees(
+    repo: &mut Repository,
+    discard_unrecorded: bool,
+) -> Result<()> {
     let _lock = WorktreeLock::acquire(&repo.wisp_dir)?;
     let primary_ref = query::current_ref(repo);
     let primary_root = repo.root.clone();
-    rewrite_worktree_at(repo, &primary_ref, &primary_root)?;
+    rewrite_worktree_at(repo, &primary_ref, &primary_root, discard_unrecorded)?;
     for wt in Ledger::list_worktrees(repo.ledger.conn())? {
         let path = PathBuf::from(&wt.path);
         if path.is_dir() {
-            rewrite_worktree_at(repo, &wt.ref_name, &path)?;
+            rewrite_worktree_at(repo, &wt.ref_name, &path, discard_unrecorded)?;
         }
     }
     Ok(())
 }
 
 /// Re-render checkouts that display `ref_name` (primary when checked out there, plus linked worktrees on that ref).
-pub fn rewrite_worktrees_for_ref(repo: &mut Repository, ref_name: &str) -> Result<()> {
+pub fn rewrite_worktrees_for_ref(
+    repo: &mut Repository,
+    ref_name: &str,
+    discard_unrecorded: bool,
+) -> Result<()> {
     let _lock = WorktreeLock::acquire(&repo.wisp_dir)?;
     if query::current_ref(repo) == ref_name {
         let primary_root = repo.root.clone();
-        rewrite_worktree_at(repo, ref_name, &primary_root)?;
+        rewrite_worktree_at(repo, ref_name, &primary_root, discard_unrecorded)?;
     }
     for wt in Ledger::list_worktrees(repo.ledger.conn())? {
         if wt.ref_name != ref_name {
@@ -550,16 +571,46 @@ pub fn rewrite_worktrees_for_ref(repo: &mut Repository, ref_name: &str) -> Resul
         }
         let path = PathBuf::from(&wt.path);
         if path.is_dir() {
-            rewrite_worktree_at(repo, ref_name, &path)?;
+            rewrite_worktree_at(repo, ref_name, &path, discard_unrecorded)?;
         }
     }
     Ok(())
 }
 
-fn rewrite_worktree_at(repo: &mut Repository, ref_name: &str, dir: &Path) -> Result<()> {
+fn ensure_clean_for_erase_rewrite(
+    repo: &Repository,
+    ref_name: &str,
+    dir: &Path,
+    discard_unrecorded: bool,
+) -> Result<()> {
+    if discard_unrecorded {
+        return Ok(());
+    }
+    let st = crate::record::unrecorded_edits_at(repo, ref_name, dir)?;
+    if st.changed.is_empty() && st.new.is_empty() && st.missing.is_empty() {
+        return Ok(());
+    }
+    Err(WispError::conflict(
+        "unrecorded edits in managed checkout; pass --discard to proceed with erase rewrite",
+        json!([{
+            "type": "unrecorded_edits",
+            "changed": st.changed,
+            "new": st.new,
+            "missing": st.missing,
+        }]),
+    ))
+}
+
+fn rewrite_worktree_at(
+    repo: &mut Repository,
+    ref_name: &str,
+    dir: &Path,
+    discard_unrecorded: bool,
+) -> Result<()> {
     if Ledger::head(repo.ledger.conn(), ref_name)?.is_none() {
         return Ok(());
     }
+    ensure_clean_for_erase_rewrite(repo, ref_name, dir, discard_unrecorded)?;
     let idx_path = checkout::checkout_idx_path(repo, dir);
     let prior = checkout::CheckoutIndex::load(&idx_path)?;
     let idx = checkout::write_tree(repo, ref_name, dir, false, false, true)?;
@@ -570,17 +621,7 @@ fn rewrite_worktree_at(repo: &mut Repository, ref_name: &str, dir: &Path) -> Res
 
 /// Erase changesets committed without a tombstone row (crash between commit and bookkeeping).
 pub fn finish_erase_bookkeeping(repo: &mut Repository) -> Result<()> {
-    let recorded: HashSet<ChangeId> = Ledger::tombstones(repo.ledger.conn())?
-        .into_iter()
-        .map(|t| t.erase_change)
-        .collect();
-    for (_, change) in Ledger::changes_all(repo.ledger.conn())? {
-        if change.op != Op::Erase {
-            continue;
-        }
-        if recorded.contains(&change.id) {
-            continue;
-        }
+    for change in Ledger::erase_changes_without_tombstones(repo.ledger.conn())? {
         let scopes = match &change.target {
             Target::Erase { scopes } if !scopes.is_empty() => scopes.clone(),
             _ => continue,
@@ -694,6 +735,7 @@ fn apply_erase_bookkeeping(
     {
         Ledger::add_pending_erasure(&tx, erase_change, &sub.name)?;
     }
+    Ledger::set_erase_rewrite_pending(&tx, true)?;
     tx.commit()
         .map_err(|e| WispError::internal(e.to_string()))?;
     Ok(())

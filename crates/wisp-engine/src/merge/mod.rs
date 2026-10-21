@@ -36,21 +36,30 @@ pub fn merge_skips_for_head(
     head: ChangesetId,
 ) -> Option<HashSet<ChangeId>> {
     let conn = repo.ledger.conn();
-    let mut cur = Some(head);
+    let mut stack = vec![head];
     let mut seen = HashSet::new();
-    while let Some(id) = cur {
+    let mut skips = HashSet::new();
+    while let Some(id) = stack.pop() {
         if !seen.insert(id) {
-            break;
+            continue;
         }
         if let Some(skip) = merge_skips_at_exact_head(repo, ref_name, id) {
-            return Some(skip);
+            skips.extend(skip);
         }
-        cur = Ledger::get_changeset(conn, id)
-            .ok()
-            .flatten()
-            .and_then(|r| r.changeset.based_on);
+        if let Some(row) = Ledger::get_changeset(conn, id).ok().flatten() {
+            if let Some(b) = row.changeset.based_on {
+                stack.push(b);
+            }
+            for p in &row.changeset.parents {
+                stack.push(*p);
+            }
+        }
     }
-    None
+    if skips.is_empty() {
+        None
+    } else {
+        Some(skips)
+    }
 }
 
 fn merge_skips_at_exact_head(
@@ -111,9 +120,8 @@ pub fn persist_merge_skips(
     Ok(())
 }
 
-/// Remove merge skip metadata for a ref (fast-forward / clean merge).
+/// Clear the compatibility cache file for merge skips (ledger rows are per merge head).
 pub fn clear_merge_skips(repo: &Repository, ref_name: &str) -> Result<()> {
-    Ledger::clear_merge_replay_skips(repo.ledger.conn(), ref_name)?;
     let path = merge_skip_path(repo, ref_name);
     if path.is_file() {
         fs::remove_file(&path).map_err(|e| WispError::internal(e.to_string()))?;

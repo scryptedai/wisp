@@ -672,10 +672,12 @@ fn markers_for_scopes_on_ref(
     ref_name: &str,
     scopes: &[ScopeId],
 ) -> Result<Vec<(SectionId, ConceptId, Option<SectionId>)>> {
-    let scope_rows: Vec<_> = scopes
-        .iter()
-        .filter_map(|s| Ledger::scope(repo.ledger.conn(), *s).ok().flatten())
-        .collect();
+    let mut scope_rows = Vec::new();
+    for s in scopes {
+        if let Some(row) = Ledger::scope(repo.ledger.conn(), *s)? {
+            scope_rows.push(row);
+        }
+    }
     let conn = repo.hot(ref_name)?.conn();
     let mut markers = Vec::new();
     for row in scope_rows {

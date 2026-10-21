@@ -240,14 +240,10 @@ fn transfer_cold(src: &Repository, dst: &mut Repository) -> Result<TransferStats
 
 /// After hot rebuild: align erase/shred state and keystore with the source (deletions win).
 fn finish_deletions_mirror(src: &Repository, dst: &mut Repository) -> Result<()> {
-    reconcile_scope_flags(src, dst)?;
-    apply_shredded_scopes(src, dst)?;
+    let newly_erased = reconcile_scope_flags(src, dst)?;
+    let newly_shredded = apply_shredded_scopes(src, dst)?;
     erase::recover(dst)?;
-    // Shred on a replica does not set erase_rewrite_pending; refresh managed plaintext anyway.
-    let needs_rewrite = Ledger::all_scopes(dst.ledger.conn())?
-        .iter()
-        .any(|s| s.erased);
-    if needs_rewrite {
+    if newly_erased + newly_shredded > 0 {
         erase::rewrite_all_managed_worktrees(dst, true)?;
     }
     dst.ledger.checkpoint()?;
@@ -256,7 +252,8 @@ fn finish_deletions_mirror(src: &Repository, dst: &mut Repository) -> Result<()>
 }
 
 /// Propagate erase flags for scopes that already existed on the destination (deletions win).
-fn reconcile_scope_flags(src: &Repository, dst: &mut Repository) -> Result<()> {
+fn reconcile_scope_flags(src: &Repository, dst: &mut Repository) -> Result<usize> {
+    let mut n = 0;
     for s in Ledger::all_scopes(src.ledger.conn())? {
         let local = Ledger::scope(dst.ledger.conn(), s.id)?;
         if local.is_none() {
@@ -266,9 +263,10 @@ fn reconcile_scope_flags(src: &Repository, dst: &mut Repository) -> Result<()> {
         if s.erased && !local.erased {
             Ledger::mark_scope_erased(dst.ledger.conn(), s.id)?;
             Ledger::set_scope_payloads_absent(dst.ledger.conn(), s.id)?;
+            n += 1;
         }
     }
-    Ok(())
+    Ok(n)
 }
 
 /// Copy wrapped scope keys for live scopes missing on the destination (same master key).
@@ -292,7 +290,8 @@ fn sync_trusted_scope_keys(src: &Repository, dst: &mut Repository) -> Result<usi
 }
 
 /// Mirror shred from the source (hot purge, cold payloads, keystore).
-fn apply_shredded_scopes(src: &Repository, dst: &mut Repository) -> Result<()> {
+fn apply_shredded_scopes(src: &Repository, dst: &mut Repository) -> Result<usize> {
+    let mut n = 0;
     let tombstones = Ledger::tombstones(src.ledger.conn())?;
     for s in Ledger::all_scopes(src.ledger.conn())? {
         if !s.shredded {
@@ -312,8 +311,9 @@ fn apply_shredded_scopes(src: &Repository, dst: &mut Repository) -> Result<()> {
         let cause = tomb.map(|t| t.erase_change).unwrap_or_else(ChangeId::new);
         let flagged = tomb.map(|t| t.flagged.clone()).unwrap_or_default();
         erase::shred(dst, &[s.id], cause, &flagged)?;
+        n += 1;
     }
-    Ok(())
+    Ok(n)
 }
 
 fn tombstone_present(conn: &rusqlite::Connection, t: &Tombstone) -> Result<bool> {

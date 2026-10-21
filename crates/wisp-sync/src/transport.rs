@@ -1,5 +1,6 @@
 //! Remote URL parsing and transports (git-remote-shaped).
 
+use crate::http::http_bearer_token;
 use crate::local::{init_trusted_replica, pull, push};
 use crate::pack::{apply_pack_bytes, pack_bytes};
 use serde_json::{json, Value};
@@ -95,11 +96,17 @@ fn pack_url(base: &str) -> String {
     format!("{}/wisp/v1/pack.zst", base.trim_end_matches('/'))
 }
 
+fn with_http_auth(mut req: ureq::Request) -> ureq::Request {
+    if let Some(token) = http_bearer_token() {
+        req = req.set("Authorization", &format!("Bearer {}", token));
+    }
+    req
+}
+
 fn http_push(local: &mut Repository, remote: &HttpRemote, ref_name: &str) -> Result<Value> {
     let body = pack_bytes(local)?;
     let url = pack_url(&remote.base);
-    let resp = ureq::put(&url)
-        .set("Content-Type", "application/zstd")
+    let resp = with_http_auth(ureq::put(&url).set("Content-Type", "application/zstd"))
         .send_bytes(&body)
         .map_err(|e| WispError::internal(format!("http push {url}: {e}")))?;
     if !(200..300).contains(&resp.status()) {
@@ -128,7 +135,7 @@ fn http_pull(
     unlock: &Unlock,
 ) -> Result<Value> {
     let url = pack_url(&remote.base);
-    let resp = ureq::get(&url)
+    let resp = with_http_auth(ureq::get(&url))
         .call()
         .map_err(|e| WispError::internal(format!("http pull {url}: {e}")))?;
     if resp.status() != 200 {

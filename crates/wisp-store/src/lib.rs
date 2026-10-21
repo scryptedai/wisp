@@ -203,16 +203,29 @@ mod tests {
         assert!(got.contains(&c2));
 
         Ledger::set_merge_replay_skips(conn, "main", m2, &[c3]).unwrap();
-        assert_eq!(Ledger::merge_replay_skips(conn, "main", m2).unwrap(), vec![c3]);
+        assert_eq!(
+            Ledger::merge_replay_skips(conn, "main", m2).unwrap(),
+            vec![c3]
+        );
         let m1_after = Ledger::merge_replay_skips(conn, "main", m1).unwrap();
         assert_eq!(m1_after.len(), 2);
 
         Ledger::set_merge_replay_skips(conn, "main", m1, &[c4]).unwrap();
-        assert_eq!(Ledger::merge_replay_skips(conn, "main", m1).unwrap(), vec![c4]);
-        assert_eq!(Ledger::merge_replay_skips(conn, "main", m2).unwrap(), vec![c3]);
+        assert_eq!(
+            Ledger::merge_replay_skips(conn, "main", m1).unwrap(),
+            vec![c4]
+        );
+        assert_eq!(
+            Ledger::merge_replay_skips(conn, "main", m2).unwrap(),
+            vec![c3]
+        );
 
         Ledger::clear_merge_replay_skips(conn, "main").unwrap();
-        assert!(Ledger::merge_replay_skips(conn, "main", m1).unwrap().is_empty());
-        assert!(Ledger::merge_replay_skips(conn, "main", m2).unwrap().is_empty());
+        assert!(Ledger::merge_replay_skips(conn, "main", m1)
+            .unwrap()
+            .is_empty());
+        assert!(Ledger::merge_replay_skips(conn, "main", m2)
+            .unwrap()
+            .is_empty());
     }
 }

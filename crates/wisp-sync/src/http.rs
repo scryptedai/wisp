@@ -10,8 +10,25 @@ use wisp_store::Ledger;
 
 const PACK_PATH: &str = "/wisp/v1/pack.zst";
 
+/// Bearer token from `WISP_HTTP_TOKEN` (shared by server and HTTP sync client).
+pub fn http_bearer_token() -> Option<String> {
+    std::env::var("WISP_HTTP_TOKEN")
+        .ok()
+        .filter(|s| !s.is_empty())
+}
+
+fn bind_looks_loopback(bind: &str) -> bool {
+    let host = bind.rsplit_once(':').map(|(h, _)| h).unwrap_or(bind);
+    host == "127.0.0.1" || host == "localhost" || host == "[::1]" || host == "::1"
+}
+
 /// Block serving `GET`/`PUT` on `http://{bind}{PACK_PATH}` until the process exits.
 pub fn serve_http(bind: &str, root: &Path, unlock: &Unlock) -> Result<()> {
+    if http_bearer_token().is_some() && !bind_looks_loopback(bind) {
+        eprintln!(
+            "wisp http: warning: WISP_HTTP_TOKEN is set but bind address {bind} is not loopback; use TLS or terminate TLS in front"
+        );
+    }
     let state = Arc::new(Mutex::new(HttpState {
         root: root.to_path_buf(),
         unlock: unlock.clone(),
@@ -34,19 +51,13 @@ struct HttpState {
     unlock: Unlock,
 }
 
-fn http_token_required() -> Option<String> {
-    std::env::var("WISP_HTTP_TOKEN")
-        .ok()
-        .filter(|s| !s.is_empty())
-}
-
 fn authorize(request: &tiny_http::Request) -> bool {
-    match http_token_required() {
+    match http_bearer_token() {
         None => true,
         Some(expected) => request
             .headers()
             .iter()
-            .find(|h| h.field.as_str() == "Authorization" || h.field.as_str() == "authorization")
+            .find(|h| h.field.equiv("Authorization"))
             .and_then(|h| h.value.as_str().strip_prefix("Bearer "))
             .map(|t| t == expected)
             .unwrap_or(false),

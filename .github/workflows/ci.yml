@@ -26,5 +26,6 @@ jobs:
       - run: cargo test -p wisp-invariants
         env:
           FASTEMBED_CACHE_DIR: ${{ runner.temp }}/fastembed-cache
+      - run: cargo test -p wisp-invariants --no-default-features
       - run: cargo build --release -p wisp-cli
       - run: cargo build --release -p wisp-cli --no-default-features

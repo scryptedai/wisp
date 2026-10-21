@@ -513,10 +513,14 @@ fn i4_i5_i21_i22_erase_section_canaries_and_integrity() {
     assert!(scan_for(&f.root, canary_a).is_empty());
     // The retry of record is idempotent and the erased marker is still rendered.
     assert!(text2.contains("[erased: policy]"));
-    // I14-lite: an erase is complete on reopen (no pending shreds).
+    // I14: erase is complete on reopen (no pending shreds).
     assert!(Ledger::scopes_erased_not_shredded(repo.ledger.conn())
         .unwrap()
         .is_empty());
+    let scope_row = Ledger::scope_of_section(repo.ledger.conn(), alpha)
+        .unwrap()
+        .expect("erased section scope");
+    assert!(scope_row.erased && scope_row.shredded);
 }
 
 #[test]
@@ -874,6 +878,8 @@ fn search_pack_and_feed() {
     let p =
         crate::query::pack(&mut repo, MAIN_REF, &["tables/orders.md".into()], Some(20)).unwrap();
     assert!(p["tokens"].as_u64().unwrap() <= 20);
+    assert_eq!(p["codec"].as_str(), Some(crate::query::TOKEN_CODEC));
+    assert_eq!(p["budget_safe"].as_u64(), Some(18));
     assert!(!p["omitted"].as_array().unwrap().is_empty());
     let full = crate::query::pack(&mut repo, MAIN_REF, &[], None).unwrap();
     assert_eq!(full["concepts"].as_array().unwrap().len(), 2);

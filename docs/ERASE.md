@@ -8,7 +8,7 @@ This document matches `wisp erase`, `crates/wisp-engine/src/erase.rs`, and recov
 - **Cold tier**: erase changeset, tombstone, scope flags, payload absence, optional erasure markers; Phase 2 shreds ciphertext and **scope keys**.
 - **Hot tier**: section/concept state, search indexes, vectors for affected sections.
 
-Copies in **other scopes**, **external exports**, **backups without `.wisp/`**, or **plaintext outside Wisp-managed paths** are out of scope unless you erase those scopes too or destroy the copies yourself.
+Copies in **other scopes**, **external exports**, **backups without `.wisp/`**, or **plaintext outside Wisp-managed paths** are out of scope unless you erase those scopes too or destroy the copies yourself. See also **[docs/TRUST-BOUNDARY.md](TRUST-BOUNDARY.md)**.
 
 ## Managed working copies (no whole-disk scan)
 

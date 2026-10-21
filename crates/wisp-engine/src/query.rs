@@ -18,6 +18,9 @@ use wisp_store::{Hot, Ledger};
 /// The approximate tokenizer codec used in this build (DECISIONS.md §14.3).
 pub const TOKEN_CODEC: &str = "tok:approx:chars4";
 
+/// Suggested fraction of `--budget` to stay under when targeting a model context limit (approx codec).
+pub const PACK_BUDGET_SAFE_RATIO: f64 = 0.9;
+
 pub fn count_tokens(text: &str) -> usize {
     text.chars().count().div_ceil(4)
 }
@@ -370,9 +373,18 @@ pub fn pack(
             "links": links,
         }));
     }
-    Ok(
-        json!({ "okf_version": okf_version, "codec": TOKEN_CODEC, "tokens": used, "budget": budget, "concepts": concepts, "omitted": omitted }),
-    )
+    let budget_safe = budget.map(|b| ((b as f64) * PACK_BUDGET_SAFE_RATIO).floor() as usize);
+    Ok(json!({
+        "okf_version": okf_version,
+        "codec": TOKEN_CODEC,
+        "codec_note": "approximate; not model BPE — use budget_safe when calling LLM APIs",
+        "tokens": used,
+        "budget": budget,
+        "budget_safe": budget_safe,
+        "budget_safe_ratio": PACK_BUDGET_SAFE_RATIO,
+        "concepts": concepts,
+        "omitted": omitted,
+    }))
 }
 
 pub fn tokens(repo: &mut Repository, ref_name: &str, spec: &str) -> Result<Value> {

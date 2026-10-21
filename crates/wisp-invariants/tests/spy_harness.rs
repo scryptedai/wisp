@@ -53,6 +53,7 @@ pub fn head_changeset(repo: &mut Repository) -> ChangesetId {
     Hot::meta(hot.conn()).unwrap().expect("hot meta").head
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn update_section_ref(
     repo: &mut Repository,
     ref_name: &str,
@@ -97,6 +98,7 @@ pub fn update_section_ref(
     )
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn update_section(
     repo: &mut Repository,
     actor: &str,

@@ -98,7 +98,7 @@ fn pack_url(base: &str) -> String {
 
 fn with_http_auth(mut req: ureq::Request) -> ureq::Request {
     if let Some(token) = http_bearer_token() {
-        req = req.set("Authorization", &format!("Bearer {}", token));
+        req = req.set("Authorization", &format!("Bearer {token}"));
     }
     req
 }

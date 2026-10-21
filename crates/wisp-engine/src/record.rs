@@ -363,7 +363,7 @@ pub fn plan(repo: &mut Repository, opts: &RecordOptions) -> Result<Plan> {
                 if let Some(of) = copy_of {
                     explanations.push(json!({ "path": p.rel, "rule": "7.4.2 wisp_id seen in two files: this one is a copy", "copy_of": of.to_string(), "new_id": cid.to_string() }));
                 } else if p.file.wisp_id(&identity_key).is_none()
-                    && path_to_known.get(&p.concept_path).is_none()
+                    && !path_to_known.contains_key(&p.concept_path)
                 {
                     explanations.push(json!({ "path": p.rel, "rule": "7.4.3 no wisp_id: new concept", "id": cid.to_string() }));
                 }

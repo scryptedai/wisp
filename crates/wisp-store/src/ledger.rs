@@ -1299,8 +1299,7 @@ impl Ledger {
         merge_changeset: ChangesetId,
         skip: &[ChangeId],
     ) -> Result<()> {
-        conn.execute_batch("BEGIN IMMEDIATE")
-            .map_err(sql_err)?;
+        conn.execute_batch("BEGIN IMMEDIATE").map_err(sql_err)?;
         let outcome = (|| {
             conn.execute(
                 "DELETE FROM merge_replay_skips WHERE ref_name = ?1 AND merge_changeset = ?2",

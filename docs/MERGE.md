@@ -33,6 +33,16 @@ This document matches `wisp merge` (`wisp_merge::merge` → `wisp_engine::merge:
 
 Skip metadata is stored at `cache/refs/<ref>/merge-skip.json` with the merge head id. **`hot_check`** and rebuild walk **`based_on`** from the current ref head to find the nearest skip file, so skips still apply after later linear commits on `into`.
 
+Durable skip lists also live in the ledger table `merge_replay_skips` (per merge changeset). The JSON under `cache/` is optional compatibility; hot rebuild consults the ledger first.
+
+### Cache lifecycle (all platforms; required on Windows)
+
+Everything under `.wisp/cache/` is **rebuildable** (hot SQLite, merge-skip JSON, embedding caches). Do not delete or rename paths there while a [`Repository`](../../crates/wisp-engine/src/repo.rs) still has hot tiers open — SQLite keeps `hot.db` locked. On Windows, `remove_dir_all` fails with “file in use”; Unix often allows it and hides the bug.
+
+- **`Repository::close_all_hots`** — drop in-process hot handles before touching individual cache files.
+- **`wisp_engine::cache::reopen_without_cache`** — test/tool pattern: drop repo → remove cache → reopen (cold start).
+- Production code should prefer **ledger-backed** state (merge skips, hot rebuild) over assuming cache files can be edited in place.
+
 ## Conflict and resolution JSON
 
 On conflict, `details` includes:

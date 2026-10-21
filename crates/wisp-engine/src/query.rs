@@ -19,8 +19,7 @@ use wisp_store::{Hot, Ledger};
 pub const TOKEN_CODEC: &str = "tok:approx:chars4";
 
 pub fn count_tokens(text: &str) -> usize {
-    let chars = text.chars().count();
-    (chars + 3) / 4
+    text.chars().count().div_ceil(4)
 }
 
 // ---- log / show / why ----

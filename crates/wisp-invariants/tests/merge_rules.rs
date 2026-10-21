@@ -74,6 +74,7 @@ fn section_headings(repo: &mut Repository, ref_name: &str, concept_path: &str) -
         .collect()
 }
 
+#[allow(clippy::too_many_arguments)]
 fn add_section_after_ref(
     repo: &mut Repository,
     ref_name: &str,

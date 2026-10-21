@@ -42,7 +42,7 @@ pub fn concept_path_of(file_path: &str) -> String {
 pub fn is_reserved_file(file_path: &str) -> bool {
     let n = normalize_path(file_path);
     let name = n.rsplit('/').next().unwrap_or(&n);
-    name == "index.md" || name == "log.md"
+    name == "index.md" || name == "log.md" || name == ".wisp-checkout.idx"
 }
 
 #[cfg(test)]
@@ -55,6 +55,8 @@ mod tests {
         assert!(is_reserved_file("a/b/index.md"));
         assert!(is_reserved_file("log.md"));
         assert!(!is_reserved_file("a/index2.md"));
+        assert!(is_reserved_file(".wisp-checkout.idx"));
+        assert!(is_reserved_file("worktrees/x/.wisp-checkout.idx"));
     }
 
     #[test]

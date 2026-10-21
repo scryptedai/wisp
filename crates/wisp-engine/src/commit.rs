@@ -186,11 +186,13 @@ struct PreparedOp {
     plaintext: Option<Vec<u8>>,
 }
 
+type NewActorRegistration = Option<(ActorRow, PreparedPayload)>;
+
 /// Resolve the actor string to an existing actor, or plan its registration.
 fn resolve_actor(
     repo: &Repository,
     name: &str,
-) -> Result<(ActorId, ActorKind, Option<(ActorRow, PreparedPayload)>)> {
+) -> Result<(ActorId, ActorKind, NewActorRegistration)> {
     let kind = ActorKind::classify(name).ok_or_else(|| {
         WispError::usage(format!(
             "actor {name:?} must be <producer>/<version>, human:<id>, or process:<id>"

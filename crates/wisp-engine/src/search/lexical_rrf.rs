@@ -88,7 +88,7 @@ fn min_lexical_token_hits(query: &str) -> usize {
         0 => 0,
         1..=3 => 1,
         4..=5 => 3,
-        _ => (n + 1) / 2,
+        _ => n.div_ceil(2),
     }
 }
 

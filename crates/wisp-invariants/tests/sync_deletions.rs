@@ -75,6 +75,34 @@ fn sync_pull_after_erase_drops_scope_keys() {
 }
 
 #[test]
+fn sync_pull_after_erase_clears_replica_managed_plaintext() {
+    let (_dir, mut a, mut b) = init_pair();
+    let a_root = a.root.clone();
+    let secret = "SYNC_ERASE_CANARY_9f2a";
+    let conn = a.hot(MAIN_REF).unwrap().conn();
+    let concept = Hot::concept_by_path(conn, "note").unwrap().unwrap();
+    let section = Hot::sections_of(conn, concept.concept).unwrap()[0].section;
+    std::fs::write(
+        b.root.join("note.md"),
+        format!("---\ntype: Note\ntitle: Sync erase\n---\n\n## Body\n\n{secret}\n"),
+    )
+    .unwrap();
+    erase(
+        &mut a,
+        MAIN_REF,
+        &EraseTarget::Path(format!("note#{section}")),
+        Reason::Policy,
+        true,
+        true,
+        "human:sync",
+    )
+    .unwrap();
+    pull(&mut b, &a_root, MAIN_REF, &Unlock::default()).unwrap();
+    let on_disk = std::fs::read_to_string(b.root.join("note.md")).unwrap_or_default();
+    assert!(!on_disk.contains(secret));
+}
+
+#[test]
 fn sync_pull_does_not_restore_keys_for_locally_shredded_scopes() {
     let (_dir, mut a, mut b) = init_pair();
     let a_root = a.root.clone();

@@ -36,21 +36,30 @@ pub fn merge_skips_for_head(
     head: ChangesetId,
 ) -> Option<HashSet<ChangeId>> {
     let conn = repo.ledger.conn();
-    let mut cur = Some(head);
+    let mut stack = vec![head];
     let mut seen = HashSet::new();
-    while let Some(id) = cur {
+    let mut skips = HashSet::new();
+    while let Some(id) = stack.pop() {
         if !seen.insert(id) {
-            break;
+            continue;
         }
         if let Some(skip) = merge_skips_at_exact_head(repo, ref_name, id) {
-            return Some(skip);
+            skips.extend(skip);
         }
-        cur = Ledger::get_changeset(conn, id)
-            .ok()
-            .flatten()
-            .and_then(|r| r.changeset.based_on);
+        if let Some(row) = Ledger::get_changeset(conn, id).ok().flatten() {
+            if let Some(b) = row.changeset.based_on {
+                stack.push(b);
+            }
+            for p in &row.changeset.parents {
+                stack.push(*p);
+            }
+        }
     }
-    None
+    if skips.is_empty() {
+        None
+    } else {
+        Some(skips)
+    }
 }
 
 fn merge_skips_at_exact_head(
@@ -58,6 +67,12 @@ fn merge_skips_at_exact_head(
     ref_name: &str,
     head: ChangesetId,
 ) -> Option<HashSet<ChangeId>> {
+    let ledger = Ledger::merge_replay_skips(repo.ledger.conn(), ref_name, head)
+        .ok()
+        .filter(|v| !v.is_empty());
+    if let Some(ids) = ledger {
+        return Some(ids.into_iter().collect());
+    }
     let path = merge_skip_path(repo, ref_name);
     let Ok(text) = fs::read_to_string(&path) else {
         return None;
@@ -95,15 +110,17 @@ pub fn persist_merge_skips(
         }
         return Ok(());
     }
+    let skip_list: Vec<ChangeId> = skip.iter().copied().collect();
+    Ledger::set_merge_replay_skips(repo.ledger.conn(), ref_name, head, &skip_list)?;
     fs::create_dir_all(path.parent().unwrap()).map_err(|e| WispError::internal(e.to_string()))?;
-    let skip_list: Vec<String> = skip.iter().map(|c| c.to_string()).collect();
-    let v = json!({ "head": head.to_string(), "skip": skip_list });
+    let skip_str: Vec<String> = skip.iter().map(|c| c.to_string()).collect();
+    let v = json!({ "head": head.to_string(), "skip": skip_str });
     fs::write(&path, serde_json::to_vec_pretty(&v)?)
         .map_err(|e| WispError::internal(e.to_string()))?;
     Ok(())
 }
 
-/// Remove merge skip metadata for a ref (fast-forward / clean merge).
+/// Clear the compatibility cache file for merge skips (ledger rows are per merge head).
 pub fn clear_merge_skips(repo: &Repository, ref_name: &str) -> Result<()> {
     let path = merge_skip_path(repo, ref_name);
     if path.is_file() {

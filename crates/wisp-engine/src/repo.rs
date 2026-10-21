@@ -389,6 +389,12 @@ impl Repository {
         self.hots.remove(ref_name);
     }
 
+    /// Close every open hot SQLite file (all refs). Call before deleting anything under
+    /// `.wisp/cache/` while this handle stays alive; on Windows open `hot.db` blocks removal.
+    pub fn close_all_hots(&mut self) {
+        self.hots.clear();
+    }
+
     pub fn head(&self, ref_name: &str) -> Result<Option<ChangesetId>> {
         Ledger::head(self.ledger.conn(), ref_name)
     }

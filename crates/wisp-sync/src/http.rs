@@ -142,9 +142,7 @@ mod tests {
     fn validate_http_serve_bind_blocks_keys_on_lan() {
         assert!(!bind_looks_loopback("0.0.0.0:8080"));
         assert!(bind_looks_loopback("127.0.0.1:8080"));
-        assert!(
-            validate_http_serve_bind_policy("0.0.0.0:8080", true, false).is_err()
-        );
+        assert!(validate_http_serve_bind_policy("0.0.0.0:8080", true, false).is_err());
         assert!(validate_http_serve_bind_policy("127.0.0.1:8080", true, false).is_ok());
         assert!(validate_http_serve_bind_policy("0.0.0.0:8080", true, true).is_ok());
         assert!(validate_http_serve_bind_policy("0.0.0.0:8080", false, false).is_ok());

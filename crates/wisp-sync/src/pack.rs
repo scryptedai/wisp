@@ -39,12 +39,11 @@ pub fn write_cold_pack(repo: &Repository, dest: &Path) -> Result<()> {
     Ok(())
 }
 
-pub fn read_cold_pack(repo: &mut Repository, pack: &Path) -> Result<()> {
+pub fn read_cold_pack_into(wisp_dir: &Path, pack: &Path) -> Result<()> {
     let file = File::open(pack)?;
     let dec = Decoder::new(file)?;
     let mut archive = Archive::new(dec);
-    let wisp_dir = repo.wisp_dir.clone();
-    let extract_root = wisp_dir.clone();
+    let extract_root = wisp_dir;
     for entry in archive
         .entries()
         .map_err(|e| WispError::internal(e.to_string()))?
@@ -63,7 +62,7 @@ pub fn read_cold_pack(repo: &mut Repository, pack: &Path) -> Result<()> {
         if !pack_includes_keys() && rel.starts_with("keys") {
             continue;
         }
-        let out = safe_wisp_path(&extract_root, rel)?;
+        let out = safe_wisp_path(extract_root, rel)?;
         if let Some(parent) = out.parent() {
             std::fs::create_dir_all(parent)?;
         }
@@ -104,9 +103,19 @@ pub fn pack_bytes(repo: &Repository) -> Result<Vec<u8>> {
 pub fn apply_pack_bytes(repo: &mut Repository, bytes: &[u8], unlock: &Unlock) -> Result<()> {
     let tmp = tempfile::NamedTempFile::new()?;
     tmp.as_file().write_all(bytes)?;
-    read_cold_pack(repo, tmp.path())?;
-    let root = repo.root.clone();
-    *repo = Repository::open(&root, unlock)?;
+    let pack = tmp.path();
+    let (root, wisp_dir) = Repository::relinquish_for_cold_overwrite(repo);
+    if let Err(e) = read_cold_pack_into(&wisp_dir, pack) {
+        let opened = Repository::open(&root, unlock)?;
+        unsafe {
+            std::ptr::write(repo, opened);
+        }
+        return Err(e);
+    }
+    let opened = Repository::open(&root, unlock)?;
+    unsafe {
+        std::ptr::write(repo, opened);
+    }
     Ok(())
 }
 

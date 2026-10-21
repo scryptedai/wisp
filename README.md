@@ -98,6 +98,8 @@ The keystore unlocks from, in order: `WISP_MASTER_KEY` (64 hex chars; CI), `--pa
 | M7 Concurrency and branches | headless writes, read assertions, branches, switch, worktrees, merge (fast-forward, disjoint replay, erase-wins, layered/nested replay, change-chain resolutions, `wisp mv` conflicts, `--resolutions`, `--abort`); merge replay skips durable in ledger — see `docs/MERGE.md`, `merge_playbook` + `merge_rules` |
 | M8 Sync, git interop, release | `file://` + HTTPS pack (Bearer `WISP_HTTP_TOKEN`, packs omit `keys/` unless `WISP_PACK_INCLUDE_KEYS=1`) + SSH/rsync, `export --archive` tar.zst, `import --git` (snapshot or `--history`), `export --git`, `serve --stdio` skeleton |
 
+Agent desk demo (merge, erase, provenance): [`demo/desk/README.md`](demo/desk/README.md) · [`demo/README.md`](demo/README.md).
+
 Invariants exercised in `cargo test`: I1, I2, I3 (parse layer and strip-anchors round-trip), I4, I5, I7, I12, I13, I16, I17, I19, I21, I22, I23, I24, I25 (staging flush on open); §11.5 merge (`merge_playbook`, `merge_rules`, `contrib/merge-rules/cases.toml`) and §11.6 sync (`sync_deletions`, `sync_roundtrip`) in `wisp-invariants`. Commits are optimistic at section scope (SQLite serializes ledger writes; not lock-free). Optional 50-writer stress: `contrib/concurrency/README.md`.
 
 The **`wisp-corpus`** crate holds versioned OKF bundles (including a **SPY calls / news-signals** desk playbook under `bundles/spy-options/`), parse fixtures, and matcher scenarios (`catalog.toml`). **`wisp-invariants`** runs them on every CI build: record → validate → fsck → lossless strip (where tagged), plus §7.5 scenario tables. Add fixtures first, then implement until `cargo test -p wisp-invariants` passes.

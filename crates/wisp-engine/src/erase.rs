@@ -371,6 +371,7 @@ pub fn erase(
             json!({ "dry_run": true, "would_erase": covers, "scopes": scopes.len(), "hint": "pass --yes to erase" }),
         );
     }
+    preflight_managed_worktrees_for_erase(repo, discard_unrecorded)?;
     let markers = markers_for_scopes_on_ref(repo, ref_name, &scopes)?;
     let flagged = flagged_dependents(repo, &scopes)?;
     let affected_paths: Vec<String> = covers
@@ -577,6 +578,25 @@ pub fn rewrite_worktrees_for_ref(
     Ok(())
 }
 
+fn preflight_managed_worktrees_for_erase(
+    repo: &Repository,
+    discard_unrecorded: bool,
+) -> Result<()> {
+    if discard_unrecorded {
+        return Ok(());
+    }
+    let primary_ref = query::current_ref(repo);
+    let primary_root = repo.root.clone();
+    ensure_clean_for_erase_rewrite(repo, &primary_ref, &primary_root, false)?;
+    for wt in Ledger::list_worktrees(repo.ledger.conn())? {
+        let path = PathBuf::from(&wt.path);
+        if path.is_dir() {
+            ensure_clean_for_erase_rewrite(repo, &wt.ref_name, &path, false)?;
+        }
+    }
+    Ok(())
+}
+
 fn ensure_clean_for_erase_rewrite(
     repo: &Repository,
     ref_name: &str,
@@ -587,16 +607,21 @@ fn ensure_clean_for_erase_rewrite(
         return Ok(());
     }
     let st = crate::record::unrecorded_edits_at(repo, ref_name, dir)?;
-    if st.changed.is_empty() && st.new.is_empty() && st.missing.is_empty() {
+    if st.changed.is_empty()
+        && st.new.is_empty()
+        && st.missing.is_empty()
+        && st.generated_modified.is_empty()
+    {
         return Ok(());
     }
     Err(WispError::conflict(
-        "unrecorded edits in managed checkout; pass --discard to proceed with erase rewrite",
+        "unrecorded edits in managed checkout; pass --discard to proceed with erase",
         json!([{
             "type": "unrecorded_edits",
             "changed": st.changed,
             "new": st.new,
             "missing": st.missing,
+            "generated_modified": st.generated_modified,
         }]),
     ))
 }

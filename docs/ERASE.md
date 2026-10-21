@@ -16,10 +16,10 @@ Wisp only rewrites checkouts it knows about:
 
 | Checkout | Path source |
 |----------|-------------|
-| Primary worktree | `repository.root` when `query::current_ref` matches the ref being refreshed |
+| Primary worktree | `repository.root` (checked-out ref in `.wisp/checkout.idx`) |
 | Linked worktrees | `worktrees` ledger table (`wisp worktree add`) |
 
-After shred, **`rewrite_all_managed_worktrees`** re-renders every registered checkout (primary + linked worktrees). Pass **`--discard`** on `wisp erase` when the managed tree has unrecorded edits that must be overwritten. **`recover`** on `Repository::open` always rewrites when a ledger **`erase_rewrite_pending`** flag is set or when shred was interrupted.
+After shred, **`rewrite_all_managed_worktrees`** re-renders every row in that table plus the primary root. **`wisp erase`** checks all of them for unrecorded edits **before** committing the erase; pass **`--discard`** to overwrite dirty managed files. **`recover`** on `Repository::open` rewrites with discard enabled when **`erase_rewrite_pending`** is set or when shred was interrupted.
 
 Erase returns an error unless **`assert_erase_complete`**: every affected scope is **shredded** and none are **erased-but-not-shredded**.
 

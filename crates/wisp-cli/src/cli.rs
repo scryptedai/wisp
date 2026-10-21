@@ -228,6 +228,8 @@ pub enum Command {
         #[arg(long, short = 'y')]
         yes: bool,
         #[arg(long)]
+        discard: bool,
+        #[arg(long)]
         r#ref: Option<String>,
     },
     /// Erasure groups

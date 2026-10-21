@@ -57,6 +57,7 @@ fn sync_pull_after_erase_drops_scope_keys() {
         &EraseTarget::Path(format!("note#{section}")),
         Reason::Policy,
         true,
+        true,
         "human:sync",
     )
     .unwrap();

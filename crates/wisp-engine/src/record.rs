@@ -104,6 +104,7 @@ fn load_ignore(root: &Path) -> GlobSet {
 /// Walk the tree and classify files against `checkout.idx` (§9 step 2).
 fn scan(
     repo: &Repository,
+    tree_root: &Path,
     idx: &CheckoutIndex,
     full: bool,
 ) -> Result<(Vec<Scanned>, Vec<String>, Vec<String>)> {
@@ -111,11 +112,11 @@ fn scan(
     let mut out = Vec::new();
     let mut generated_modified = Vec::new();
     let mut seen: HashSet<String> = HashSet::new();
-    for entry in walkdir::WalkDir::new(&repo.root)
+    for entry in walkdir::WalkDir::new(tree_root)
         .follow_links(false)
         .into_iter()
         .filter_entry(|e| {
-            let rel = e.path().strip_prefix(&repo.root).unwrap_or(e.path());
+            let rel = e.path().strip_prefix(tree_root).unwrap_or(e.path());
             let rel_s = normalize_path(&rel.to_string_lossy());
             rel_s.is_empty() || !ignore.is_match(&rel_s)
         })
@@ -127,7 +128,7 @@ fn scan(
         let rel = normalize_path(
             &entry
                 .path()
-                .strip_prefix(&repo.root)
+                .strip_prefix(tree_root)
                 .unwrap_or(entry.path())
                 .to_string_lossy(),
         );
@@ -214,7 +215,7 @@ pub fn plan(repo: &mut Repository, opts: &RecordOptions) -> Result<Plan> {
         .unwrap_or_else(|| MAIN_REF.to_string());
     let idx_path = checkout::checkout_idx_path(repo, &repo.root.clone());
     let idx = CheckoutIndex::load(&idx_path)?.unwrap_or_default();
-    let (scanned, generated_modified, missing) = scan(repo, &idx, opts.full)?;
+    let (scanned, generated_modified, missing) = scan(repo, &repo.root, &idx, opts.full)?;
     let managed: Vec<&str> = repo.profile.managed_keys().to_vec();
     let identity_key = repo.identity_key().to_string();
     let head = repo.head(&ref_name)?;
@@ -1231,6 +1232,32 @@ pub fn record(repo: &mut Repository, opts: &RecordOptions) -> Result<RecordResul
         explanations: p.explanations,
         warnings,
     })
+}
+
+/// Unrecorded edits under a managed checkout root (primary or linked worktree).
+pub fn unrecorded_edits_at(repo: &Repository, ref_name: &str, tree_root: &Path) -> Result<Status> {
+    let idx_path = checkout::checkout_idx_path(repo, tree_root);
+    let idx = CheckoutIndex::load(&idx_path)?.unwrap_or_default();
+    let (scanned, generated_modified, missing) = scan(repo, tree_root, &idx, false)?;
+    let head = Ledger::head(repo.ledger.conn(), ref_name)?;
+    let mut status = Status {
+        ref_name: ref_name.to_string(),
+        head: head.map(|h| h.to_string()),
+        ..Default::default()
+    };
+    status.generated_modified = generated_modified;
+    status.missing = missing;
+    for s in scanned {
+        if !s.changed {
+            continue;
+        }
+        if idx.files.contains_key(&s.rel) {
+            status.changed.push(s.rel);
+        } else {
+            status.new.push(s.rel);
+        }
+    }
+    Ok(status)
 }
 
 /// `wisp status`.

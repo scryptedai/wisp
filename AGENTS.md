@@ -25,7 +25,7 @@ Do not confuse:
 | `crates/wisp-invariants` | Integration tests (CI gate) |
 | `crates/wisp-sync`, `wisp-git`, `wisp-feed`, `wisp-sub-*`, `wisp-index` | M5–M8 modules |
 | `DECISIONS.md` | Spec deviations (required reading for behavior changes) |
-| `docs/SEARCH.md`, `docs/EXTENSIONS.md`, `docs/MERGE.md` | Built-in search, extension API, merge rules |
+| `docs/SEARCH.md`, `docs/EXTENSIONS.md`, `docs/MERGE.md`, `docs/ERASE.md` | Search, extensions, merge, erasure & managed checkouts |
 
 ## Build and test (required before PR)
 

@@ -450,6 +450,7 @@ fn i4_i5_i21_i22_erase_section_canaries_and_integrity() {
         &EraseTarget::Path(format!("notes/standup.md#{alpha}")),
         Reason::Policy,
         false,
+        false,
         "human:alex",
     )
     .unwrap();
@@ -459,6 +460,7 @@ fn i4_i5_i21_i22_erase_section_canaries_and_integrity() {
         MAIN_REF,
         &EraseTarget::Path(format!("notes/standup.md#{alpha}")),
         Reason::Policy,
+        true,
         true,
         "human:alex",
     )
@@ -547,6 +549,7 @@ fn erase_whole_concept_and_group_and_actor() {
         &EraseTarget::Group("alice-gdpr".into()),
         Reason::Request,
         true,
+        true,
         "human:dpo",
     )
     .unwrap();
@@ -569,6 +572,7 @@ fn erase_whole_concept_and_group_and_actor() {
         MAIN_REF,
         &EraseTarget::Actor("human:dpo".into()),
         Reason::Request,
+        true,
         true,
         "human:admin",
     )
@@ -1083,6 +1087,248 @@ fn worktree_add_list_remove() {
             .len(),
         1
     );
+}
+
+#[test]
+fn erase_rewrites_linked_worktree_for_ref() {
+    let f = fixture();
+    Repository::init(&f.root, "0.2", &Unlock::default()).unwrap();
+    let canary = "CANARY_WT_ERASE_9e2b";
+    write(
+        &f.root,
+        "notes/standup.md",
+        &format!("---\ntype: Note\n---\n## Alpha\n\n{canary}\n"),
+    );
+    let mut repo = open(&f.root);
+    rec(&mut repo, "human:alex");
+    crate::worktree::add(&mut repo, "side", Some("task/side"), Some(MAIN_REF), None).unwrap();
+    let wt_root = f.root.join(".wisp/worktrees/side");
+    assert!(!scan_for(&wt_root, canary).is_empty());
+    let text = read(&wt_root, "notes/standup.md");
+    let parsed = wisp_parse::parse_file(&text);
+    let alpha = parsed
+        .sections()
+        .iter()
+        .find(|s| s.heading == "Alpha")
+        .and_then(|s| match &s.anchor {
+            Some(wisp_parse::Anchor::Valid(id)) => Some(*id),
+            _ => None,
+        })
+        .expect("Alpha section anchor");
+    crate::erase::erase(
+        &mut repo,
+        "task/side",
+        &EraseTarget::Path(format!("notes/standup.md#{alpha}")),
+        Reason::Policy,
+        true,
+        true,
+        "human:alex",
+    )
+    .unwrap();
+    drop(repo);
+    assert!(
+        scan_for(&wt_root, canary).is_empty(),
+        "linked worktree still contains plaintext"
+    );
+    assert!(
+        scan_for(&f.root, canary).is_empty(),
+        "primary on main must be rewritten after global shred"
+    );
+}
+
+#[test]
+fn recover_after_shred_before_worktree_rewrite() {
+    let f = fixture();
+    Repository::init(&f.root, "0.2", &Unlock::default()).unwrap();
+    let canary = "CANARY_CRASH_SHRED_7c1e";
+    write(
+        &f.root,
+        "notes/standup.md",
+        &format!("---\ntype: Note\n---\n## Alpha\n\n{canary}\n"),
+    );
+    let mut repo = open(&f.root);
+    rec(&mut repo, "human:alex");
+    let text = read(&f.root, "notes/standup.md");
+    let alpha = wisp_parse::parse_file(&text)
+        .sections()
+        .iter()
+        .find(|s| s.heading == "Alpha")
+        .and_then(|s| match &s.anchor {
+            Some(wisp_parse::Anchor::Valid(id)) => Some(*id),
+            _ => None,
+        })
+        .expect("Alpha anchor");
+    let scope = Ledger::scope_of_section(repo.ledger.conn(), alpha)
+        .unwrap()
+        .unwrap()
+        .id;
+    let mut op = crate::commit::PlannedOp::new(
+        Op::Erase,
+        Target::Erase {
+            scopes: vec![scope],
+        },
+        repo.repo_scope(),
+    );
+    op.reason = Some(Reason::Policy);
+    let mut req = crate::commit::CommitRequest::new(MAIN_REF, "human:alex");
+    req.ops = vec![op];
+    let out = crate::commit::commit(&mut repo, req).unwrap();
+    let erase_change = out
+        .changes
+        .iter()
+        .find(|c| c.op == Op::Erase)
+        .map(|c| c.id)
+        .expect("erase change");
+    crate::erase::finish_erase_bookkeeping(&mut repo).unwrap();
+    let pending = Ledger::scopes_erased_not_shredded(repo.ledger.conn()).unwrap();
+    crate::erase::shred(&mut repo, &pending, erase_change, &[]).unwrap();
+    assert!(read(&f.root, "notes/standup.md").contains(canary));
+    drop(repo);
+    let _repo = open(&f.root);
+    assert!(
+        !read(&f.root, "notes/standup.md").contains(canary),
+        "recover must rewrite when shred finished but worktrees were not"
+    );
+}
+
+#[test]
+fn erase_rewrite_requires_discard_when_worktree_dirty() {
+    let f = fixture();
+    Repository::init(&f.root, "0.2", &Unlock::default()).unwrap();
+    write(
+        &f.root,
+        "notes/standup.md",
+        "---\ntype: Note\n---\n## Alpha\n\nx\n",
+    );
+    let mut repo = open(&f.root);
+    rec(&mut repo, "human:alex");
+    let text = read(&f.root, "notes/standup.md");
+    let alpha = wisp_parse::parse_file(&text)
+        .sections()
+        .iter()
+        .find(|s| s.heading == "Alpha")
+        .and_then(|s| match &s.anchor {
+            Some(wisp_parse::Anchor::Valid(id)) => Some(*id),
+            _ => None,
+        })
+        .expect("Alpha anchor");
+    write(
+        &f.root,
+        "notes/standup.md",
+        &format!("---\ntype: Note\n---\n## Alpha {{#{alpha}}}\n\nedited\n"),
+    );
+    let err = crate::erase::erase(
+        &mut repo,
+        MAIN_REF,
+        &EraseTarget::Path(format!("notes/standup.md#{alpha}")),
+        Reason::Policy,
+        true,
+        false,
+        "human:alex",
+    )
+    .unwrap_err();
+    assert_eq!(err.code, ExitCode::Conflict);
+}
+
+#[test]
+fn recover_after_erase_commit_before_bookkeeping() {
+    let f = fixture();
+    Repository::init(&f.root, "0.2", &Unlock::default()).unwrap();
+    let canary = "CANARY_CRASH_BOOK_2a9f";
+    write(
+        &f.root,
+        "notes/standup.md",
+        &format!("---\ntype: Note\n---\n## Alpha\n\n{canary}\n"),
+    );
+    let mut repo = open(&f.root);
+    rec(&mut repo, "human:alex");
+    let text = read(&f.root, "notes/standup.md");
+    let alpha = wisp_parse::parse_file(&text)
+        .sections()
+        .iter()
+        .find(|s| s.heading == "Alpha")
+        .and_then(|s| match &s.anchor {
+            Some(wisp_parse::Anchor::Valid(id)) => Some(*id),
+            _ => None,
+        })
+        .expect("Alpha anchor");
+    let scope = Ledger::scope_of_section(repo.ledger.conn(), alpha)
+        .unwrap()
+        .unwrap()
+        .id;
+    let mut op = crate::commit::PlannedOp::new(
+        Op::Erase,
+        Target::Erase {
+            scopes: vec![scope],
+        },
+        repo.repo_scope(),
+    );
+    op.reason = Some(Reason::Policy);
+    let mut req = crate::commit::CommitRequest::new(MAIN_REF, "human:alex");
+    req.ops = vec![op];
+    crate::commit::commit(&mut repo, req).unwrap();
+    assert!(read(&f.root, "notes/standup.md").contains(canary));
+    assert!(
+        Ledger::changes_all(repo.ledger.conn())
+            .unwrap()
+            .iter()
+            .any(|(_, c)| c.op == Op::Erase),
+        "erase change must be in the ledger"
+    );
+    drop(repo);
+    let repo = open(&f.root);
+    assert!(
+        Ledger::scope(repo.ledger.conn(), scope)
+            .unwrap()
+            .unwrap()
+            .shredded,
+        "recover must finish cold shred"
+    );
+    assert!(
+        !read(&f.root, "notes/standup.md").contains(canary),
+        "recover must rewrite the managed primary working tree"
+    );
+}
+
+#[test]
+fn rewrite_managed_worktrees_clears_stale_plaintext_after_erase() {
+    let f = fixture();
+    Repository::init(&f.root, "0.2", &Unlock::default()).unwrap();
+    let canary = "CANARY_STALE_8f3d";
+    write(
+        &f.root,
+        "notes/standup.md",
+        &format!("---\ntype: Note\n---\n## Alpha\n\n{canary}\n"),
+    );
+    let mut repo = open(&f.root);
+    rec(&mut repo, "human:alex");
+    let text = read(&f.root, "notes/standup.md");
+    let alpha = wisp_parse::parse_file(&text)
+        .sections()
+        .iter()
+        .find(|s| s.heading == "Alpha")
+        .and_then(|s| match &s.anchor {
+            Some(wisp_parse::Anchor::Valid(id)) => Some(*id),
+            _ => None,
+        })
+        .expect("Alpha anchor");
+    crate::erase::erase(
+        &mut repo,
+        MAIN_REF,
+        &EraseTarget::Path(format!("notes/standup.md#{alpha}")),
+        Reason::Policy,
+        true,
+        true,
+        "human:alex",
+    )
+    .unwrap();
+    write(
+        &f.root,
+        "notes/standup.md",
+        &format!("---\ntype: Note\n---\n## Alpha\n\nstale {canary}\n"),
+    );
+    crate::erase::rewrite_all_managed_worktrees(&mut repo, true).unwrap();
+    assert!(!read(&f.root, "notes/standup.md").contains(canary));
 }
 
 #[test]

@@ -668,6 +668,7 @@ fn rule_erase_wins() {
         &wisp_engine::erase::EraseTarget::Path("notes/hello".into()),
         wisp_model::Reason::Policy,
         true,
+        true,
         "human:admin",
     )
     .unwrap();

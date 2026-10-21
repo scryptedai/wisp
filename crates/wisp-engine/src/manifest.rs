@@ -102,7 +102,7 @@ impl Default for CodecsSection {
     fn default() -> Self {
         CodecsSection {
             embedding: vec![],
-            tokenizer: vec!["tok:approx:chars4".into()],
+            tokenizer: vec!["tok:approx:chars4".into(), "tok:approx:bytes4".into()],
             default_embedding: None,
             default_tokenizer: Some("tok:approx:chars4".into()),
         }

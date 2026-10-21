@@ -14,6 +14,7 @@ wisp-parse.workspace = true
 wisp-match.workspace = true
 wisp-profile.workspace = true
 wisp-sub-embed.workspace = true
+wisp-sub-tokens.workspace = true
 wisp-index.workspace = true
 wisp-vector-pg = { workspace = true, optional = true }
 serde.workspace = true

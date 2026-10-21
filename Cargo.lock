@@ -4187,6 +4187,7 @@ dependencies = [
  "wisp-profile",
  "wisp-store",
  "wisp-sub-embed",
+ "wisp-sub-tokens",
  "wisp-vector-pg",
 ]
 

@@ -15,14 +15,36 @@ use wisp_store::{Hot, Ledger};
 
 // ---- tokens ----
 
-/// The approximate tokenizer codec used in this build (DECISIONS.md §14.3).
-pub const TOKEN_CODEC: &str = "tok:approx:chars4";
+/// Default tokenizer id when manifest omits `default_tokenizer`.
+pub const TOKEN_CODEC: &str = wisp_sub_tokens::APPROX_CODEC;
 
 /// Suggested fraction of `--budget` to stay under when targeting a model context limit (approx codec).
 pub const PACK_BUDGET_SAFE_RATIO: f64 = 0.9;
 
+fn resolve_token_codec_id(repo: &Repository) -> Result<String> {
+    let id = repo
+        .manifest
+        .codecs
+        .default_tokenizer
+        .clone()
+        .unwrap_or_else(|| TOKEN_CODEC.to_string());
+    wisp_sub_tokens::codec_for(&id)?;
+    if !repo.manifest.codecs.tokenizer.iter().any(|t| t == &id) {
+        return Err(WispError::usage(format!(
+            "default_tokenizer {id} is not listed in manifest codecs.tokenizer"
+        )));
+    }
+    Ok(id)
+}
+
+pub fn count_tokens_for(repo: &Repository, text: &str) -> Result<usize> {
+    let id = resolve_token_codec_id(repo)?;
+    wisp_sub_tokens::count(&id, text)
+}
+
+/// Approximate count with the built-in default codec (search ranking hints).
 pub fn count_tokens(text: &str) -> usize {
-    text.chars().count().div_ceil(4)
+    wisp_sub_tokens::count(TOKEN_CODEC, text).unwrap_or(0)
 }
 
 // ---- log / show / why ----
@@ -290,6 +312,8 @@ pub fn pack(
         }
         v
     };
+    let codec_id = resolve_token_codec_id(repo)?;
+    let count = |text: &str| wisp_sub_tokens::count(&codec_id, text);
     let okf_version = repo.profile.okf_version().to_string();
     let hot = repo.hot(ref_name)?;
     let conn = hot.conn();
@@ -310,10 +334,10 @@ pub fn pack(
             .iter()
             .filter(|s| only_section.map(|o| o == s.section).unwrap_or(true))
             .collect();
-        let total: usize = sections
-            .iter()
-            .map(|s| count_tokens(&s.heading) + count_tokens(&s.body))
-            .sum();
+        let mut total = 0usize;
+        for s in &sections {
+            total += count(&s.heading)? + count(&s.body)?;
+        }
         let mut included = Vec::new();
         let whole_fits = budget.map(|b| used + total <= b).unwrap_or(true);
         if whole_fits {
@@ -324,7 +348,7 @@ pub fn pack(
         } else {
             // Whole concepts first; then sections in order until the budget is reached.
             for s in &sections {
-                let t = count_tokens(&s.heading) + count_tokens(&s.body);
+                let t = count(&s.heading)? + count(&s.body)?;
                 if budget.map(|b| used + t <= b).unwrap_or(true) {
                     included.push(*s);
                     used += t;
@@ -364,19 +388,29 @@ pub fn pack(
             }
             out
         };
+        let mut concept_tokens = 0usize;
+        for s in &included {
+            concept_tokens += count(&s.heading)? + count(&s.body)?;
+        }
         concepts.push(json!({
             "wisp_id": c.concept.to_string(),
             "path": c.path,
             "frontmatter": fm,
-            "tokens": included.iter().map(|s| count_tokens(&s.heading) + count_tokens(&s.body)).sum::<usize>(),
-            "sections": included.iter().map(|s| json!({ "id": s.section.to_string(), "heading": s.heading, "level": s.level, "tokens": count_tokens(&s.heading) + count_tokens(&s.body), "text": s.body })).collect::<Vec<_>>(),
+            "tokens": concept_tokens,
+            "sections": included
+                .iter()
+                .map(|s| {
+                    let t = count(&s.heading)? + count(&s.body)?;
+                    Ok(json!({ "id": s.section.to_string(), "heading": s.heading, "level": s.level, "tokens": t, "text": s.body }))
+                })
+                .collect::<Result<Vec<_>>>()?,
             "links": links,
         }));
     }
     let budget_safe = budget.map(|b| ((b as f64) * PACK_BUDGET_SAFE_RATIO).floor() as usize);
     Ok(json!({
         "okf_version": okf_version,
-        "codec": TOKEN_CODEC,
+        "codec": codec_id,
         "codec_note": "approximate; not model BPE — use budget_safe when calling LLM APIs",
         "tokens": used,
         "budget": budget,
@@ -388,19 +422,23 @@ pub fn pack(
 }
 
 pub fn tokens(repo: &mut Repository, ref_name: &str, spec: &str) -> Result<Value> {
+    let codec_id = resolve_token_codec_id(repo)?;
     let (c, section) = resolve_target(repo, ref_name, spec)?;
     let hot = repo.hot(ref_name)?;
     let sections = Hot::sections_of(hot.conn(), c.concept)?;
     let per: Vec<Value> = sections
         .iter()
         .filter(|s| section.map(|x| x == s.section).unwrap_or(true))
-        .map(|s| json!({ "section": s.section.to_string(), "heading": s.heading, "tokens": count_tokens(&s.heading) + count_tokens(&s.body) }))
-        .collect();
+        .map(|s| {
+            let t = count_tokens_for(repo, &s.heading)? + count_tokens_for(repo, &s.body)?;
+            Ok(json!({ "section": s.section.to_string(), "heading": s.heading, "tokens": t }))
+        })
+        .collect::<Result<Vec<_>>>()?;
     let total: usize = per
         .iter()
         .map(|p| p["tokens"].as_u64().unwrap_or(0) as usize)
         .sum();
-    Ok(json!({ "path": c.path, "codec": TOKEN_CODEC, "tokens": total, "sections": per }))
+    Ok(json!({ "path": c.path, "codec": codec_id, "tokens": total, "sections": per }))
 }
 
 // ---- fsck / hot ----
@@ -1352,6 +1390,12 @@ pub fn codec(repo: &mut Repository, action: &str, id: Option<&str>) -> Result<Va
             if id.starts_with("emb:") {
                 m.default_embedding = Some(id.to_string());
             } else {
+                wisp_sub_tokens::codec_for(id)?;
+                if !m.tokenizer.iter().any(|x| x == id) {
+                    return Err(WispError::usage(format!(
+                        "add tokenizer {id} with `wisp codec add` before setting default"
+                    )));
+                }
                 m.default_tokenizer = Some(id.to_string());
             }
         }

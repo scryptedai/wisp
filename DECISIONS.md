@@ -84,6 +84,7 @@ Deviations from the OKF store v1 design (ledger, parse, merge, sync, profiles), 
 ## §14–§16 Feed, search, CLI
 
 - **Search:** `docs/SEARCH.md`. **Extensions:** `docs/EXTENSIONS.md`.
+- **Token codecs:** `wisp pack` / `wisp tokens` resolve `manifest.toml` `codecs.default_tokenizer` through `wisp-sub-tokens::TokenCodec`. Community builds ship `tok:approx:chars4` and `tok:approx:bytes4` only; other `tok:*` ids require a product subscriber (`docs/EXTENSIONS.md`).
 - **Search IR battery:** `contrib/search-battery/cases.toml` only.
 - Erase targets an actor with `--actor-id <actor>` (the global `--actor` names the acting identity).
 - `record --resolve` clears `.wisp/merge.json` after a successful record on the merge target ref; finish the merge with `wisp merge <source> <into> --resolutions <file>`.

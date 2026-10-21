@@ -4,6 +4,40 @@ Community **wisp** ships one retrieval stack (see **`docs/SEARCH.md`**). This do
 
 Built-in `wisp search` never calls these traits.
 
+## Community 0.1.x non-goals
+
+| Topic | Status |
+|-------|--------|
+| **MCP / JSON-RPC server** | Not shipped. Agent integration is the **`wisp` CLI** (`--json`), optional skills under `contrib/`, and subprocess orchestration by your harness. |
+| **`serve --stdio`** | **Trusted local path push** only: Hello/Ack framing, then a **`file://` or path** to a bundle on the same machine ([`wisp-sync`](../crates/wisp-sync/src/lib.rs)). Not a remote byte stream or MCP transport yet. |
+| **Model-exact tokenizers** | Default build uses **`tok:approx:chars4`**; pluggable token codecs are below. Tiktoken/Hugging Face IDs may be registered in manifest for forward compatibility; community binary resolves built-in approx codecs only unless you add a subscriber. |
+
+## Token codecs
+
+Trait: `wisp_sub_tokens::TokenCodec`
+
+| Method | Role |
+|--------|------|
+| `id()` | Manifest string (`tok:approx:chars4`, …) |
+| `count(text)` | Token estimate for `wisp pack --budget` and `wisp tokens` |
+
+Register in `manifest.toml`:
+
+```toml
+[codecs]
+tokenizer = ["tok:approx:chars4", "tok:approx:bytes4"]
+default_tokenizer = "tok:approx:chars4"
+```
+
+CLI: `wisp codec add|default|list|remove`. Built-in community codecs:
+
+| ID | Rule |
+|----|------|
+| `tok:approx:chars4` | `ceil(char_count / 4)` (default) |
+| `tok:approx:bytes4` | `ceil(utf8_byte_len / 4)` |
+
+`wisp pack --json` reports `codec`, `budget_safe` (90% of `--budget`), and `codec_note` when using approx codecs.
+
 ## Embedding codecs
 
 Trait: `wisp_index::EmbeddingCodec`
@@ -55,6 +89,8 @@ On erase, the engine calls `delete_sections` on **every** configured `[vector_in
 | `ssh://user@host/path` | `rsync` + local `wisp pull`/`push` |
 
 ## Git interop
+
+See **[docs/GIT-INTEROP.md](GIT-INTEROP.md)** for anchor safety and export/import limits.
 
 | Command | Behaviour |
 |---------|-----------|

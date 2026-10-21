@@ -1,0 +1,7 @@
+.env
+.env.*
+!.env.example
+workspaces/
+desk/wisp-desk-demo-pitch.pdf
+**/__pycache__/
+*.pyc

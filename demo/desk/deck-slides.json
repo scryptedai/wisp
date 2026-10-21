@@ -1,0 +1,115 @@
+[
+  {
+    "id": "title",
+    "title": "Two agents, one book",
+    "subtitle": "wisp desk demo on a SPY options OKF bundle",
+    "bullets": [
+      "Local-first knowledge store with section-level changesets and actors",
+      "Live script: `python3 demo/desk/desk_demo.py all --fresh`",
+      "Bundles: `demo/workspaces/primary` + `demo/workspaces/replica` (sync peer)"
+    ],
+    "speaker": "Pitch in one line: accountable autonomy — agents commit to the same ledger, not parallel chat memories."
+  },
+  {
+    "id": "problem",
+    "title": "Why not two RAG silos?",
+    "bullets": [
+      "Duplicate narratives with no merge semantics or losing-side replay",
+      "No per-section provenance (`--input`, `why`) tied to commits",
+      "Erasure and compliance are afterthoughts; audit is chat export"
+    ],
+    "speaker": "Contrast vector DB + transcripts with a single OKF bundle every agent reads and writes through wisp."
+  },
+  {
+    "id": "seed",
+    "title": "Step 0 — SEED",
+    "bullets": [
+      "Source: your recorded week in `docs/test` (gitignored scratch store)",
+      "`--fresh` copies → `demo/workspaces/primary` and clones `demo/workspaces/replica`",
+      "Prereq: `cargo build -p wisp-cli --release`"
+    ],
+    "commands": [
+      "python3 demo/desk/desk_demo.py all --fresh"
+    ],
+    "speaker": "Reset safe: demo never touches your scratch bundle unless you point `--demo` at it."
+  },
+  {
+    "id": "act1",
+    "title": "Act 1 — Live stub + provenance",
+    "bullets": [
+      "Fixture feed: `fixtures/oct14_feed.json` (stub tick, not live market data)",
+      "`add-section` on Wed observation after “Cash session”",
+      "`--input observations/2026-10-13-spy-options-session` links prior day",
+      "Then `log -n 1` and `why` on the observation path"
+    ],
+    "commands": [
+      "wisp add-section observations/2026-10-14-spy-options-session --after=<section> --heading='Live desk stub (demo)' --content=... --input observations/2026-10-13-spy-options-session -m 'Hawk: intraday break stub @ 10:35'",
+      "wisp log -n 1",
+      "wisp why observations/2026-10-14-spy-options-session --depth 1"
+    ],
+    "speaker": "Show the inputs graph: today's stub cites yesterday's observation as a first-class edge."
+  },
+  {
+    "id": "act2",
+    "title": "Act 2 — Bear vs Hawk merge",
+    "bullets": [
+      "Target: `strategy/2026-10-14-ex-post-optimal-play` (one section, two stories)",
+      "`process:bear/1.0` on `task/bear-demo`: fade breakdown narrative",
+      "`process:hawk/1.0` on `main`: break 772 confirmed",
+      "Merge conflict → `demo-resolutions.json` with `take: theirs` (Bear wins)",
+      "Ledger keeps both agent changesets; merge node on `process:wisp-merge`"
+    ],
+    "commands": [
+      "wisp branch task/bear-demo",
+      "wisp switch task/bear-demo && wisp update strategy/...#<section> --base=<ver> -m 'Bear: fade breakdown' --content=...",
+      "wisp switch main && wisp update strategy/...#<section> --base=<ver> -m 'Hawk: breakdown confirmed' --content=...",
+      "wisp merge task/bear-demo --into main",
+      "wisp merge task/bear-demo --into main --resolutions .wisp/demo-resolutions.json"
+    ],
+    "speaker": "Conflict is scope-keyed; resolution skips the losing edit chain without deleting history."
+  },
+  {
+    "id": "act3",
+    "title": "Act 3 — Erase + replica sync",
+    "bullets": [
+      "Erase Fri observation **Options** section (`--reason policy`, `--discard`)",
+      "Keyword search `max pain`: top hit was Fri Options; after erase, Fri file no longer contains phrase",
+      "Journal may still mention “max pain” — section erasure ≠ whole-doc delete",
+      "`remote add` + `push` from demo; replica `pull origin` mirrors managed markdown"
+    ],
+    "commands": [
+      "wisp search 'max pain' --mode keyword",
+      "wisp erase observations/2026-10-16-spy-options-session#<section> --reason policy -y --discard",
+      "wisp remote add replica file://<demo-replica> --trusted && wisp push replica",
+      "wisp pull origin   # on replica, origin → demo"
+    ],
+    "speaker": "Policy erasure propagates through sync; prove replica matches primary on disk and index."
+  },
+  {
+    "id": "act4",
+    "title": "Act 4 — Auditor replay",
+    "bullets": [
+      "`fsck` — 8 changesets, hot refs OK, no problems (demo run)",
+      "`log -n 5` — erase, merge, hawk, bear, act1 stub visible with actors",
+      "Grounded Q&A: `search` (auto) + `cat` sections — no LLM required for audit trail"
+    ],
+    "commands": [
+      "wisp fsck",
+      "wisp log -n 5",
+      "wisp search 'What was the ex-post play on the Friday flush day?' --mode auto",
+      "wisp cat journal/learning-log --json"
+    ],
+    "speaker": "Close with: compliance reads the ledger; investigators don't reconstruct from Slack."
+  },
+  {
+    "id": "close",
+    "title": "What to remember",
+    "bullets": [
+      "Actors: `human:*`, `process:bear/1.0`, `process:hawk/1.0`, `process:wisp-merge`",
+      "Section-level concurrency + merge resolutions + durable skip replay",
+      "Erase + sync for GDPR-style retraction without forked agent state",
+      "Optional Act 1 LLM: Scrypted `POST /generations/text/nova-pro` (see README)"
+    ],
+    "speaker": "Reset: `rm -rf demo/workspaces`. Narration: `desk_demo.py narrate`."
+  }
+]

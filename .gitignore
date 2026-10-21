@@ -1,3 +1,6 @@
+# macOS
+.DS_Store
+
 # Rust / Cargo
 /target/
 **/*.rs.bk
@@ -28,3 +31,16 @@
 
 # Local reference material (not for version control)
 docs/references/
+
+# Local scratch OKF stores (see docs/SCRATCH-STORE.md)
+docs/test/
+
+# Demo workspaces and secrets (see demo/README.md)
+demo/.env
+demo/.env.*
+!demo/.env.example
+demo/workspaces/
+
+# Legacy desk demo paths (use demo/workspaces/ instead)
+docs/demo/
+docs/demo-replica/

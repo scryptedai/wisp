@@ -1,6 +1,6 @@
 # wisp 0.1.0 — Community Release
 
-A local-first, differential knowledge store for [Open Knowledge Format](https://cloud.google.com/) (OKF) bundles.
+A local-first, differential knowledge store for **Open Knowledge Format (OKF)** bundles.
 
 This repository is **Scrypted’s GPLv2 Community Release** of wisp: source is here for use, study, modification, and redistribution under [LICENSE](LICENSE). Scrypted may offer other editions or licenses separately; **this tree is the community edition**.
 
@@ -8,7 +8,7 @@ Copyright © 2026 Scrypted. Author: Tim Cotten (tcotten@scrypted.ai).
 
 wisp stores a bundle as an append-only log of **section-level** changes with encrypted, destroyable payloads, and materializes a conformant OKF directory on demand. It is built for fleets of agents: many writers commit without locks, every change carries provenance, and any section, concept, or group can be provably erased while the integrity chain still verifies.
 
-Release **0.1.0** behavior is specified in **[docs/SEARCH.md](docs/SEARCH.md)** (retrieval), **[docs/EXTENSIONS.md](docs/EXTENSIONS.md)** (optional product hooks), **[DECISIONS.md](DECISIONS.md)** (OKF/store deltas), and **[docs/MERGE.md](docs/MERGE.md)**.
+Release **0.1.0** behavior is specified in **[docs/SEARCH.md](docs/SEARCH.md)** (retrieval), **[docs/ERASE.md](docs/ERASE.md)** (erasure and managed checkouts), **[docs/EXTENSIONS.md](docs/EXTENSIONS.md)** (optional product hooks), **[DECISIONS.md](DECISIONS.md)** (OKF/store deltas), and **[docs/MERGE.md](docs/MERGE.md)** (ref merge).
 
 ## Contributing
 
@@ -54,11 +54,13 @@ wisp pack tables/orders.md --budget 4000    # JSON, within a token budget, repor
 wisp why tables/orders.md#01JAD2V7… --depth 2   # actors, origins, the input graph
 ```
 
-Erase, and prove it (§10):
+Erase, and prove it (§10; see **[docs/ERASE.md](docs/ERASE.md)**):
 
 ```sh
 wisp erase notes/standup.md#01JEF4X… --reason policy        # lists what it would destroy
 wisp erase notes/standup.md#01JEF4X… --reason policy --yes  # key gone; hot tier purged; marker left
+# unrecorded edits under a managed checkout block erase unless you pass --discard
+wisp erase notes/standup.md#01JEF4X… --reason policy -y --discard
 wisp fsck                                                   # digest chain unchanged, still passes
 ```
 
@@ -79,7 +81,7 @@ crates/
   wisp-feed, wisp-sub-tokens, wisp-sub-embed, wisp-merge, wisp-sync, wisp-git   (see Status)
 ```
 
-On disk (§15): `.wisp/manifest.toml`, `.wisp/ledger.db`, `.wisp/payloads/ab/<id>`, `.wisp/keys/keystore.db`, `.wisp/cache/refs/<ref-id>/hot.db` (rebuildable, excluded from backups), `.wisp/checkout.idx`.
+On disk (§15): `.wisp/manifest.toml`, `.wisp/ledger.db`, `.wisp/payloads/ab/<id>`, `.wisp/keys/keystore.db`, `.wisp/cache/refs/<ref-id>/hot.db` (rebuildable, excluded from backups), `.wisp/checkout.idx` (primary tree; linked worktrees use `.wisp-checkout.idx` in the checkout root).
 
 ## Keys
 
@@ -96,7 +98,9 @@ The keystore unlocks from, in order: `WISP_MASTER_KEY` (64 hex chars; CI), `--pa
 | M5 Feed and search | feed, search (trigram/RI/semantic), pack, tokens (approx codec), external subscriber host done |
 | M6 Profiles and migration | okf-0.1 profile, 0.1→0.2 migration plan, down-export (`export --profile 0.1`) done |
 | M7 Concurrency and branches | headless writes, read assertions, branches, switch, worktrees, merge (fast-forward, disjoint replay, erase-wins, layered/nested replay, change-chain resolutions, `wisp mv` conflicts, `--resolutions`, `--abort`); merge replay skips durable in ledger — see `docs/MERGE.md`, `merge_playbook` + `merge_rules` |
-| M8 Sync, git interop, release | `file://` + HTTPS pack (Bearer `WISP_HTTP_TOKEN`, packs omit `keys/` unless `WISP_PACK_INCLUDE_KEYS=1`) + SSH/rsync, `export --archive` tar.zst, `import --git` (snapshot or `--history`), `export --git`, `serve --stdio` skeleton |
+| M8 Sync, git interop, release | `file://` + HTTP cold pack (`wisp serve --http <addr>`, Bearer `WISP_HTTP_TOKEN` — terminate TLS in front; packs omit `keys/` unless `WISP_PACK_INCLUDE_KEYS=1`) + SSH/rsync, `export --archive` tar.zst, `import --git` (snapshot or `--history`), `export --git`, `serve --stdio` skeleton |
+
+Agent desk demo (merge, erase, provenance): [`demo/desk/README.md`](demo/desk/README.md) · [`demo/README.md`](demo/README.md).
 
 Invariants exercised in `cargo test`: I1, I2, I3 (parse layer and strip-anchors round-trip), I4, I5, I7, I12, I13, I16, I17, I19, I21, I22, I23, I24, I25 (staging flush on open); §11.5 merge (`merge_playbook`, `merge_rules`, `contrib/merge-rules/cases.toml`) and §11.6 sync (`sync_deletions`, `sync_roundtrip`) in `wisp-invariants`. Commits are optimistic at section scope (SQLite serializes ledger writes; not lock-free). Optional 50-writer stress: `contrib/concurrency/README.md`.
 
@@ -104,7 +108,7 @@ The **`wisp-corpus`** crate holds versioned OKF bundles (including a **SPY calls
 
 ## Claude Code
 
-A one-page skill that teaches Claude Code to use wisp as shared memory is in `contrib/claude-skill/project-memory/SKILL.md`; copy it to `.claude/skills/project-memory/SKILL.md` in any repository that has a `.wisp/`. A CI workflow for fmt, clippy, tests, and release builds on three platforms is in `contrib/github-workflows/ci.yml`.
+A one-page skill that teaches Claude Code to use wisp as shared memory is in `contrib/claude-skill/project-memory/SKILL.md`; copy it to `.claude/skills/project-memory/SKILL.md` in any repository that has a `.wisp/`. CI (fmt, clippy, tests, release build on three OSes): [`.github/workflows/ci.yml`](.github/workflows/ci.yml) (`contrib/github-workflows/ci.yml` is a fork copy).
 
 ## License
 

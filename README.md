@@ -6,9 +6,9 @@ This repository is **Scrypted’s GPLv2 Community Release** of wisp: source is h
 
 Copyright © 2026 Scrypted. Author: Tim Cotten (tcotten@scrypted.ai).
 
-wisp stores a bundle as an append-only log of **section-level** changes with encrypted, destroyable payloads, and materializes a conformant OKF directory on demand. It is built for fleets of agents: many writers commit without locks, every change carries provenance, and any section, concept, or group can be provably erased while the integrity chain still verifies.
+wisp stores a bundle as an append-only log of **section-level** changes with encrypted, destroyable payloads, and materializes a conformant OKF directory on demand. It is built for **agent fleets on a shared bundle**: **optimistic, section-scope commits** (conflicts → exit 3), provenance on every change, and cryptographic erasure inside the store while the digest chain still verifies. **Ledger writes serialize on SQLite** (retryable lock contention → exit 7); managed checkout rewrites use `.wisp/worktree.lock`. See **[docs/CONCURRENCY.md](docs/CONCURRENCY.md)**.
 
-Release **0.1.0** behavior is specified in **[docs/SEARCH.md](docs/SEARCH.md)** (retrieval), **[docs/ERASE.md](docs/ERASE.md)** (erasure and managed checkouts), **[docs/EXTENSIONS.md](docs/EXTENSIONS.md)** (optional product hooks), **[DECISIONS.md](DECISIONS.md)** (OKF/store deltas), and **[docs/MERGE.md](docs/MERGE.md)** (ref merge).
+Release **0.1.0** behavior is specified in **[docs/SEARCH.md](docs/SEARCH.md)** (retrieval), **[docs/ERASE.md](docs/ERASE.md)** (erasure and managed checkouts), **[docs/TRUST-BOUNDARY.md](docs/TRUST-BOUNDARY.md)** (what erasure and sync do not cover), **[docs/EXTENSIONS.md](docs/EXTENSIONS.md)** (optional product hooks), **[DECISIONS.md](DECISIONS.md)** (OKF/store deltas), and **[docs/MERGE.md](docs/MERGE.md)** (ref merge).
 
 ## Contributing
 
@@ -21,6 +21,15 @@ cargo build --release        # one static binary: target/release/wisp
 cargo test                   # unit + engine invariant tests (§17)
 cargo test -p wisp-invariants  # OKF corpus + search IR (semantic on by default; first run may fetch ~128MiB model)
 ```
+
+**Air-gapped or offline CI:** build and test without neural search (no model download):
+
+```sh
+cargo build -p wisp-cli --no-default-features
+cargo test -p wisp-invariants --no-default-features
+```
+
+For semantic tests with network once, set `FASTEMBED_CACHE_DIR` (CI uses a runner temp dir). Runtime: `wisp search … --local-only` or `WISP_LOCAL_ONLY=1` skips the neural tier ([docs/SEARCH.md](docs/SEARCH.md)).
 
 Rust 1.88+. No services, no daemons: SQLite (bundled), XChaCha20-Poly1305, Ed25519, FTS5.
 
@@ -98,11 +107,11 @@ The keystore unlocks from, in order: `WISP_MASTER_KEY` (64 hex chars; CI), `--pa
 | M5 Feed and search | feed, search (trigram/RI/semantic), pack, tokens (approx codec), external subscriber host done |
 | M6 Profiles and migration | okf-0.1 profile, 0.1→0.2 migration plan, down-export (`export --profile 0.1`) done |
 | M7 Concurrency and branches | headless writes, read assertions, branches, switch, worktrees, merge (fast-forward, disjoint replay, erase-wins, layered/nested replay, change-chain resolutions, `wisp mv` conflicts, `--resolutions`, `--abort`); merge replay skips durable in ledger — see `docs/MERGE.md`, `merge_playbook` + `merge_rules` |
-| M8 Sync, git interop, release | `file://` + HTTP cold pack (`wisp serve --http <addr>`, Bearer `WISP_HTTP_TOKEN` — terminate TLS in front; packs omit `keys/` unless `WISP_PACK_INCLUDE_KEYS=1`) + SSH/rsync, `export --archive` tar.zst, `import --git` (snapshot or `--history`), `export --git`, `serve --stdio` skeleton |
+| M8 Sync, git interop, release | `file://` + HTTP cold pack (`wisp serve --http <addr>`, Bearer `WISP_HTTP_TOKEN` — terminate TLS in front; packs omit `keys/` unless `WISP_PACK_INCLUDE_KEYS=1`, blocked on non-loopback when keys included — [docs/TRUST-BOUNDARY.md](docs/TRUST-BOUNDARY.md)) + SSH/rsync, `export --archive` tar.zst, `import --git` (snapshot or `--history`), `export --git`, `serve --stdio` skeleton |
 
 Agent desk demo (merge, erase, provenance): [`demo/desk/README.md`](demo/desk/README.md) · [`demo/README.md`](demo/README.md).
 
-Invariants exercised in `cargo test`: I1, I2, I3 (parse layer and strip-anchors round-trip), I4, I5, I7, I12, I13, I16, I17, I19, I21, I22, I23, I24, I25 (staging flush on open); §11.5 merge (`merge_playbook`, `merge_rules`, `contrib/merge-rules/cases.toml`) and §11.6 sync (`sync_deletions`, `sync_roundtrip`) in `wisp-invariants`. Commits are optimistic at section scope (SQLite serializes ledger writes; not lock-free). Optional 50-writer stress: `contrib/concurrency/README.md`.
+§17 invariant coverage (what is tested vs deferred): **[docs/INVARIANTS.md](docs/INVARIANTS.md)**. Integration: §11.5 merge (`merge_playbook`, `merge_rules`, `contrib/merge-rules/cases.toml`) and §11.6 sync (`sync_deletions`, `sync_roundtrip`) in `wisp-invariants`. Optional 50-writer stress: [contrib/concurrency/README.md](contrib/concurrency/README.md).
 
 The **`wisp-corpus`** crate holds versioned OKF bundles (including a **SPY calls / news-signals** desk playbook under `bundles/spy-options/`), parse fixtures, and matcher scenarios (`catalog.toml`). **`wisp-invariants`** runs them on every CI build: record → validate → fsck → lossless strip (where tagged), plus §7.5 scenario tables. Add fixtures first, then implement until `cargo test -p wisp-invariants` passes.
 

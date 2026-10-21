@@ -1,6 +1,6 @@
 //! Dumb HTTP transport for cold-tier packs (`GET`/`PUT` `/wisp/v1/pack.zst`).
 
-use crate::pack::{apply_pack_bytes, pack_bytes};
+use crate::pack::{apply_pack_bytes, pack_bytes, pack_includes_keys};
 use std::path::Path;
 use std::sync::{Arc, Mutex};
 use wisp_engine::apply;
@@ -17,13 +17,36 @@ pub fn http_bearer_token() -> Option<String> {
         .filter(|s| !s.is_empty())
 }
 
-fn bind_looks_loopback(bind: &str) -> bool {
+pub fn bind_looks_loopback(bind: &str) -> bool {
     let host = bind.rsplit_once(':').map(|(h, _)| h).unwrap_or(bind);
     host == "127.0.0.1" || host == "localhost" || host == "[::1]" || host == "::1"
 }
 
+const PACK_KEYS_INSECURE_MSG: &str = "WISP_PACK_INCLUDE_KEYS=1 with a non-loopback bind would send keystore material over cleartext HTTP; use TLS in front, bind loopback, omit keys from packs, or set WISP_PACK_INCLUDE_KEYS_INSECURE=1 to override (unsafe)";
+
+/// Refuse cleartext HTTP pack export of keystore material on non-loopback binds.
+pub fn validate_http_serve_bind(bind: &str) -> Result<()> {
+    let insecure_override = std::env::var("WISP_PACK_INCLUDE_KEYS_INSECURE")
+        .ok()
+        .as_deref()
+        == Some("1");
+    validate_http_serve_bind_policy(bind, pack_includes_keys(), insecure_override)
+}
+
+fn validate_http_serve_bind_policy(
+    bind: &str,
+    pack_includes_keys: bool,
+    insecure_override: bool,
+) -> Result<()> {
+    if pack_includes_keys && !bind_looks_loopback(bind) && !insecure_override {
+        return Err(WispError::usage(PACK_KEYS_INSECURE_MSG));
+    }
+    Ok(())
+}
+
 /// Block serving `GET`/`PUT` on `http://{bind}{PACK_PATH}` until the process exits.
 pub fn serve_http(bind: &str, root: &Path, unlock: &Unlock) -> Result<()> {
+    validate_http_serve_bind(bind)?;
     if http_bearer_token().is_some() && !bind_looks_loopback(bind) {
         eprintln!(
             "wisp http: warning: WISP_HTTP_TOKEN is set but bind address {bind} is not loopback; use TLS or terminate TLS in front"
@@ -109,4 +132,19 @@ fn dispatch(state: &Arc<Mutex<HttpState>>, mut request: tiny_http::Request) -> R
         .respond(tiny_http::Response::from_string("method not allowed").with_status_code(405))
         .map_err(|e| WispError::internal(e.to_string()))?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn validate_http_serve_bind_blocks_keys_on_lan() {
+        assert!(!bind_looks_loopback("0.0.0.0:8080"));
+        assert!(bind_looks_loopback("127.0.0.1:8080"));
+        assert!(validate_http_serve_bind_policy("0.0.0.0:8080", true, false).is_err());
+        assert!(validate_http_serve_bind_policy("127.0.0.1:8080", true, false).is_ok());
+        assert!(validate_http_serve_bind_policy("0.0.0.0:8080", true, true).is_ok());
+        assert!(validate_http_serve_bind_policy("0.0.0.0:8080", false, false).is_ok());
+    }
 }

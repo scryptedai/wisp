@@ -129,7 +129,6 @@ pub fn client_push_cold_pack(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::io::Cursor;
     use wisp_engine::record::{record, RecordOptions};
     use wisp_engine::repo::{Repository, Unlock, MAIN_REF};
     use wisp_store::Ledger;

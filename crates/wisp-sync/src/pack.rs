@@ -31,7 +31,7 @@ pub fn write_cold_pack(repo: &Repository, dest: &Path) -> Result<()> {
                 .map_err(|e| WispError::internal(e.to_string()))?;
         }
     }
-    let mut enc = tar
+    let enc = tar
         .into_inner()
         .map_err(|e| WispError::internal(e.to_string()))?;
     enc.finish()

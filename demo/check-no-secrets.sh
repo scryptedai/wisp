@@ -7,7 +7,7 @@ cd "$ROOT"
 FAIL=0
 
 if git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
-  if git diff --cached --name-only | grep -qE '^demo/\.env'; then
+  if git diff --cached --name-only | grep -qE '^demo/\.env$'; then
     echo "error: demo/.env must not be committed" >&2
     FAIL=1
   fi

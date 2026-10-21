@@ -1132,6 +1132,66 @@ fn erase_rewrites_linked_worktree_for_ref() {
 }
 
 #[test]
+fn recover_after_erase_commit_before_bookkeeping() {
+    let f = fixture();
+    Repository::init(&f.root, "0.2", &Unlock::default()).unwrap();
+    let canary = "CANARY_CRASH_BOOK_2a9f";
+    write(
+        &f.root,
+        "notes/standup.md",
+        &format!("---\ntype: Note\n---\n## Alpha\n\n{canary}\n"),
+    );
+    let mut repo = open(&f.root);
+    rec(&mut repo, "human:alex");
+    let text = read(&f.root, "notes/standup.md");
+    let alpha = wisp_parse::parse_file(&text)
+        .sections()
+        .iter()
+        .find(|s| s.heading == "Alpha")
+        .and_then(|s| match &s.anchor {
+            Some(wisp_parse::Anchor::Valid(id)) => Some(*id),
+            _ => None,
+        })
+        .expect("Alpha anchor");
+    let scope = Ledger::scope_of_section(repo.ledger.conn(), alpha)
+        .unwrap()
+        .unwrap()
+        .id;
+    let mut op = crate::commit::PlannedOp::new(
+        Op::Erase,
+        Target::Erase {
+            scopes: vec![scope],
+        },
+        repo.repo_scope(),
+    );
+    op.reason = Some(Reason::Policy);
+    let mut req = crate::commit::CommitRequest::new(MAIN_REF, "human:alex");
+    req.ops = vec![op];
+    crate::commit::commit(&mut repo, req).unwrap();
+    assert!(read(&f.root, "notes/standup.md").contains(canary));
+    assert!(
+        Ledger::changes_all(repo.ledger.conn())
+            .unwrap()
+            .iter()
+            .any(|(_, c)| c.op == Op::Erase),
+        "erase change must be in the ledger"
+    );
+    drop(repo);
+    let repo = open(&f.root);
+    assert!(
+        Ledger::scope(repo.ledger.conn(), scope)
+            .unwrap()
+            .unwrap()
+            .shredded,
+        "recover must finish cold shred"
+    );
+    assert!(
+        !read(&f.root, "notes/standup.md").contains(canary),
+        "recover must rewrite the managed primary working tree"
+    );
+}
+
+#[test]
 fn rewrite_managed_worktrees_clears_stale_plaintext_after_erase() {
     let f = fixture();
     Repository::init(&f.root, "0.2", &Unlock::default()).unwrap();

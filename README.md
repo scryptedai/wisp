@@ -92,7 +92,7 @@ The keystore unlocks from, in order: `WISP_MASTER_KEY` (64 hex chars; CI), `--pa
 | M1 Parse (frontmatter, sectioning, anchors, identity) | done |
 | M2 Cold tier and crypto (ledger, payload envelope, keystore, staging, changeset signing) | done |
 | M3 Hot tier, optimistic commits, record, checkout, views, okf-0.2 | done |
-| M4 Lifecycle and erase (retract/restore, groups, erase, fsck, policies, revert, backup) | done |
+| M4 Lifecycle and erase (retract/restore, groups, erase, fsck, policies, revert, backup) | done; managed checkout rewrite + open recovery — `docs/ERASE.md` |
 | M5 Feed and search | feed, search (trigram/RI/semantic), pack, tokens (approx codec), external subscriber host done |
 | M6 Profiles and migration | okf-0.1 profile, 0.1→0.2 migration plan, down-export (`export --profile 0.1`) done |
 | M7 Concurrency and branches | headless writes, read assertions, branches, switch, worktrees, merge (fast-forward, disjoint replay, erase-wins, layered/nested replay, change-chain resolutions, `wisp mv` conflicts, `--resolutions`, `--abort`); see `docs/MERGE.md`, `merge_playbook` + `merge_rules` |

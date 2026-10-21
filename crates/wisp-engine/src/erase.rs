@@ -6,7 +6,7 @@ use crate::payloads::*;
 use crate::query;
 use crate::repo::{Repository, MAIN_REF};
 use serde_json::{json, Value};
-use std::collections::BTreeSet;
+use std::collections::{BTreeSet, HashSet};
 use std::path::{Path, PathBuf};
 use wisp_model::*;
 use wisp_store::{Hot, Ledger, Tombstone};
@@ -370,31 +370,7 @@ pub fn erase(
             json!({ "dry_run": true, "would_erase": covers, "scopes": scopes.len(), "hint": "pass --yes to erase" }),
         );
     }
-    // Marker positions, recorded before the sections disappear.
-    let mut markers: Vec<(SectionId, ConceptId, Option<SectionId>)> = Vec::new();
-    {
-        let scope_rows: Vec<_> = scopes
-            .iter()
-            .filter_map(|s| Ledger::scope(repo.ledger.conn(), *s).ok().flatten())
-            .collect();
-        let conn = repo.hot(ref_name)?.conn();
-        for row in scope_rows {
-            {
-                if let ScopeKind::Section { concept, section } = row.kind {
-                    let secs = Hot::sections_of(conn, concept)?;
-                    let pos = secs.iter().position(|x| x.section == section);
-                    let after = pos.and_then(|i| {
-                        if i == 0 {
-                            None
-                        } else {
-                            secs.get(i - 1).map(|x| x.section)
-                        }
-                    });
-                    markers.push((section, concept, after));
-                }
-            }
-        }
-    }
+    let markers = markers_for_scopes_on_ref(repo, ref_name, &scopes)?;
     let flagged = flagged_dependents(repo, &scopes)?;
     let affected_paths: Vec<String> = covers
         .iter()
@@ -424,39 +400,15 @@ pub fn erase(
         .find(|c| c.op == Op::Erase)
         .map(|c| c.id)
         .expect("erase change");
-    {
-        let tx = repo.ledger.begin_immediate()?;
-        Ledger::insert_tombstone(
-            &tx,
-            &Tombstone {
-                erase_change,
-                target: tgt.clone(),
-                scopes: scopes.clone(),
-                reason,
-                flagged: flagged.clone(),
-            },
-        )?;
-        for s in &scopes {
-            Ledger::mark_scope_erased(&tx, *s)?;
-            Ledger::set_scope_payloads_absent(&tx, *s)?;
-        }
-        for (section, concept, after) in &markers {
-            Ledger::insert_erasure_marker(&tx, *section, *concept, *after, reason)?;
-        }
-        if let Target::Actor { actor } = &tgt {
-            Ledger::clear_actor_index(&tx, *actor)?;
-        }
-        for sub in repo
-            .manifest
-            .subscribers
-            .iter()
-            .filter(|s| s.command.is_some())
-        {
-            Ledger::add_pending_erasure(&tx, erase_change, &sub.name)?;
-        }
-        tx.commit()
-            .map_err(|e| WispError::internal(e.to_string()))?;
-    }
+    apply_erase_bookkeeping(
+        repo,
+        erase_change,
+        &tgt,
+        &scopes,
+        reason,
+        &flagged,
+        &markers,
+    )?;
 
     // Phase 1 and Phase 2 (idempotent; recovery reruns them).
     shred(repo, &scopes, erase_change, &flagged)?;
@@ -493,7 +445,15 @@ pub fn shred(
 ) -> Result<()> {
     // Phase 1: every hot tier on disk.
     let names = repo.open_all_hots()?;
-    let mut vector_sections = Vec::new();
+    let mut ledger_sections = Vec::new();
+    for s in scopes {
+        if let Some(row) = Ledger::scope(repo.ledger.conn(), *s)? {
+            if let ScopeKind::Section { section, .. } = row.kind {
+                ledger_sections.push(section);
+            }
+        }
+    }
+    let mut vector_sections = ledger_sections.clone();
     for name in &names {
         if let Some(hot) = repo.hots.get(name) {
             for s in scopes {
@@ -501,10 +461,15 @@ pub fn shred(
             }
         }
     }
+    vector_sections.sort();
+    vector_sections.dedup();
     crate::vector::purge_vectors_for_sections(repo, &vector_sections)?;
     for name in &names {
         let hot = repo.hots.get_mut(name).expect("opened");
         let tx = hot.begin()?;
+        for section in &ledger_sections {
+            Hot::delete_section(&tx, *section)?;
+        }
         for s in scopes {
             let affected = Hot::purge_scope(&tx, *s)?;
             for c in affected {
@@ -539,6 +504,7 @@ pub fn shred(
 
 /// On open: finish any interrupted erase before anything else (§10.5 Recovery).
 pub fn recover(repo: &mut Repository) -> Result<()> {
+    finish_erase_bookkeeping(repo)?;
     let pending = Ledger::scopes_erased_not_shredded(repo.ledger.conn())?;
     if pending.is_empty() {
         return Ok(());
@@ -594,8 +560,142 @@ fn rewrite_worktree_at(repo: &mut Repository, ref_name: &str, dir: &Path) -> Res
     if Ledger::head(repo.ledger.conn(), ref_name)?.is_none() {
         return Ok(());
     }
+    let idx_path = checkout::checkout_idx_path(repo, dir);
+    let prior = checkout::CheckoutIndex::load(&idx_path)?;
     let idx = checkout::write_tree(repo, ref_name, dir, false, false, true)?;
-    idx.save(&checkout::checkout_idx_path(repo, dir))?;
+    checkout::prune_tracked_files_removed_from_index(dir, prior.as_ref(), &idx)?;
+    idx.save(&idx_path)?;
+    Ok(())
+}
+
+/// Erase changesets committed without a tombstone row (crash between commit and bookkeeping).
+pub fn finish_erase_bookkeeping(repo: &mut Repository) -> Result<()> {
+    let recorded: HashSet<ChangeId> = Ledger::tombstones(repo.ledger.conn())?
+        .into_iter()
+        .map(|t| t.erase_change)
+        .collect();
+    for (_, change) in Ledger::changes_all(repo.ledger.conn())? {
+        if change.op != Op::Erase {
+            continue;
+        }
+        if recorded.contains(&change.id) {
+            continue;
+        }
+        let scopes = match &change.target {
+            Target::Erase { scopes } if !scopes.is_empty() => scopes.clone(),
+            _ => continue,
+        };
+        let reason = change.reason.unwrap_or(Reason::Other);
+        let flagged = flagged_dependents(repo, &scopes)?;
+        let markers = markers_for_scopes_any_hot(repo, &scopes)?;
+        apply_erase_bookkeeping(
+            repo,
+            change.id,
+            &change.target,
+            &scopes,
+            reason,
+            &flagged,
+            &markers,
+        )?;
+    }
+    Ok(())
+}
+
+fn markers_for_scopes_on_ref(
+    repo: &mut Repository,
+    ref_name: &str,
+    scopes: &[ScopeId],
+) -> Result<Vec<(SectionId, ConceptId, Option<SectionId>)>> {
+    let scope_rows: Vec<_> = scopes
+        .iter()
+        .filter_map(|s| Ledger::scope(repo.ledger.conn(), *s).ok().flatten())
+        .collect();
+    let conn = repo.hot(ref_name)?.conn();
+    let mut markers = Vec::new();
+    for row in scope_rows {
+        if let ScopeKind::Section { concept, section } = row.kind {
+            let secs = Hot::sections_of(conn, concept)?;
+            let after = section_after(&secs, section);
+            markers.push((section, concept, after));
+        }
+    }
+    Ok(markers)
+}
+
+fn markers_for_scopes_any_hot(
+    repo: &mut Repository,
+    scopes: &[ScopeId],
+) -> Result<Vec<(SectionId, ConceptId, Option<SectionId>)>> {
+    let _ = repo.open_all_hots()?;
+    let mut markers = Vec::new();
+    for s in scopes {
+        let row = Ledger::scope(repo.ledger.conn(), *s)?;
+        if let Some(row) = row {
+            if let ScopeKind::Section { concept, section } = row.kind {
+                for hot in repo.hots.values() {
+                    let secs = Hot::sections_of(hot.conn(), concept)?;
+                    if secs.iter().any(|x| x.section == section) {
+                        markers.push((section, concept, section_after(&secs, section)));
+                        break;
+                    }
+                }
+            }
+        }
+    }
+    Ok(markers)
+}
+
+fn section_after(secs: &[wisp_store::SectionState], section: SectionId) -> Option<SectionId> {
+    let pos = secs.iter().position(|x| x.section == section);
+    pos.and_then(|i| {
+        if i == 0 {
+            None
+        } else {
+            secs.get(i - 1).map(|x| x.section)
+        }
+    })
+}
+
+fn apply_erase_bookkeeping(
+    repo: &mut Repository,
+    erase_change: ChangeId,
+    tgt: &Target,
+    scopes: &[ScopeId],
+    reason: Reason,
+    flagged: &[ConceptId],
+    markers: &[(SectionId, ConceptId, Option<SectionId>)],
+) -> Result<()> {
+    let tx = repo.ledger.begin_immediate()?;
+    Ledger::insert_tombstone(
+        &tx,
+        &Tombstone {
+            erase_change,
+            target: tgt.clone(),
+            scopes: scopes.to_vec(),
+            reason,
+            flagged: flagged.to_vec(),
+        },
+    )?;
+    for s in scopes {
+        Ledger::mark_scope_erased(&tx, *s)?;
+        Ledger::set_scope_payloads_absent(&tx, *s)?;
+    }
+    for (section, concept, after) in markers {
+        Ledger::insert_erasure_marker(&tx, *section, *concept, *after, reason)?;
+    }
+    if let Target::Actor { actor } = tgt {
+        Ledger::clear_actor_index(&tx, *actor)?;
+    }
+    for sub in repo
+        .manifest
+        .subscribers
+        .iter()
+        .filter(|s| s.command.is_some())
+    {
+        Ledger::add_pending_erasure(&tx, erase_change, &sub.name)?;
+    }
+    tx.commit()
+        .map_err(|e| WispError::internal(e.to_string()))?;
     Ok(())
 }
 

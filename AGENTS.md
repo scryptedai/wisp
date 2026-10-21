@@ -26,7 +26,7 @@ Do not confuse:
 | `crates/wisp-sync`, `wisp-git`, `wisp-feed`, `wisp-sub-*`, `wisp-index` | M5–M8 modules |
 | `DECISIONS.md` | Spec deviations (required reading for behavior changes) |
 | `docs/SEARCH.md`, `docs/EXTENSIONS.md`, `docs/MERGE.md`, `docs/ERASE.md` | Search, extensions, merge, erasure & managed checkouts |
-| `docs/CONCURRENCY.md`, `docs/TRUST-BOUNDARY.md`, `docs/INVARIANTS.md` | Writers, erasure/sync limits, §17 test manifest |
+| `docs/CONCURRENCY.md`, `docs/TRUST-BOUNDARY.md`, `docs/INVARIANTS.md`, `docs/GIT-INTEROP.md` | Writers, erasure/sync limits, §17 test manifest, Git export/import |
 
 ## Build and test (required before PR)
 

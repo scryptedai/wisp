@@ -11,3 +11,20 @@ WISP_STRESS=1 WISP_STRESS_WRITERS=50 cargo test -p wisp-invariants -- --ignored 
 ```
 
 Tune `WISP_STRESS_WRITERS` and ops-per-writer in `crates/wisp-invariants/tests/concurrency_stress.rs`. This is not part of default CI (ignored unless `WISP_STRESS=1`).
+
+## Sample results (disjoint sections)
+
+Reproduce (offline-friendly, no semantic feature):
+
+```sh
+CARGO_TARGET_DIR=./target WISP_STRESS=1 WISP_STRESS_WRITERS=50 \
+  cargo test -p wisp-invariants --no-default-features -- \
+  --ignored stress_many_disjoint_writers
+```
+
+| Environment | Writers | Ops/writer | Outcome |
+|-------------|---------|------------|---------|
+| Design target | 50 | 3 | Each writer owns one section; expects **0 conflicts** (exit 3), possible **exit 7** retries under SQLite lock contention |
+| Default CI | 8 | 5 | `i16_i17_concurrent_headless_writers_disjoint_sections` in `wisp-engine` |
+
+Record your run (OS, CPU, wall time, any exit 7) in a PR when updating this table. Contention rises when many writers share the **same ref** and commit in bursts; use branches/worktrees for parallel feature work.

@@ -1,7 +1,8 @@
 //! `wisp-sync`: the replica protocol (§11.6).
 //!
-//! Trusted local-path push/pull is implemented today; stdio framing is a skeleton for remote
-//! transports. Session outline: Hello → Tombstones → Negotiate → Transfer → Refs.
+//! Trusted local-path push/pull is implemented today. `serve --stdio` runs Hello/Ack then a
+//! **local bundle path** push (same machine); remote byte-stream sync is not implemented yet.
+//! Session outline for future transports: Hello → Tombstones → Negotiate → Transfer → Refs.
 
 mod http;
 mod local;

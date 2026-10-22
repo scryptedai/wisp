@@ -9,7 +9,7 @@ Built-in `wisp search` never calls these traits.
 | Topic | Status |
 |-------|--------|
 | **MCP / JSON-RPC server** | Not shipped. Agent integration is the **`wisp` CLI** (`--json`), optional skills under `contrib/`, and subprocess orchestration by your harness. |
-| **`serve --stdio`** | **Not MCP.** Modes: `Hello.transport=cold_pack` → Ack → **ColdPack** (zstd cold tier, same bytes as HTTP pack); default `local_path` → third-line bundle path on the same machine. Client API: `wisp_sync::client_push_cold_pack`. |
+| **`serve --stdio`** | **Not MCP.** Modes: `Hello.transport=cold_pack` → Ack → **ColdPack** (zstd cold tier, same bytes as HTTP pack); default `local_path` → third-line bundle path on the same machine. Client: `wisp push <remote>` when the remote URL is `stdio://…` (subprocess running `wisp serve --stdio`), or `wisp_sync::client_push_cold_pack`. |
 | **Model-exact tokenizers** | Default build uses **`tok:approx:chars4`**; pluggable token codecs are below. Tiktoken/Hugging Face IDs may be registered in manifest for forward compatibility; community binary resolves built-in approx codecs only unless you add a subscriber. |
 
 ## Token codecs

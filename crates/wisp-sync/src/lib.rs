@@ -8,6 +8,7 @@ mod local;
 mod pack;
 mod protocol;
 mod stdio;
+mod stdio_transport;
 mod transport;
 
 pub use http::serve_http;

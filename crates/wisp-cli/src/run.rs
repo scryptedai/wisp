@@ -34,12 +34,19 @@ fn ref_of(repo: &Repository, explicit: &Option<String>) -> String {
 }
 
 fn remote_url(repo: &Repository, name: &str) -> Result<String> {
-    repo.manifest
-        .remotes
-        .iter()
-        .find(|r| r.name == name)
-        .map(|r| r.url.clone())
-        .ok_or_else(|| WispError::not_found(format!("remote {name:?}")))
+    if let Some(r) = repo.manifest.remotes.iter().find(|r| r.name == name) {
+        return Ok(r.url.clone());
+    }
+    let n = name.trim();
+    if n.starts_with("stdio:")
+        || n.starts_with("file:")
+        || n.starts_with("http://")
+        || n.starts_with("https://")
+        || n.starts_with("ssh://")
+    {
+        return Ok(n.to_string());
+    }
+    Err(WispError::not_found(format!("remote {name:?}")))
 }
 
 fn parse_cs(s: &str) -> Result<ChangesetId> {

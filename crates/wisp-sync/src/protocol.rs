@@ -61,10 +61,12 @@ pub fn read_message(r: &mut impl BufRead) -> Result<Option<Message>> {
     serde_json::from_str(line).map_err(|e| WispError::usage(format!("bad sync frame: {e}")))
 }
 
-/// Push (client → server) vs pull (server → client) after Hello.
+/// Ref named in the frame after Hello: client push or client pull.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum RefSession {
+    /// Client will send a ColdPack (`Hello.transport=cold_pack`).
     Push(String),
+    /// Server will send a ColdPack (`Hello.transport=cold_pack_pull`).
     Pull(String),
 }
 

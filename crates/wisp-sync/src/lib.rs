@@ -1,6 +1,6 @@
 //! `wisp-sync`: the replica protocol (§11.6).
 //!
-//! Trusted local-path push/pull and **stdio cold-pack push** (Hello → PushRef → Ack → ColdPack → Done).
+//! Trusted local-path push/pull and **stdio cold-pack** push/pull over JSON-lines framing.
 //! `serve --stdio` also accepts a legacy third-line local bundle path on the same machine.
 
 mod http;
@@ -14,7 +14,9 @@ mod transport;
 pub use http::serve_http;
 pub use local::{init_trusted_replica, parse_local_url, pull, push};
 pub use protocol::{client_hello_frames, server_ack_line, Message};
-pub use stdio::{client_push_cold_pack, serve_push_cold_pack};
+pub use stdio::{
+    client_pull_cold_pack, client_push_cold_pack, serve_pull_cold_pack, serve_push_cold_pack,
+};
 pub use transport::{parse_remote_url, pull_remote, push_remote, RemoteTarget};
 
 pub const PROTOCOL_VERSION: u32 = 1;
@@ -35,21 +37,26 @@ pub fn sync() -> Result<Value> {
 pub fn serve_stdio(repo: &mut Repository, unlock: &Unlock) -> Result<Value> {
     let stdin = io::stdin();
     let mut reader = BufReader::new(stdin.lock());
-    let (ref_name, transport) = protocol::server_handshake(repo, &mut reader)?;
+    let (session, transport) = protocol::server_handshake(repo, &mut reader)?;
     let mut stdout = io::stdout();
+    if transport == "cold_pack_pull" {
+        let protocol::RefSession::Pull(ref_name) = session else {
+            return Err(WispError::usage("cold_pack_pull requires PullRef"));
+        };
+        let result = stdio::serve_pull_cold_pack(repo, &ref_name, &mut stdout)?;
+        return Ok(json!({
+            "serve": "stdio",
+            "ref": ref_name,
+            "pull": result,
+            "mode": "cold_pack_pull"
+        }));
+    }
     if transport == "cold_pack" {
-        protocol::write_message(
-            &mut stdout,
-            &Message::Ack {
-                protocol_version: PROTOCOL_VERSION,
-            },
-        )?;
-        stdout
-            .flush()
-            .map_err(|e| WispError::internal(e.to_string()))?;
-        let msg = protocol::read_message(&mut reader)?
-            .ok_or_else(|| WispError::usage("expected ColdPack"))?;
-        let result = stdio::apply_cold_pack_message(repo, unlock, &ref_name, msg, &mut stdout)?;
+        let protocol::RefSession::Push(ref_name) = session else {
+            return Err(WispError::usage("cold_pack push requires PushRef"));
+        };
+        let result =
+            stdio::serve_push_cold_pack(repo, unlock, &ref_name, &mut reader, &mut stdout)?;
         return Ok(json!({
             "serve": "stdio",
             "ref": ref_name,
@@ -57,6 +64,9 @@ pub fn serve_stdio(repo: &mut Repository, unlock: &Unlock) -> Result<Value> {
             "mode": "cold_pack"
         }));
     }
+    let protocol::RefSession::Push(ref_name) = session else {
+        return Err(WispError::usage("local_path stdio serve requires PushRef"));
+    };
     let mut line = String::new();
     reader
         .read_line(&mut line)
@@ -175,8 +185,8 @@ mod tests {
             client_hello_frames(&id, "main")[0],
             client_hello_frames(&id, "main")[1],
         ));
-        let (r, transport) = protocol::server_handshake(&repo, &mut input).unwrap();
-        assert_eq!(r, "main");
+        let (session, transport) = protocol::server_handshake(&repo, &mut input).unwrap();
+        assert_eq!(session, protocol::RefSession::Push("main".to_string()));
         assert_eq!(transport, "local_path");
     }
 }

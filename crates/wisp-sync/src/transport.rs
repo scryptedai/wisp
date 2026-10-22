@@ -3,7 +3,7 @@
 use crate::http::http_bearer_token;
 use crate::local::{init_trusted_replica, pull, push};
 use crate::pack::{apply_pack_bytes, pack_bytes};
-use crate::stdio_transport::{stdio_push, StdioRemote};
+use crate::stdio_transport::{stdio_pull, stdio_push, StdioRemote};
 use serde_json::{json, Value};
 use std::io::Read;
 use std::path::{Path, PathBuf};
@@ -114,9 +114,7 @@ pub fn pull_remote(
         RemoteTarget::Local(p) => pull(local, p, ref_name, unlock),
         RemoteTarget::Http(h) => http_pull(local, h, ref_name, unlock),
         RemoteTarget::Ssh(s) => ssh_sync(local, s, ref_name, unlock, false),
-        RemoteTarget::Stdio(_) => Err(WispError::not_implemented(
-            "pull over stdio cold pack is not implemented; use file://, http(s)://, or ssh://",
-        )),
+        RemoteTarget::Stdio(s) => stdio_pull(local, ref_name, s, unlock),
     }
 }
 

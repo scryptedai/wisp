@@ -3,6 +3,7 @@
 use crate::http::http_bearer_token;
 use crate::local::{init_trusted_replica, pull, push};
 use crate::pack::{apply_pack_bytes, pack_bytes};
+use crate::stdio_transport::{stdio_pull, stdio_push, StdioRemote};
 use serde_json::{json, Value};
 use std::io::Read;
 use std::path::{Path, PathBuf};
@@ -17,6 +18,7 @@ pub enum RemoteTarget {
     Local(PathBuf),
     Http(HttpRemote),
     Ssh(SshRemote),
+    Stdio(StdioRemote),
 }
 
 #[derive(Clone, Debug)]
@@ -34,6 +36,28 @@ pub struct SshRemote {
 /// Parse `file://`, plain paths, `https://`, `http://`, and `ssh://user@host/path`.
 pub fn parse_remote_url(url: &str) -> Result<RemoteTarget> {
     let url = url.trim();
+    if let Some(rest) = url.strip_prefix("stdio://") {
+        let shell = rest.trim();
+        if shell.is_empty() {
+            return Err(WispError::usage(
+                "stdio URL must be stdio://<shell command> (remote runs `wisp serve --stdio`)",
+            ));
+        }
+        return Ok(RemoteTarget::Stdio(StdioRemote {
+            shell: shell.to_string(),
+        }));
+    }
+    if let Some(rest) = url.strip_prefix("stdio:") {
+        let shell = rest.trim();
+        if shell.is_empty() {
+            return Err(WispError::usage(
+                "stdio URL must be stdio:<shell command> (remote runs `wisp serve --stdio`)",
+            ));
+        }
+        return Ok(RemoteTarget::Stdio(StdioRemote {
+            shell: shell.to_string(),
+        }));
+    }
     if let Some(rest) = url.strip_prefix("https://") {
         return Ok(RemoteTarget::Http(HttpRemote {
             base: format!("https://{}", rest.trim_end_matches('/')),
@@ -76,6 +100,7 @@ pub fn push_remote(
         RemoteTarget::Local(p) => push(local, p, ref_name, unlock),
         RemoteTarget::Http(h) => http_push(local, h, ref_name),
         RemoteTarget::Ssh(s) => ssh_sync(local, s, ref_name, unlock, true),
+        RemoteTarget::Stdio(s) => stdio_push(local, ref_name, s),
     }
 }
 
@@ -89,6 +114,7 @@ pub fn pull_remote(
         RemoteTarget::Local(p) => pull(local, p, ref_name, unlock),
         RemoteTarget::Http(h) => http_pull(local, h, ref_name, unlock),
         RemoteTarget::Ssh(s) => ssh_sync(local, s, ref_name, unlock, false),
+        RemoteTarget::Stdio(s) => stdio_pull(local, ref_name, s, unlock),
     }
 }
 
@@ -232,4 +258,23 @@ fn rsync(local_bundle: &Path, remote_spec: &str, to_remote: bool) -> Result<()> 
         )));
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_stdio_remote_url() {
+        let t = parse_remote_url("stdio://ssh host wisp serve --stdio").unwrap();
+        match t {
+            RemoteTarget::Stdio(s) => assert_eq!(s.shell, "ssh host wisp serve --stdio"),
+            _ => panic!("expected stdio"),
+        }
+        let t = parse_remote_url("stdio:./wisp serve --stdio").unwrap();
+        match t {
+            RemoteTarget::Stdio(s) => assert_eq!(s.shell, "./wisp serve --stdio"),
+            _ => panic!("expected stdio"),
+        }
+    }
 }

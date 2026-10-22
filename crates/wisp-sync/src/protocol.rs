@@ -13,7 +13,9 @@ pub enum Message {
         repo_id: String,
         protocol_version: u32,
         trusted: bool,
-        /// `local_path` (default): third line is a bundle path. `cold_pack`: Ack then ColdPack frame.
+        /// `local_path` (default): third line is a bundle path.
+        /// `cold_pack`: push — Ack, client ColdPack, Done.
+        /// `cold_pack_pull`: pull — Ack, server ColdPack, Done.
         #[serde(default = "default_hello_transport")]
         transport: String,
     },
@@ -21,6 +23,9 @@ pub enum Message {
         protocol_version: u32,
     },
     PushRef {
+        r#ref: String,
+    },
+    PullRef {
         r#ref: String,
     },
     /// Zstd cold-tier `.tar.zst` pack bytes (same payload as HTTP `pack.zst`), base64-encoded.
@@ -56,8 +61,18 @@ pub fn read_message(r: &mut impl BufRead) -> Result<Option<Message>> {
     serde_json::from_str(line).map_err(|e| WispError::usage(format!("bad sync frame: {e}")))
 }
 
-/// Server handshake: Hello → PushRef (returns ref name and Hello transport).
-pub fn server_handshake(repo: &Repository, input: &mut impl BufRead) -> Result<(String, String)> {
+/// Push (client → server) vs pull (server → client) after Hello.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum RefSession {
+    Push(String),
+    Pull(String),
+}
+
+/// Server handshake: Hello → PushRef or PullRef (returns session and Hello transport).
+pub fn server_handshake(
+    repo: &Repository,
+    input: &mut impl BufRead,
+) -> Result<(RefSession, String)> {
     let hello = read_message(input)?.ok_or_else(|| WispError::usage("expected Hello"))?;
     let transport = match hello {
         Message::Hello {
@@ -82,10 +97,12 @@ pub fn server_handshake(repo: &Repository, input: &mut impl BufRead) -> Result<(
         }
         _ => return Err(WispError::usage("expected Hello")),
     };
-    let push = read_message(input)?.ok_or_else(|| WispError::usage("expected PushRef"))?;
-    match push {
-        Message::PushRef { r#ref } => Ok((r#ref, transport)),
-        _ => Err(WispError::usage("expected PushRef")),
+    let session =
+        read_message(input)?.ok_or_else(|| WispError::usage("expected PushRef or PullRef"))?;
+    match session {
+        Message::PushRef { r#ref } => Ok((RefSession::Push(r#ref), transport)),
+        Message::PullRef { r#ref } => Ok((RefSession::Pull(r#ref), transport)),
+        _ => Err(WispError::usage("expected PushRef or PullRef")),
     }
 }
 

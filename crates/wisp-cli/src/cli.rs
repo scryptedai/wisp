@@ -274,10 +274,18 @@ pub enum Command {
         #[command(subcommand)]
         cmd: RemoteCmd,
     },
+    /// Push ref state to a remote (`file://`, `http(s)://`, `ssh://`, or `stdio://` shell command).
+    ///
+    /// `stdio://` runs the command as a subprocess and sends a **ColdPack** (same as `wisp serve --stdio`
+    /// with `Hello.transport=cold_pack`), e.g. `stdio://ssh user@host 'cd /data/kb && wisp serve --stdio'`.
     Push {
         remote: String,
         r#ref: Option<String>,
     },
+    /// Pull ref state from a remote (`file://`, `http(s)://`, `ssh://`, or `stdio://` shell command).
+    ///
+    /// `stdio://` runs `wisp serve --stdio` on the remote and receives a **ColdPack**
+    /// (`Hello.transport=cold_pack_pull`, PullRef).
     Pull {
         remote: String,
         r#ref: Option<String>,

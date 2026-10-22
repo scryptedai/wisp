@@ -1,11 +1,58 @@
 //! Optional many-writer stress (eval follow-up). Default CI uses the engine's 8×5 test;
 //! run `WISP_STRESS=1 WISP_STRESS_WRITERS=50 cargo test -p wisp-invariants -- --ignored stress_many_disjoint_writers`.
 
+use std::time::Duration;
 use wisp_engine::headless::ApplyOp;
 use wisp_engine::record::{record, RecordOptions};
 use wisp_engine::repo::{Repository, Unlock, MAIN_REF};
-use wisp_model::*;
+use wisp_model::{ExitCode, *};
 use wisp_store::Hot;
+
+/// Headless apply with backoff on exit 7 (`WriteTimeout`), same class of contention as `commit`.
+fn refresh_op_base(repo: &mut Repository, op: &mut ApplyOp) -> Result<()> {
+    let Some(section) = op.section else {
+        return Ok(());
+    };
+    let hot = repo.hot(MAIN_REF)?;
+    let row = Hot::section(hot.conn(), section)?
+        .ok_or_else(|| WispError::not_found("section not in hot tier"))?;
+    op.base_version = Some(row.version.to_string());
+    Ok(())
+}
+
+fn single_with_retry(
+    repo: &mut Repository,
+    actor: &str,
+    mut op: ApplyOp,
+) -> Result<serde_json::Value> {
+    const MAX_ATTEMPTS: u32 = 128;
+    for attempt in 1..=MAX_ATTEMPTS {
+        match wisp_engine::headless::single(
+            repo,
+            None,
+            Some(actor.to_string()),
+            None,
+            None,
+            op.clone(),
+        ) {
+            Ok(v) => return Ok(v),
+            Err(e) if e.is_retryable() && attempt < MAX_ATTEMPTS => {
+                refresh_op_base(repo, &mut op)?;
+                let jitter = 20 + (attempt as u64) * 15;
+                std::thread::sleep(Duration::from_millis(jitter));
+                continue;
+            }
+            Err(e) if e.code == ExitCode::Conflict && attempt < MAX_ATTEMPTS => {
+                refresh_op_base(repo, &mut op)?;
+                let jitter = 20 + (attempt as u64) * 15;
+                std::thread::sleep(Duration::from_millis(jitter));
+                continue;
+            }
+            Err(e) => return Err(e),
+        }
+    }
+    unreachable!("single_with_retry loop")
+}
 
 fn writer_count() -> usize {
     std::env::var("WISP_STRESS_WRITERS")
@@ -85,15 +132,8 @@ fn stress_many_disjoint_writers() {
                         split_from: None,
                         merged_from: None,
                     };
-                    let r = wisp_engine::headless::single(
-                        &mut repo,
-                        None,
-                        Some(format!("process:stress-{w}")),
-                        None,
-                        None,
-                        op,
-                    )
-                    .unwrap();
+                    let r =
+                        single_with_retry(&mut repo, &format!("process:stress-{w}"), op).unwrap();
                     base = r["changes"][0]["version"]
                         .as_str()
                         .unwrap()

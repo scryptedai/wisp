@@ -24,7 +24,8 @@ CARGO_TARGET_DIR=./target WISP_STRESS=1 WISP_STRESS_WRITERS=50 \
 
 | Environment | Writers | Ops/writer | Outcome |
 |-------------|---------|------------|---------|
-| Design target | 50 | 3 | Each writer owns one section; expects **0 conflicts** (exit 3), possible **exit 7** retries under SQLite lock contention |
+| macOS 15 (Darwin 25.2), Apple M3, debug build | 50 | 3 | **Pass** — `stress_many_disjoint_writers` ~17s wall; `fsck` clean; exit **7** handled via retries + hot base refresh in the test harness |
+| Design target | 50 | 3 | Each writer owns one disjoint section on `main`; production clients should retry exit 7 per manifest `commit.retries` |
 | Default CI | 8 | 5 | `i16_i17_concurrent_headless_writers_disjoint_sections` in `wisp-engine` |
 
-Record your run (OS, CPU, wall time, any exit 7) in a PR when updating this table. Contention rises when many writers share the **same ref** and commit in bursts; use branches/worktrees for parallel feature work.
+Contention rises when many writers share the **same ref** and commit in bursts; use branches/worktrees for parallel feature work.

@@ -17,6 +17,7 @@ tar.workspace = true
 zstd.workspace = true
 ureq.workspace = true
 tempfile.workspace = true
+base64 = "0.22"
 
 tiny_http = "0.12"
 

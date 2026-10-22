@@ -1,18 +1,19 @@
 //! `wisp-sync`: the replica protocol (§11.6).
 //!
-//! Trusted local-path push/pull is implemented today. `serve --stdio` runs Hello/Ack then a
-//! **local bundle path** push (same machine); remote byte-stream sync is not implemented yet.
-//! Session outline for future transports: Hello → Tombstones → Negotiate → Transfer → Refs.
+//! Trusted local-path push/pull and **stdio cold-pack push** (Hello → PushRef → Ack → ColdPack → Done).
+//! `serve --stdio` also accepts a legacy third-line local bundle path on the same machine.
 
 mod http;
 mod local;
 mod pack;
 mod protocol;
+mod stdio;
 mod transport;
 
 pub use http::serve_http;
 pub use local::{init_trusted_replica, parse_local_url, pull, push};
 pub use protocol::{client_hello_frames, server_ack_line, Message};
+pub use stdio::{client_push_cold_pack, serve_push_cold_pack};
 pub use transport::{parse_remote_url, pull_remote, push_remote, RemoteTarget};
 
 pub const PROTOCOL_VERSION: u32 = 1;
@@ -29,20 +30,39 @@ pub fn sync() -> Result<Value> {
     ))
 }
 
-/// `wisp serve --stdio`: accept Hello + PushRef, then apply an in-process push from the client
-/// bundle path sent on the third line (trusted local path transport).
+/// `wisp serve --stdio`: Hello + PushRef, then **ColdPack** (remote) or a legacy third-line path (local).
 pub fn serve_stdio(repo: &mut Repository, unlock: &Unlock) -> Result<Value> {
     let stdin = io::stdin();
     let mut reader = BufReader::new(stdin.lock());
-    let ref_name = protocol::server_handshake(repo, &mut reader)?;
-    let mut path_line = String::new();
+    let (ref_name, transport) = protocol::server_handshake(repo, &mut reader)?;
+    let mut stdout = io::stdout();
+    if transport == "cold_pack" {
+        protocol::write_message(
+            &mut stdout,
+            &Message::Ack {
+                protocol_version: PROTOCOL_VERSION,
+            },
+        )?;
+        stdout
+            .flush()
+            .map_err(|e| WispError::internal(e.to_string()))?;
+        let msg = protocol::read_message(&mut reader)?
+            .ok_or_else(|| WispError::usage("expected ColdPack"))?;
+        let result = stdio::apply_cold_pack_message(repo, unlock, &ref_name, msg, &mut stdout)?;
+        return Ok(json!({
+            "serve": "stdio",
+            "ref": ref_name,
+            "push": result,
+            "mode": "cold_pack"
+        }));
+    }
+    let mut line = String::new();
     reader
-        .read_line(&mut path_line)
+        .read_line(&mut line)
         .map_err(|e| WispError::internal(e.to_string()))?;
-    let path = local::parse_local_url(path_line.trim())?;
+    let path = local::parse_local_url(line.trim())?;
     let mut client = Repository::open(&path, unlock)?;
     let result = local::push(&mut client, repo.root.as_path(), &ref_name, unlock)?;
-    let mut stdout = io::stdout();
     protocol::write_message(
         &mut stdout,
         &Message::Done {
@@ -50,7 +70,12 @@ pub fn serve_stdio(repo: &mut Repository, unlock: &Unlock) -> Result<Value> {
         },
     )?;
     stdout.flush()?;
-    Ok(json!({ "serve": "stdio", "ref": ref_name, "push": result }))
+    Ok(json!({
+        "serve": "stdio",
+        "ref": ref_name,
+        "push": result,
+        "mode": "local_path"
+    }))
 }
 
 #[cfg(test)]
@@ -149,7 +174,8 @@ mod tests {
             client_hello_frames(&id, "main")[0],
             client_hello_frames(&id, "main")[1],
         ));
-        let r = protocol::server_handshake(&repo, &mut input).unwrap();
+        let (r, transport) = protocol::server_handshake(&repo, &mut input).unwrap();
         assert_eq!(r, "main");
+        assert_eq!(transport, "local_path");
     }
 }

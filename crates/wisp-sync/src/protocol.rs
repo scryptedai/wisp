@@ -13,6 +13,9 @@ pub enum Message {
         repo_id: String,
         protocol_version: u32,
         trusted: bool,
+        /// `local_path` (default): third line is a bundle path. `cold_pack`: Ack then ColdPack frame.
+        #[serde(default = "default_hello_transport")]
+        transport: String,
     },
     Ack {
         protocol_version: u32,
@@ -20,9 +23,17 @@ pub enum Message {
     PushRef {
         r#ref: String,
     },
+    /// Zstd cold-tier `.tar.zst` pack bytes (same payload as HTTP `pack.zst`), base64-encoded.
+    ColdPack {
+        pack_b64: String,
+    },
     Done {
         result: Value,
     },
+}
+
+fn default_hello_transport() -> String {
+    "local_path".to_string()
 }
 
 pub fn write_message(w: &mut impl Write, msg: &Message) -> Result<()> {
@@ -45,14 +56,15 @@ pub fn read_message(r: &mut impl BufRead) -> Result<Option<Message>> {
     serde_json::from_str(line).map_err(|e| WispError::usage(format!("bad sync frame: {e}")))
 }
 
-/// Server handshake: Hello → Ack → PushRef (returns ref name).
-pub fn server_handshake(repo: &Repository, input: &mut impl BufRead) -> Result<String> {
+/// Server handshake: Hello → PushRef (returns ref name and Hello transport).
+pub fn server_handshake(repo: &Repository, input: &mut impl BufRead) -> Result<(String, String)> {
     let hello = read_message(input)?.ok_or_else(|| WispError::usage("expected Hello"))?;
-    match hello {
+    let transport = match hello {
         Message::Hello {
             repo_id,
             protocol_version,
             trusted,
+            transport,
         } => {
             if protocol_version != crate::PROTOCOL_VERSION {
                 return Err(WispError::usage(format!(
@@ -66,12 +78,13 @@ pub fn server_handshake(repo: &Repository, input: &mut impl BufRead) -> Result<S
             if !trusted {
                 return Err(WispError::usage("stdio serve requires trusted Hello"));
             }
+            transport
         }
         _ => return Err(WispError::usage("expected Hello")),
-    }
+    };
     let push = read_message(input)?.ok_or_else(|| WispError::usage("expected PushRef"))?;
     match push {
-        Message::PushRef { r#ref } => Ok(r#ref),
+        Message::PushRef { r#ref } => Ok((r#ref, transport)),
         _ => Err(WispError::usage("expected PushRef")),
     }
 }
@@ -82,6 +95,7 @@ pub fn client_hello_frames(repo_id: &str, r#ref: &str) -> Vec<String> {
         repo_id: repo_id.to_string(),
         protocol_version: crate::PROTOCOL_VERSION,
         trusted: true,
+        transport: default_hello_transport(),
     };
     let push = Message::PushRef {
         r#ref: r#ref.to_string(),

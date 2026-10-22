@@ -395,6 +395,19 @@ impl Repository {
         self.hots.clear();
     }
 
+    /// Drop this handle without running `Drop` on the caller's slot, so cold-tier files under
+    /// `.wisp/` (e.g. `ledger.db`) can be replaced. The caller must assign a new
+    /// [`Repository`] before using the reference again (see `wisp_sync::pack::apply_pack_bytes`).
+    pub fn relinquish_for_cold_overwrite(repo: &mut Repository) -> (PathBuf, PathBuf) {
+        repo.close_all_hots();
+        let root = repo.root.clone();
+        let wisp_dir = repo.wisp_dir.clone();
+        unsafe {
+            std::ptr::drop_in_place(repo as *mut Repository);
+        }
+        (root, wisp_dir)
+    }
+
     pub fn head(&self, ref_name: &str) -> Result<Option<ChangesetId>> {
         Ledger::head(self.ledger.conn(), ref_name)
     }

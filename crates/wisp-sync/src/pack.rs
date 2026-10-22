@@ -31,17 +31,19 @@ pub fn write_cold_pack(repo: &Repository, dest: &Path) -> Result<()> {
                 .map_err(|e| WispError::internal(e.to_string()))?;
         }
     }
-    tar.finish()
+    let enc = tar
+        .into_inner()
+        .map_err(|e| WispError::internal(e.to_string()))?;
+    enc.finish()
         .map_err(|e| WispError::internal(e.to_string()))?;
     Ok(())
 }
 
-pub fn read_cold_pack(repo: &mut Repository, pack: &Path) -> Result<()> {
+pub fn read_cold_pack_into(wisp_dir: &Path, pack: &Path) -> Result<()> {
     let file = File::open(pack)?;
     let dec = Decoder::new(file)?;
     let mut archive = Archive::new(dec);
-    let wisp_dir = repo.wisp_dir.clone();
-    let extract_root = wisp_dir.clone();
+    let extract_root = wisp_dir;
     for entry in archive
         .entries()
         .map_err(|e| WispError::internal(e.to_string()))?
@@ -60,7 +62,7 @@ pub fn read_cold_pack(repo: &mut Repository, pack: &Path) -> Result<()> {
         if !pack_includes_keys() && rel.starts_with("keys") {
             continue;
         }
-        let out = safe_wisp_path(&extract_root, rel)?;
+        let out = safe_wisp_path(extract_root, rel)?;
         if let Some(parent) = out.parent() {
             std::fs::create_dir_all(parent)?;
         }
@@ -101,9 +103,19 @@ pub fn pack_bytes(repo: &Repository) -> Result<Vec<u8>> {
 pub fn apply_pack_bytes(repo: &mut Repository, bytes: &[u8], unlock: &Unlock) -> Result<()> {
     let tmp = tempfile::NamedTempFile::new()?;
     tmp.as_file().write_all(bytes)?;
-    read_cold_pack(repo, tmp.path())?;
-    let root = repo.root.clone();
-    *repo = Repository::open(&root, unlock)?;
+    let pack = tmp.path();
+    let (root, wisp_dir) = Repository::relinquish_for_cold_overwrite(repo);
+    if let Err(e) = read_cold_pack_into(&wisp_dir, pack) {
+        let opened = Repository::open(&root, unlock)?;
+        unsafe {
+            std::ptr::write(repo, opened);
+        }
+        return Err(e);
+    }
+    let opened = Repository::open(&root, unlock)?;
+    unsafe {
+        std::ptr::write(repo, opened);
+    }
     Ok(())
 }
 
@@ -150,6 +162,36 @@ mod tests {
         std::fs::create_dir_all(&wisp).unwrap();
         assert!(safe_wisp_path(&wisp, Path::new("../ledger.db")).is_err());
         assert!(safe_wisp_path(&wisp, Path::new("payloads/ab/x")).is_ok());
+    }
+
+    #[test]
+    fn pack_bytes_apply_roundtrip() {
+        std::env::remove_var("WISP_PACK_INCLUDE_KEYS");
+        std::env::remove_var("WISP_MASTER_KEY");
+        let dir = tempfile::tempdir().unwrap();
+        let a_root = dir.path().join("a");
+        let c_root = dir.path().join("c");
+        std::fs::create_dir_all(&a_root).unwrap();
+        std::fs::write(
+            a_root.join("doc.md"),
+            "---\ntype: Note\ntitle: P\n---\n\n## One\n\nx\n",
+        )
+        .unwrap();
+        let mut a = Repository::init(&a_root, "0.2", &Unlock::default()).unwrap();
+        wisp_engine::record::record(
+            &mut a,
+            &wisp_engine::record::RecordOptions {
+                actor: Some("human:t".into()),
+                message: Some("r".into()),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        drop(a);
+        let a = Repository::open(&a_root, &Unlock::default()).unwrap();
+        let body = pack_bytes(&a).unwrap();
+        let mut c = Repository::init(&c_root, "0.2", &Unlock::default()).unwrap();
+        apply_pack_bytes(&mut c, &body, &Unlock::default()).unwrap();
     }
 
     #[test]

@@ -25,6 +25,17 @@ Erasure is **scoped** (section, concept, asset, actor, group). It does not revok
 
 **Production:** terminate **TLS** in front (reverse proxy); do not expose dumb HTTP pack endpoints on untrusted networks. See [README.md](../README.md) M8 row.
 
+## Stdio cold pack (`stdio://` remotes, `wisp push` / `wisp pull`)
+
+| Property | Implication |
+|----------|-------------|
+| Remote URL is a **shell command** | `wisp push` / `wisp pull` run it with the **caller’s OS user** (via `sh -c` / `cmd /C`). |
+| Manifest `remotes[].url` | Treat like executable config: anyone who can edit the bundle can point a named remote at arbitrary commands. |
+| Channel security | SSH/TLS must come from the command you choose (e.g. `ssh host wisp serve --stdio`); the JSON-lines protocol does not authenticate the peer by itself. |
+| Failed exchange | A protocol error does not prove the remote replica was unchanged; the subprocess is terminated on failure but remote side effects depend on how far `serve --stdio` got. |
+
+Prefer one-off `stdio://…` URLs for ad hoc sync; use **trusted** remotes only for fixed infrastructure you control.
+
 ## Git interop
 
 `import --git` / `export --git` are **interop tools**, not a guarantee that arbitrary Git merges preserve OKF section anchors. Editing markdown outside wisp then re-importing uses **heuristic** section matching (`DECISIONS.md` §7.5). See [docs/MERGE.md](MERGE.md) (ref merge vs record-time matching).

@@ -78,7 +78,7 @@ fn cold_pack_pull_result(
     })
 }
 
-/// Server: Ack, send ColdPack from this repo, Done.
+/// Server: Ack, send this repo's cold pack, Done (after `cold_pack_pull` handshake).
 pub fn serve_pull_cold_pack(
     repo: &Repository,
     ref_name: &str,

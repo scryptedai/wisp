@@ -3,7 +3,7 @@
 use crate::stdio::{client_pull_cold_pack, client_push_cold_pack};
 use serde_json::{json, Value};
 use std::io::{BufReader, BufWriter, Write};
-use std::process::{ChildStdin, ChildStdout, Command, Stdio};
+use std::process::{Child, ChildStdin, ChildStdout, Command, Stdio};
 use wisp_engine::repo::{Repository, Unlock};
 use wisp_model::*;
 
@@ -28,6 +28,7 @@ pub fn stdio_push(local: &Repository, ref_name: &str, remote: &StdioRemote) -> R
     }))
 }
 
+/// Pull a cold pack from `remote.shell` (subprocess running `wisp serve --stdio`).
 pub fn stdio_pull(
     local: &mut Repository,
     ref_name: &str,
@@ -66,10 +67,22 @@ fn stdio_session<R>(
         .ok_or_else(|| WispError::internal("stdio sync: child stdout"))?;
     let mut input = BufReader::new(stdout);
     let mut output = BufWriter::new(stdin);
-    let result = run(&mut input, &mut output)?;
-    output
-        .flush()
-        .map_err(|e| WispError::internal(e.to_string()))?;
+    let exchange = run(&mut input, &mut output);
+    let flush_err = output.flush();
+    drop(output);
+    drop(input);
+
+    if let Err(e) = flush_err {
+        terminate_child(&mut child);
+        return Err(WispError::internal(e.to_string()));
+    }
+    let result = match exchange {
+        Err(e) => {
+            terminate_child(&mut child);
+            return Err(e);
+        }
+        Ok(r) => r,
+    };
     let status = child
         .wait()
         .map_err(|e| WispError::internal(format!("stdio sync wait: {e}")))?;
@@ -79,6 +92,12 @@ fn stdio_session<R>(
         )));
     }
     Ok(result)
+}
+
+/// Stop and reap the shell child after a failed protocol exchange (pipes are already closed).
+fn terminate_child(child: &mut Child) {
+    let _ = child.kill();
+    let _ = child.wait();
 }
 
 fn spawn_shell(shell: &str) -> Result<Command> {

@@ -928,14 +928,21 @@ pub fn run(cli: Cli) -> CliResult {
             archive,
             html,
             no_content,
+            since,
+            ids_only,
+            sign,
+            verify,
             profile,
             r#ref,
             strip_anchors,
         } => {
+            if let Some(dir) = verify {
+                return Ok(Output::json(wisp_engine::html_export::verify_html_export(&dir)?));
+            }
             let kinds = [git.is_some(), archive.is_some(), html.is_some()];
             if kinds.iter().filter(|&x| *x).count() != 1 {
                 return Err(WispError::usage(
-                    "export: specify exactly one of --git <dir>, --archive <file>, --html <dir>",
+                    "export: specify exactly one of --git <dir>, --archive <file>, --html <dir>, or --verify <dir>",
                 ));
             }
             let mut repo = open(&cli)?;
@@ -955,8 +962,15 @@ pub fn run(cli: Cli) -> CliResult {
                 )?));
             }
             let dir = html.as_ref().expect("checked above");
-            let data =
-                wisp_engine::html_export::export_html(&mut repo, &ref_name, dir, !*no_content)?;
+            let opts = wisp_html::HtmlExportOptions {
+                content: !*no_content,
+                since: since.clone(),
+                ids_only: *ids_only,
+                graph_depth: wisp_html::DEFAULT_GRAPH_DEPTH,
+                graph_max_nodes: wisp_html::DEFAULT_GRAPH_MAX_NODES,
+                sign: *sign,
+            };
+            let data = wisp_engine::html_export::export_html(&mut repo, &ref_name, dir, opts)?;
             let human = format!(
                 "HTML export written to {}\nWarning: {}",
                 data["dir"].as_str().unwrap_or(""),

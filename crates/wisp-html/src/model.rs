@@ -3,8 +3,8 @@ use serde::{Deserialize, Serialize};
 pub const PLAINTEXT_NOTICE: &str =
     "This export is a plaintext copy. Later wisp erasures cannot remove content from this folder or copies of it.";
 
-pub const SCHEMA_VERSION: &str = "wisp-html-export/1";
-pub const RENDERER_VERSION: &str = "0.1.0";
+pub const SCHEMA_VERSION: &str = "wisp-html-export/3";
+pub const RENDERER_VERSION: &str = "0.3.0";
 pub const MAX_SECTION_VERSIONS: usize = 20;
 pub const MAX_INPUTS_PER_VERSION: usize = 12;
 
@@ -13,9 +13,60 @@ pub struct SiteModel {
     pub ref_name: String,
     pub head: Option<String>,
     pub content: bool,
+    pub ids_only: bool,
+    pub since: Option<String>,
     pub overview: Overview,
     pub concepts: Vec<ConceptPage>,
     pub sections: Vec<SectionPage>,
+    pub section_pages: Vec<SectionPage>,
+    pub activity: Vec<ActivityRow>,
+    pub actors: Vec<ActorIndexRow>,
+    pub merges: Vec<MergeIndexRow>,
+    pub removals: Vec<RemovalIndexRow>,
+    pub graphs: Vec<ProvenanceGraph>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct ActivityRow {
+    pub changeset_id: String,
+    pub change_id: String,
+    pub at: String,
+    pub actor: String,
+    pub op: String,
+    pub target: String,
+    pub concept_id: Option<String>,
+    pub section_id: Option<String>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct ActorIndexRow {
+    pub actor_id: String,
+    pub display: String,
+    pub changeset_count: usize,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct MergeIndexRow {
+    pub merge_changeset_id: String,
+    pub at: String,
+    pub actor: String,
+    pub skipped_changes: Vec<String>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct RemovalIndexRow {
+    pub kind: String,
+    pub target: String,
+    pub reason: Option<String>,
+    pub at: Option<String>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct ProvenanceGraph {
+    pub section_id: String,
+    pub version_id: String,
+    pub svg: String,
+    pub truncated: bool,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -77,6 +128,8 @@ pub struct SectionPage {
     pub versions: Vec<SectionVersion>,
     pub total_versions: usize,
     pub versions_truncated: bool,
+    pub page: u32,
+    pub page_count: u32,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -91,6 +144,7 @@ pub struct SectionVersion {
     pub not_kept_at_merge: Vec<String>,
     pub body: Option<String>,
     pub diff_vs_predecessor: Option<String>,
+    pub word_diff_vs_predecessor: Option<String>,
     pub diff_missing_baseline: bool,
 }
 

@@ -18,7 +18,7 @@ open /tmp/wisp-site-demo/index.html
 
 ## Five-viewer smoke (60s)
 
-Open `index.html`, then a **section** page from `notes/webhook-setup`. Each viewer should answer within one minute:
+Open `index.html`, then the **webhook-setup** concept page and a section (fragment `#…` or scroll). Each viewer should answer within one minute:
 
 1. Who authored the current version? (actor line)
 2. What input did they declare? (inputs list / pin state)

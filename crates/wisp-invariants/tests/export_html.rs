@@ -10,7 +10,8 @@ use std::fs;
 use std::path::Path;
 use walkdir::WalkDir;
 use wisp_engine::erase::{erase, EraseTarget};
-use wisp_engine::html_export::export_html;
+use wisp_engine::html_export::{export_html, verify_html_export};
+use wisp_html::HtmlExportOptions;
 use wisp_engine::merge::merge_refs;
 use wisp_engine::query::{branch, fsck};
 use wisp_engine::repo::{Repository, MAIN_REF};
@@ -43,7 +44,7 @@ fn site_text(root: &Path) -> String {
 fn export_html_impact_demo() {
     let (dir, mut repo) = demo_repo();
     let out = dir.path().join("site");
-    let v = export_html(&mut repo, "main", &out, true).unwrap();
+    let v = export_html(&mut repo, "main", &out, HtmlExportOptions::full(true)).unwrap();
     assert_eq!(v["kind"], "html");
     assert!(out.join("index.html").is_file());
     assert!(out.join("manifest.json").is_file());
@@ -56,7 +57,7 @@ fn export_html_impact_demo() {
     if std::env::var_os("WRITE_HTML_DEMO").is_some() {
         let demo = Path::new("/tmp/wisp-site-demo");
         let _ = fs::remove_dir_all(demo);
-        export_html(&mut repo, "main", demo, true).unwrap();
+        export_html(&mut repo, "main", demo, HtmlExportOptions::full(true)).unwrap();
         eprintln!("HTML demo: {}", demo.join("index.html").display());
     }
 }
@@ -65,14 +66,20 @@ fn export_html_impact_demo() {
 fn export_html_no_content() {
     let (dir, mut repo) = demo_repo();
     let out = dir.path().join("site-meta");
-    export_html(&mut repo, "main", &out, false).unwrap();
-    let section = fs::read_dir(out.join("sections"))
+    export_html(&mut repo, "main", &out, HtmlExportOptions::full(false)).unwrap();
+    let concept = fs::read_dir(out.join("concepts"))
         .unwrap()
-        .next()
-        .expect("section page")
-        .expect("section dir entry");
-    let html = fs::read_to_string(section.path()).unwrap();
-    assert!(!html.contains("<pre class=\"body\">"));
+        .find_map(|e| {
+            let e = e.unwrap();
+            if e.path().extension().is_some_and(|x| x == "html") {
+                Some(e.path())
+            } else {
+                None
+            }
+        })
+        .expect("concept page");
+    let html = fs::read_to_string(concept).unwrap();
+    assert!(!html.contains("class=\"wisp-body\""));
     assert!(!html.contains("<pre class=\"diff\">"));
     let all = site_text(&out);
     assert!(!all.contains("HMAC signature"));
@@ -83,14 +90,14 @@ fn export_html_refuses_existing_dir() {
     let (dir, mut repo) = demo_repo();
     let out = dir.path().join("site");
     fs::create_dir(&out).unwrap();
-    assert!(export_html(&mut repo, "main", &out, true).is_err());
+    assert!(export_html(&mut repo, "main", &out, HtmlExportOptions::full(true)).is_err());
 }
 
 #[test]
 fn export_html_refuses_inside_bundle() {
     let (dir, mut repo) = demo_repo();
     let out = dir.path().join("bundle").join("exported");
-    assert!(export_html(&mut repo, "main", &out, true).is_err());
+    assert!(export_html(&mut repo, "main", &out, HtmlExportOptions::full(true)).is_err());
 }
 
 #[test]
@@ -110,7 +117,7 @@ fn export_html_erasure_canary_absent() {
     )
     .unwrap();
     let out = dir.path().join("export-site");
-    export_html(&mut repo, "main", &out, true).unwrap();
+    export_html(&mut repo, "main", &out, HtmlExportOptions::full(true)).unwrap();
     assert!(site_text(&out).contains(NEEDLE));
 
     let (sid, _) = section(&mut repo, "main", WEBHOOK, "Setup");
@@ -126,7 +133,7 @@ fn export_html_erasure_canary_absent() {
     .unwrap();
 
     let out2 = dir.path().join("export-site-2");
-    export_html(&mut repo, "main", &out2, true).unwrap();
+    export_html(&mut repo, "main", &out2, HtmlExportOptions::full(true)).unwrap();
     assert!(
         !site_text(&out2).contains(NEEDLE),
         "erased section body must not appear in any export byte"
@@ -178,12 +185,51 @@ fn export_html_merge_skip_marker() {
     merge_refs(&mut repo, branch_name, MAIN_REF, Some(&res_path), false).unwrap();
 
     let out = dir.path().join("html-export");
-    export_html(&mut repo, MAIN_REF, &out, true).unwrap();
+    export_html(&mut repo, MAIN_REF, &out, HtmlExportOptions::full(true)).unwrap();
     let all = site_text(&out);
     assert!(
         all.contains("Not kept at merge"),
         "merge replay skip must appear in section history pages"
     );
+}
+
+#[test]
+fn export_html_semantic_sections() {
+    let (dir, mut repo) = demo_repo();
+    let out = dir.path().join("site-semantic");
+    export_html(&mut repo, "main", &out, HtmlExportOptions::full(true)).unwrap();
+    assert!(
+        !out.join("sections").exists(),
+        "per-section HTML files removed; content lives on concept pages"
+    );
+    let concept = fs::read_dir(out.join("concepts"))
+        .unwrap()
+        .find_map(|e| {
+            let e = e.unwrap();
+            if e.path().extension().is_some_and(|x| x == "html") {
+                Some(fs::read_to_string(e.path()).unwrap())
+            } else {
+                None
+            }
+        })
+        .expect("concept html");
+    assert!(concept.contains("class=\"wisp-section\""));
+    assert!(concept.contains("class=\"wisp-revision"));
+    assert!(
+        !concept.contains("<code>01"),
+        "opaque ids should not be shown as visible code spans on concept pages"
+    );
+}
+
+#[test]
+fn export_html_verify_and_indexes() {
+    let (dir, mut repo) = demo_repo();
+    let out = dir.path().join("site-verify");
+    export_html(&mut repo, "main", &out, HtmlExportOptions::full(true)).unwrap();
+    assert!(out.join("indexes/activity.html").is_file());
+    assert!(out.join("indexes/merges.html").is_file());
+    let v = verify_html_export(&out).unwrap();
+    assert_eq!(v["ok"], true);
 }
 
 #[test]

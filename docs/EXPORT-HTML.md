@@ -1,6 +1,6 @@
-# HTML export (`wisp export --html`) — Part 1 (shipped)
+# HTML export (`wisp export --html`)
 
-**Status:** Part 1 implemented in Community Release 0.1.x; Part 2 is reference only until scope and estimate are re-approved.
+**Status:** Part 1 + Part 2 implemented on `feature/export-html` (overview/concept/section pages, indexes, pagination, word diffs, provenance SVG, `--since` / `--ids-only` / `--sign`, `export --verify`).
 
 **Source:** Andy's *wisp export --html* design (Oct 2026), adapted to `main` after **impact** (#13): pinned inputs, `snapshot.rs`, ledger merge replay skips, `exports` table.
 
@@ -26,7 +26,8 @@
 ## CLI (Part 1)
 
 ```sh
-wisp export --html <new-dir> [--ref <name>] [--no-content] [--json]
+wisp export --html <new-dir> [--ref <name>] [--no-content] [--since <changeset>] [--ids-only] [--sign] [--json]
+wisp export --verify <existing-html-dir> [--json]
 ```
 
 - Third export kind, **mutually exclusive** with `--git` and `--archive` (unchanged).
@@ -44,28 +45,28 @@ wisp export --html <new-dir> [--ref <name>] [--no-content] [--json]
 
 ---
 
-## Site layout (Part 1)
+## Site layout
 
 ```
 site/
   index.html
-  concepts/<ConceptId>.html
-  sections/<SectionId>.html
+  concepts/<ConceptId>.html   # nested <section id="…"> + revision history
+  indexes/{activity,actors,merges,removals}.html
   assets/site.css
   manifest.json
   export-receipt.json
   README.txt
 ```
 
-- Filenames = validated opaque IDs only (never user paths or titles).
-- No copied bundle assets, remote scripts, or client JS in Part 1.
-- Works offline; semantic HTML; system fonts; keyboard focus visible.
+- Concept page filenames = validated opaque concept ids only (never user paths or titles).
+- Section ids and change ids live in HTML `id` / `data-*` attributes (not shown as visible monospace in the mainline view).
+- Works offline; semantic HTML; keyboard focus visible; optional inline script on index tables only.
 
 **Pages**
 
-1. **Overview** — ref, head, live concepts/sections, removal markers, one demo route (use **`impact-demo`** corpus narrative or a thin `export-demo` spin-off).
-2. **Concept** — current markdown + frontmatter; section links; deprecation/retraction/erasure badges per store rules.
-3. **Section** — selected version metadata; ≤12 direct inputs (pinned / unversioned / unresolved / erased / retracted / none); ≤20 versions newest-first with **line diff** vs **replay-visible predecessor** (`similar` or equivalent); `"Not kept at merge <ChangesetId>"` from ledger replay only; older versions count + limit notice; bodies in `<details>` when content on.
+1. **Overview** — ref, head, concept list, erasure/retraction markers, index links.
+2. **Concept** — one page per concept: `<section id="{SectionId}">` per OKF section, current revision prominent, older revisions under `<details>`, diffs collapsed in `<details>`.
+3. **Indexes** — activity (filterable), actors, merges (links to `#rev-{ChangeId}` on concept pages), removals.
 
 **Do not use** `query::why` for export collection (wrong ref closure, `at` pin, concept-level dedup). Use a dedicated collector.
 

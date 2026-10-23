@@ -340,6 +340,14 @@ pub enum Command {
         #[arg(long)]
         no_content: bool,
         #[arg(long)]
+        since: Option<String>,
+        #[arg(long)]
+        ids_only: bool,
+        #[arg(long)]
+        sign: bool,
+        #[arg(long)]
+        verify: Option<PathBuf>,
+        #[arg(long)]
         profile: Option<String>,
         #[arg(long)]
         r#ref: Option<String>,

@@ -8,7 +8,7 @@ pub use hot::{
     AssetState, ConceptState, FrontmatterState, Hot, HotMeta, SearchHit, SectionState, SourceState,
     DEFAULT_CHAR_TRIGRAM_MIN, STANDALONE_CHAR_TRIGRAM_MIN,
 };
-pub use ledger::{ActorRow, ChangesetRow, Ledger, ScopeRow, Tombstone};
+pub use ledger::{ActorRow, ChangesetRow, ExportRow, Ledger, ScopeRow, Tombstone};
 pub use ri::{RI_DIM, RI_MIN_COSINE, RI_STANDALONE_MIN_COSINE};
 
 use wisp_model::WispError;

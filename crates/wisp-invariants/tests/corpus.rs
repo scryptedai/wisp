@@ -235,6 +235,7 @@ fn corpus_policy_attested_computation_denies_process() {
         note: None,
         split_from: None,
         merged_from: None,
+        ..Default::default()
     };
     let err = wisp_engine::headless::single(
         &mut repo,

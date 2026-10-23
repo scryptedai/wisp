@@ -131,6 +131,7 @@ fn stress_many_disjoint_writers() {
                         note: None,
                         split_from: None,
                         merged_from: None,
+                        ..Default::default()
                     };
                     let r =
                         single_with_retry(&mut repo, &format!("process:stress-{w}"), op).unwrap();

@@ -68,7 +68,23 @@ pub fn retract(
     req.ops = vec![op];
     let out = commit(repo, req)?;
     rewrite_tree_if_main(repo, ref_name)?;
-    Ok(json!({ "changeset": out.changeset.to_string(), "retracted": c.path }))
+    // Recorded direct dependents on this ref, read-only (the same list shape as erase's `flagged`).
+    let impact = crate::impact::impact(repo, ref_name, &c.concept.to_string(), 1)?;
+    let mut flagged: Vec<String> = impact["results"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|r| r["concept_id"].as_str().map(|s| s.to_string()))
+        .collect();
+    flagged.sort();
+    flagged.dedup();
+    Ok(json!({
+        "changeset": out.changeset.to_string(),
+        "retracted": c.path,
+        "concept": c.concept.to_string(),
+        "flagged": flagged,
+        "flagged_truncated": impact["truncated"],
+    }))
 }
 
 pub fn restore(repo: &mut Repository, ref_name: &str, path: &str, actor: &str) -> Result<Value> {
@@ -305,51 +321,9 @@ pub fn resolve_scopes(
     Ok((scopes.into_iter().collect(), tgt, covers))
 }
 
-/// Dependents: concepts whose changes list inputs from the erased concepts or sections.
-fn flagged_dependents(repo: &Repository, scopes: &[ScopeId]) -> Result<Vec<ConceptId>> {
-    let mut erased_concepts: BTreeSet<ConceptId> = BTreeSet::new();
-    let mut erased_sections: BTreeSet<SectionId> = BTreeSet::new();
-    for s in scopes {
-        if let Some(row) = Ledger::scope(repo.ledger.conn(), *s)? {
-            match row.kind {
-                ScopeKind::Concept { concept } => {
-                    erased_concepts.insert(concept);
-                }
-                ScopeKind::Section { section, .. } => {
-                    erased_sections.insert(section);
-                }
-                _ => {}
-            }
-        }
-    }
-    let mut out: BTreeSet<ConceptId> = BTreeSet::new();
-    for (_, c) in Ledger::changes_all(repo.ledger.conn())? {
-        let Some(dep) = c.target.concept() else {
-            continue;
-        };
-        for i in &c.inputs {
-            match i {
-                InputRef::Concept {
-                    concept, section, ..
-                } => {
-                    if erased_concepts.contains(concept)
-                        || section
-                            .map(|s| erased_sections.contains(&s))
-                            .unwrap_or(false)
-                    {
-                        out.insert(dep);
-                    }
-                }
-                InputRef::Source { concept, .. } => {
-                    if erased_concepts.contains(concept) {
-                        out.insert(dep);
-                    }
-                }
-                _ => {}
-            }
-        }
-    }
-    Ok(out.into_iter().collect())
+/// Dependents of the erased scopes on every ref (erasure removes the key for every branch).
+fn erase_dependents(repo: &Repository, scopes: &[ScopeId]) -> Result<crate::impact::AllRefs> {
+    crate::impact::dependents_all_refs(repo, scopes, crate::impact::DEFAULT_DEPTH)
 }
 
 /// `wisp erase` (§10.5): commit, hot purge, cold shred, notify.
@@ -366,14 +340,18 @@ pub fn erase(
     if scopes.is_empty() {
         return Err(WispError::not_found("nothing to erase (already erased?)"));
     }
+    let dependents = erase_dependents(repo, &scopes)?;
     if !yes {
-        return Ok(
-            json!({ "dry_run": true, "would_erase": covers, "scopes": scopes.len(), "hint": "pass --yes to erase" }),
-        );
+        return Ok(json!({
+            "dry_run": true, "would_erase": covers, "scopes": scopes.len(), "hint": "pass --yes to erase",
+            "flagged": dependents.concepts.iter().map(|c| c.to_string()).collect::<Vec<_>>(),
+            "dependents_by_ref": dependents.by_ref,
+            "dependents_truncated": dependents.truncated,
+        }));
     }
     preflight_managed_worktrees_for_erase(repo, discard_unrecorded)?;
     let markers = markers_for_scopes_on_ref(repo, ref_name, &scopes)?;
-    let flagged = flagged_dependents(repo, &scopes)?;
+    let flagged = dependents.concepts.clone();
     let affected_paths: Vec<String> = covers
         .iter()
         .filter_map(|c| {
@@ -430,6 +408,8 @@ pub fn erase(
         "erased": covers,
         "scopes": scopes.iter().map(|s| s.to_string()).collect::<Vec<_>>(),
         "flagged": flagged.iter().map(|c| c.to_string()).collect::<Vec<_>>(),
+        "dependents_by_ref": dependents.by_ref,
+        "dependents_truncated": dependents.truncated,
         "pending_subscribers": pending,
     });
     if let Target::Actor { .. } = tgt {
@@ -652,7 +632,7 @@ pub fn finish_erase_bookkeeping(repo: &mut Repository) -> Result<()> {
             _ => continue,
         };
         let reason = change.reason.unwrap_or(Reason::Other);
-        let flagged = flagged_dependents(repo, &scopes)?;
+        let flagged = erase_dependents(repo, &scopes)?.concepts;
         let markers = markers_for_scopes_any_hot(repo, &scopes)?;
         apply_erase_bookkeeping(
             repo,

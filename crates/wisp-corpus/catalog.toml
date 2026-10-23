@@ -92,6 +92,15 @@ record = true
 lossless_strip = false
 
 [[bundle]]
+id = "impact-demo"
+path = "bundles/impact-demo"
+profile = "0.2"
+description = "Withdrawn payments doc: direct, two-step, replaced, independent, and untracked notes for wisp impact"
+invariants = ["I8"]
+record = true
+lossless_strip = true
+
+[[bundle]]
 id = "adversarial-lossless"
 path = "bundles/adversarial-lossless"
 profile = "0.2"

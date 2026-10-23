@@ -51,9 +51,14 @@ pub struct WriteFlags {
     /// Require the ref head to be unchanged (fully serial commit)
     #[arg(long)]
     pub assert_head: Option<String>,
-    /// Derivation input: <path>[#section] (repeatable)
+    /// Derivation input: <path>[#section[@changeset]] (repeatable). Pin the snapshot you read
+    /// (`head` from `wisp cat --json`); an unpinned input is recorded without a version.
     #[arg(long = "input")]
     pub inputs: Vec<String>,
+    /// The --input list is the complete dependency set of this change: the new version does not
+    /// inherit the previous version's dependencies (also valid with no --input: "derived from nothing")
+    #[arg(long)]
+    pub inputs_complete: bool,
     /// Encrypted reason text
     #[arg(long)]
     pub note: Option<String>,
@@ -157,6 +162,17 @@ pub enum Command {
         target: String,
         #[arg(long, default_value_t = 1)]
         depth: usize,
+        #[arg(long)]
+        r#ref: Option<String>,
+    },
+    /// Recorded work that depends on a source (forward of `why`; historical mode, read-only)
+    Impact {
+        /// <path>[#section], or <concept-id>[#section] for an erased or removed source
+        target: String,
+        /// Dependency hops to follow from the source (inherited versions do not count)
+        #[arg(long, default_value_t = wisp_engine::impact::DEFAULT_DEPTH)]
+        depth: usize,
+        /// Ref whose history is searched (default: the ref checked out in the working tree)
         #[arg(long)]
         r#ref: Option<String>,
     },
@@ -612,6 +628,7 @@ impl Command {
             Command::Log { .. } => "log",
             Command::Show { .. } => "show",
             Command::Why { .. } => "why",
+            Command::Impact { .. } => "impact",
             Command::Cat { .. } => "cat",
             Command::Revert { .. } => "revert",
             Command::Mv { .. } => "mv",

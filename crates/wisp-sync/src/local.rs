@@ -145,6 +145,8 @@ struct TransferStats {
 }
 
 fn transfer_cold(src: &Repository, dst: &mut Repository) -> Result<TransferStats> {
+    // Records that need a newer format carry the format marker with them.
+    dst.require_format(src.manifest.repo.format)?;
     let src_conn = src.ledger.conn();
     let mut stats = TransferStats {
         changesets: 0,

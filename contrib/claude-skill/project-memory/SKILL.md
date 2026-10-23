@@ -20,15 +20,21 @@ This repository keeps its knowledge in an OKF bundle managed by `wisp` (one bina
 
 1. Get the base version of the section you will change:
    `wisp cat <path>#<section> --json` → `data.version`, `data.content`, `data.head`.
-2. Commit against that base. Name what you derived it from and say why:
+2. Commit against that base. Name what you derived it from, pinned to the `data.head` you read it at, and say why:
    ```
    wisp update <path>#<section> --base <version> \
         --content "<new text>" \
-        --input <observation-path>[#section] \
+        --input <observation-path>#<section>@<head> \
         -m "<why this changed>" --json
    ```
+   `--input` takes the snapshot (`data.head` from `wisp cat`), not the section's `data.version`. Repeat `--input` for every source you used. If you rewrote the section entirely from the inputs you list, add `--inputs-complete`; otherwise the new version keeps the dependencies of the one it replaced. A result with `warnings[].code == "no_declared_inputs"` means you declared nothing: fix it on your next write unless the content really is your own observation (then pass `--inputs-complete` with no `--input`).
    Use `wisp add-section <path> --after <section|^> --heading "<h>" --content "…"` for new sections and `wisp set <path> <key> '<json>' --base absent` for frontmatter.
 3. Edits to different sections never conflict, so do not serialize work with other agents.
+
+## When a source turns out to be wrong
+
+Find the recorded work that depends on it before you change anything:
+`wisp impact <path>[#section] --json` → `data.results[]`, each with `path`, `section_id`, `version`, `actor`, `at`, and `via` (the evidence chain back to the source). Review each result; do not repair automatically. `data.truncated: true` means raise `--depth`. An empty result says "No recorded dependents found within the selected scope." — it is not proof that nothing was affected, because inputs are only what writers declared. A retracted or erased source works too (use its concept id once erased).
 
 ## When the exit code is 3
 

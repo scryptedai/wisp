@@ -394,6 +394,11 @@ pub struct Change {
     pub origin: Option<Origin>,
     /// Reason code for retract/erase. Enum, never free text. (Additive to §5; see DECISIONS.md.)
     pub reason: Option<Reason>,
+    /// The writer declared `inputs` to be this change's complete dependency set (`--inputs-complete`),
+    /// so it does not inherit the previous version's dependencies. Omitted from the canonical
+    /// encoding when false, so records without it hash exactly as before. (Additive; DECISIONS.md.)
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub inputs_complete: bool,
 }
 
 /// Atomic group of changes; the DAG node (§5).

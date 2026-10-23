@@ -259,6 +259,7 @@ fn i16_i17_concurrent_headless_writers_disjoint_sections() {
                         note: None,
                         split_from: None,
                         merged_from: None,
+                        ..Default::default()
                     };
                     let r = crate::headless::single(
                         &mut repo,
@@ -310,6 +311,7 @@ fn i16_i17_concurrent_headless_writers_disjoint_sections() {
         note: None,
         split_from: None,
         merged_from: None,
+        ..Default::default()
     };
     let err = crate::headless::single(&mut repo, None, Some("process:late".into()), None, None, op)
         .unwrap_err();
@@ -344,6 +346,7 @@ fn i16_i17_concurrent_headless_writers_disjoint_sections() {
         note: None,
         split_from: None,
         merged_from: None,
+        ..Default::default()
     };
     crate::headless::single(
         &mut repo,
@@ -400,6 +403,7 @@ fn i19_headless_commit_preserves_unrecorded_edits() {
         note: None,
         split_from: None,
         merged_from: None,
+        ..Default::default()
     };
     crate::headless::single(&mut repo, None, Some("sl-bot/0.3".into()), None, None, op).unwrap();
     // The dirty file is untouched.
@@ -643,6 +647,7 @@ fn retract_restore_revert_and_policies() {
             note: None,
             split_from: None,
             merged_from: None,
+            ..Default::default()
         },
     )
     .unwrap();
@@ -668,6 +673,7 @@ fn retract_restore_revert_and_policies() {
             note: None,
             split_from: None,
             merged_from: None,
+            ..Default::default()
         },
     )
     .unwrap();

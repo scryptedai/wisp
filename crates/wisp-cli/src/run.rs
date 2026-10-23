@@ -107,18 +107,8 @@ fn batch_for(cli: &Cli, repo: &Repository, w: &WriteFlags, mut op: ApplyOp) -> R
     let inputs = w
         .inputs
         .iter()
-        .map(|i| {
-            let (p, s) = match i.split_once('#') {
-                Some((p, s)) => (p.to_string(), s.parse::<SectionId>().ok()),
-                None => (i.clone(), None),
-            };
-            wisp_engine::headless::ApplyInput {
-                concept: p,
-                section: s,
-                at: None,
-            }
-        })
-        .collect();
+        .map(|i| wisp_engine::headless::parse_input_spec(i))
+        .collect::<Result<Vec<_>>>()?;
     Ok(ApplyBatch {
         r#ref: Some(ref_of(repo, &w.r#ref)),
         base: None,
@@ -128,6 +118,7 @@ fn batch_for(cli: &Cli, repo: &Repository, w: &WriteFlags, mut op: ApplyOp) -> R
         inputs,
         assert: asserts,
         assert_head: w.assert_head.as_deref().map(parse_cs).transpose()?,
+        inputs_complete: w.inputs_complete,
     })
 }
 
@@ -148,6 +139,7 @@ fn empty_op(op: &str, path: &str) -> ApplyOp {
         note: None,
         split_from: None,
         merged_from: None,
+        ..Default::default()
     }
 }
 
@@ -156,6 +148,84 @@ fn split_target(target: &str) -> (String, Option<SectionId>) {
         Some((p, s)) => (p.to_string(), s.parse().ok()),
         None => (target.to_string(), None),
     }
+}
+
+fn impact_human(v: &Value) -> String {
+    // ULIDs share a time prefix, so truncated ids are ambiguous: print them whole.
+    let short = |x: &Value| -> String { x.as_str().unwrap_or("?").to_string() };
+    let item = |path: &Value, concept: &Value, section: &Value| -> String {
+        let base = match path.as_str() {
+            Some(p) => format!("{p}.md"),
+            None => format!("<{}>", concept.as_str().unwrap_or("?")),
+        };
+        match section.as_str() {
+            Some(s) => format!("{base}#{s}"),
+            None => base,
+        }
+    };
+    let src = &v["source"];
+    let mut out = format!(
+        "Impact of {} ({}) on {} @ {} — historical, depth ≤ {}{}\n",
+        item(&src["path"], &src["concept_id"], &src["section_id"]),
+        src["state"].as_str().unwrap_or("?"),
+        v["ref"].as_str().unwrap_or("?"),
+        short(&v["head"]),
+        v["depth_limit"],
+        if v["truncated"] == true {
+            " (truncated: dependencies beyond the depth limit were not explored)"
+        } else {
+            ""
+        }
+    );
+    let results = v["results"].as_array().cloned().unwrap_or_default();
+    if results.is_empty() {
+        out.push_str(v["message"].as_str().unwrap_or_default());
+        out.push('\n');
+    } else {
+        out.push_str(&format!(
+            "{}:\n",
+            plural(results.len(), "recorded dependent")
+        ));
+        for r in &results {
+            out.push_str(&format!(
+                "  {} @ {}  {}  {}  ({}, depth {}){}\n",
+                item(&r["path"], &r["concept_id"], &r["section_id"]),
+                short(&r["version"]),
+                r["actor"].as_str().unwrap_or("?"),
+                r["at"].as_str().unwrap_or("?"),
+                r["link"].as_str().unwrap_or("?"),
+                r["depth"],
+                if r["merge_skipped"] == true {
+                    "  [skipped by merge]"
+                } else {
+                    ""
+                }
+            ));
+            for hop in r["via"].as_array().into_iter().flatten().rev() {
+                let version = match hop["version"].as_str() {
+                    Some(_) => format!(" @ {}", short(&hop["version"])),
+                    None => String::new(),
+                };
+                let pin = match hop["snapshot"].as_str() {
+                    Some(_) => format!(" at {}", short(&hop["snapshot"])),
+                    None => String::new(),
+                };
+                out.push_str(&format!(
+                    "      ← {}{}  [{}{}]\n",
+                    item(&hop["path"], &hop["concept_id"], &hop["section_id"]),
+                    version,
+                    hop["link"].as_str().unwrap_or("?"),
+                    pin
+                ));
+            }
+        }
+    }
+    let untracked = v["untracked_content_changes"].as_u64().unwrap_or(0);
+    out.push_str(&format!(
+        "Recorded inputs are declared by writers and may be incomplete; {} on this ref declared none. Absence here is not evidence of independence.",
+        plural(untracked as usize, "section write")
+    ));
+    out
 }
 
 fn status_human(s: &wisp_engine::record::Status) -> String {
@@ -329,17 +399,13 @@ pub fn run(cli: Cli) -> CliResult {
         } => {
             let mut repo = open(&cli)?;
             let actor = actor_of(&cli, &repo);
-            let mut inputs = Vec::new();
             let ref_name = ref_of(&repo, &w.r#ref);
-            for i in &w.inputs {
-                let (p, s) = split_target(i);
-                let (c, _) = wisp_engine::erase::resolve_target(&mut repo, &ref_name, &p)?;
-                inputs.push(InputRef::Concept {
-                    concept: c.concept,
-                    section: s,
-                    at: None,
-                });
-            }
+            let specs = w
+                .inputs
+                .iter()
+                .map(|i| wisp_engine::headless::parse_input_spec(i))
+                .collect::<Result<Vec<_>>>()?;
+            let inputs = wisp_engine::headless::resolve_inputs(&mut repo, &ref_name, &specs)?;
             let origin = match origin {
                 Some(o) => {
                     let (a, at) = o
@@ -362,6 +428,7 @@ pub fn run(cli: Cli) -> CliResult {
                 reason: reason.as_deref().map(parse_reason).transpose()?,
                 note: w.note.clone(),
                 inputs,
+                inputs_complete: w.inputs_complete,
                 origin,
                 dry_run: *dry_run,
                 explain: *explain,
@@ -475,6 +542,17 @@ pub fn run(cli: Cli) -> CliResult {
             Ok(Output::json(query::why(
                 &mut repo, &ref_name, target, *depth,
             )?))
+        }
+        Command::Impact {
+            target,
+            depth,
+            r#ref,
+        } => {
+            let mut repo = open(&cli)?;
+            let ref_name = ref_of(&repo, r#ref);
+            let v = wisp_engine::impact::impact(&mut repo, &ref_name, target, *depth)?;
+            let human = impact_human(&v);
+            Ok(Output::text(v, human))
         }
         Command::Cat {
             target,

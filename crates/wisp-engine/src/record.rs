@@ -25,6 +25,8 @@ pub struct RecordOptions {
     pub reason: Option<Reason>,
     pub note: Option<String>,
     pub inputs: Vec<InputRef>,
+    /// `--inputs-complete`: `inputs` are the complete dependency set of each content change.
+    pub inputs_complete: bool,
     pub origin: Option<Origin>,
     pub dry_run: bool,
     pub explain: bool,
@@ -1198,9 +1200,14 @@ pub fn record(repo: &mut Repository, opts: &RecordOptions) -> Result<RecordResul
     req.base = p.base;
     req.message = opts.message.clone();
     req.inputs = opts.inputs.clone();
+    req.inputs_complete = opts.inputs_complete;
     req.ops = p.ops;
     let n_ops = req.ops.len();
     let out: CommitOutcome = crate::commit::commit(repo, req)?;
+    let mut warnings = warnings;
+    if let Some(w) = crate::headless::missing_inputs_warning(&actor, &out.changes) {
+        warnings.push(w);
+    }
     // Steps 10–11: rewrite the tree (anchors, wisp_id, managed keys, generated views) and record the index.
     let root = repo.root.clone();
     let _lock = checkout::WorktreeLock::acquire(&repo.wisp_dir)?;

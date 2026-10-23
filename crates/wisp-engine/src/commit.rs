@@ -66,6 +66,8 @@ pub struct PlannedOp {
     pub payload: Option<(PayloadKind, Vec<u8>)>,
     pub note: Option<String>,
     pub inputs: Vec<InputRef>,
+    /// `inputs` are the complete dependency set for this change (`--inputs-complete`).
+    pub inputs_complete: bool,
     pub lineage: Option<Lineage>,
     pub origin: Option<Origin>,
     pub reason: Option<Reason>,
@@ -85,6 +87,7 @@ impl PlannedOp {
             payload: None,
             note: None,
             inputs: vec![],
+            inputs_complete: false,
             lineage: None,
             origin: None,
             reason: None,
@@ -137,6 +140,8 @@ pub struct CommitRequest {
     pub assert_head: Option<ChangesetId>,
     /// Shared inputs applied to all content changes (`record --input`).
     pub inputs: Vec<InputRef>,
+    /// Shared `--inputs-complete` for the content changes that receive `inputs`.
+    pub inputs_complete: bool,
     pub skip_policy: bool,
 }
 
@@ -151,6 +156,7 @@ impl CommitRequest {
             asserts: vec![],
             assert_head: None,
             inputs: vec![],
+            inputs_complete: false,
             skip_policy: false,
         }
     }
@@ -359,6 +365,14 @@ fn validate_one(conn: &Connection, i: usize, p: &PlannedOp) -> Result<Option<Raw
 pub fn commit(repo: &mut Repository, req: CommitRequest) -> Result<CommitOutcome> {
     if req.ops.is_empty() {
         return Err(WispError::usage("nothing to commit"));
+    }
+    // The first change that records `inputs_complete` marks the repository's format first.
+    if req
+        .ops
+        .iter()
+        .any(|p| p.inputs_complete || (req.inputs_complete && p.op.is_content_change()))
+    {
+        repo.require_format(crate::manifest::FORMAT_INPUTS_COMPLETE)?;
     }
     // 1. Actor.
     let (actor_id, actor_kind, new_actor) = resolve_actor(repo, &req.actor)?;
@@ -595,6 +609,7 @@ fn try_commit_inner(
             lineage: None,
             origin: None,
             reason: None,
+            inputs_complete: false,
         });
         ordinal += 1;
     }
@@ -621,6 +636,8 @@ fn try_commit_inner(
             lineage: p.planned.lineage.clone(),
             origin: p.planned.origin.clone(),
             reason: p.planned.reason,
+            inputs_complete: p.planned.inputs_complete
+                || (req.inputs_complete && p.planned.op.is_content_change()),
         });
         ordinal += 1;
     }
@@ -877,6 +894,7 @@ pub fn record_merge(
             lineage: None,
             origin: None,
             reason: None,
+            inputs_complete: false,
         });
     }
     let message = repo.prepare_payload(repo.repo_scope(), PayloadKind::Message, b"merge")?;

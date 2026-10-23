@@ -81,6 +81,7 @@ pub fn update_section_ref(
         note: None,
         split_from: None,
         merged_from: None,
+        ..Default::default()
     };
     apply(
         repo,
@@ -93,6 +94,7 @@ pub fn update_section_ref(
             inputs,
             assert: vec![],
             assert_head: None,
+            inputs_complete: false,
         },
         None,
     )

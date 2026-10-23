@@ -926,30 +926,44 @@ pub fn run(cli: Cli) -> CliResult {
         Command::Export {
             git,
             archive,
+            html,
+            no_content,
             profile,
             r#ref,
             strip_anchors,
-        } => match (git, archive) {
-            (Some(dir), _) => {
-                let mut repo = open(&cli)?;
-                let ref_name = ref_of(&repo, r#ref);
-                Ok(Output::json(wisp_git::export_git(
-                    &mut repo, &ref_name, dir,
-                )?))
+        } => {
+            let kinds = [git.is_some(), archive.is_some(), html.is_some()];
+            if kinds.iter().filter(|&x| *x).count() != 1 {
+                return Err(WispError::usage(
+                    "export: specify exactly one of --git <dir>, --archive <file>, --html <dir>",
+                ));
             }
-            (None, Some(file)) => {
-                let mut repo = open(&cli)?;
-                let ref_name = ref_of(&repo, r#ref);
-                Ok(Output::json(wisp_git::export_archive(
+            let mut repo = open(&cli)?;
+            let ref_name = ref_of(&repo, r#ref);
+            if let Some(dir) = git {
+                return Ok(Output::json(wisp_git::export_git(
+                    &mut repo, &ref_name, dir,
+                )?));
+            }
+            if let Some(file) = archive {
+                return Ok(Output::json(wisp_git::export_archive(
                     &mut repo,
                     &ref_name,
                     file,
                     profile.as_deref(),
                     *strip_anchors,
-                )?))
+                )?));
             }
-            (None, None) => Err(WispError::usage("export --git <dir> | --archive <file>")),
-        },
+            let dir = html.as_ref().expect("checked above");
+            let data =
+                wisp_engine::html_export::export_html(&mut repo, &ref_name, dir, !*no_content)?;
+            let human = format!(
+                "HTML export written to {}\nWarning: {}",
+                data["dir"].as_str().unwrap_or(""),
+                wisp_html::PLAINTEXT_NOTICE
+            );
+            Ok(Output::text(data, human))
+        }
         Command::Index { rebuild } => {
             let mut repo = open(&cli)?;
             let built = query::index(&mut repo, rebuild.as_deref())?;

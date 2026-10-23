@@ -1,0 +1,18 @@
+[package]
+name = "wisp-html"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+description = "Offline HTML export renderer for wisp site models"
+
+[dependencies]
+wisp-model.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+pulldown-cmark.workspace = true
+sha2.workspace = true
+hex.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true

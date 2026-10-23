@@ -1518,6 +1518,22 @@ impl Ledger {
             .map_err(sql_err)?;
         Ok(())
     }
+
+    /// Record a published export (`exports` table).
+    pub fn insert_export(
+        conn: &Connection,
+        id: PayloadId,
+        changeset: ChangesetId,
+        kind: &str,
+        at: &str,
+    ) -> Result<()> {
+        conn.execute(
+            "INSERT INTO exports (id, changeset, kind, at) VALUES (?1, ?2, ?3, ?4)",
+            params![id.bytes().to_vec(), changeset.bytes().to_vec(), kind, at,],
+        )
+        .map_err(sql_err)?;
+        Ok(())
+    }
 }
 
 fn payload_kind_from_str(s: &str) -> PayloadKind {

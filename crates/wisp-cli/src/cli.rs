@@ -329,12 +329,16 @@ pub enum Command {
         #[arg(long)]
         dry_run: bool,
     },
-    /// Export the view: --git <dir> or --archive <file>
+    /// Export the view: --git <dir>, --archive <file>, or --html <dir>
     Export {
         #[arg(long)]
         git: Option<PathBuf>,
         #[arg(long)]
         archive: Option<PathBuf>,
+        #[arg(long)]
+        html: Option<PathBuf>,
+        #[arg(long)]
+        no_content: bool,
         #[arg(long)]
         profile: Option<String>,
         #[arg(long)]

@@ -6,6 +6,7 @@ User-visible changes to the wisp Community Release. Spec deviations and their re
 
 ### Added
 
+- `wisp export --html <new-dir> [--ref <name>] [--no-content] [--json]`: static, offline HTML export (overview, concept, and section pages; bounded history with line diffs; merge-not-kept markers from ledger replay skips; plaintext-copy notice). See [docs/EXPORT-HTML.md](docs/EXPORT-HTML.md).
 - `wisp impact <path|concept-id>[#section] [--depth N] [--ref R]`: read-only, historical-mode forward tracing from a source to the recorded work that depends on it, with the evidence chain for each result. Works for retracted sources by path and for erased or removed sources by concept id.
 - `--input <path>#<section>@<changeset>` pins the snapshot an input was read at (`head` from `wisp cat --json`). Pins are validated.
 - `--inputs-complete` (and `inputs_complete` in `wisp apply` batches) declares that a change's inputs are its complete dependency set; otherwise a new section version inherits the dependencies of the version it replaced.

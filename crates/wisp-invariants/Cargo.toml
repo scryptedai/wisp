@@ -14,6 +14,7 @@ semantic = ["wisp-engine/semantic"]
 [dependencies]
 wisp-corpus = { workspace = true }
 wisp-engine = { workspace = true }
+wisp-html = { workspace = true }
 wisp-model = { workspace = true }
 wisp-parse = { workspace = true }
 wisp-match = { workspace = true }

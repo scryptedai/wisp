@@ -4129,6 +4129,7 @@ dependencies = [
  "wisp-engine",
  "wisp-feed",
  "wisp-git",
+ "wisp-html",
  "wisp-merge",
  "wisp-model",
  "wisp-store",
@@ -4180,6 +4181,7 @@ dependencies = [
  "toml",
  "walkdir",
  "wisp-crypto",
+ "wisp-html",
  "wisp-index",
  "wisp-match",
  "wisp-model",
@@ -4218,6 +4220,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "wisp-html"
+version = "0.1.0"
+dependencies = [
+ "hex",
+ "pulldown-cmark",
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
+ "tempfile",
+ "wisp-model",
+]
+
+[[package]]
 name = "wisp-index"
 version = "0.1.0"
 dependencies = [
@@ -4237,6 +4252,7 @@ dependencies = [
  "walkdir",
  "wisp-corpus",
  "wisp-engine",
+ "wisp-html",
  "wisp-match",
  "wisp-merge",
  "wisp-model",

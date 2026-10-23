@@ -117,7 +117,7 @@ The keystore unlocks from, in order: `WISP_MASTER_KEY` (64 hex chars; CI), `--pa
 | M5 Feed and search | feed, search (trigram/RI/semantic), pack, tokens (approx codec), external subscriber host done |
 | M6 Profiles and migration | okf-0.1 profile, 0.1→0.2 migration plan, down-export (`export --profile 0.1`) done |
 | M7 Concurrency and branches | headless writes, read assertions, branches, switch, worktrees, merge (fast-forward, disjoint replay, erase-wins, layered/nested replay, change-chain resolutions, `wisp mv` conflicts, `--resolutions`, `--abort`); merge replay skips durable in ledger — see `docs/MERGE.md`, `merge_playbook` + `merge_rules` |
-| M8 Sync, git interop, release | `file://` + HTTP cold pack (`wisp serve --http <addr>`, Bearer `WISP_HTTP_TOKEN` — [docs/TRUST-BOUNDARY.md](docs/TRUST-BOUNDARY.md)) + SSH/rsync, `export --archive` tar.zst, `import --git` / `export --git` ([docs/GIT-INTEROP.md](docs/GIT-INTEROP.md)), `serve --stdio` ColdPack or local path ([docs/EXTENSIONS.md](docs/EXTENSIONS.md)) |
+| M8 Sync, git interop, release | `file://` + HTTP cold pack (`wisp serve --http <addr>`, Bearer `WISP_HTTP_TOKEN` — [docs/TRUST-BOUNDARY.md](docs/TRUST-BOUNDARY.md)) + SSH/rsync, `export --archive` tar.zst, `import --git` / `export --git` ([docs/GIT-INTEROP.md](docs/GIT-INTEROP.md)), `serve --stdio` ColdPack or local path ([docs/EXTENSIONS.md](docs/EXTENSIONS.md)); **planned:** offline `export --html` — [docs/EXPORT-HTML.md](docs/EXPORT-HTML.md) |
 
 Agent desk demo (merge, erase, provenance): [`demo/desk/README.md`](demo/desk/README.md) · [`demo/README.md`](demo/README.md).
 

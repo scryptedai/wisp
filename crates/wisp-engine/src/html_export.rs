@@ -52,29 +52,15 @@ pub fn export_html(
     let since_cs = parse_since(opts.since.as_deref())?;
     let mut model = collect(&*repo, ref_name, &opts, since_cs)?;
     redact_site_model(&mut model);
-    let staging = tempfile::tempdir().map_err(|e| WispError::internal(e.to_string()))?;
+    let parent = dest
+        .parent()
+        .ok_or_else(|| WispError::usage("invalid export path"))?;
+    let staging = tempfile::tempdir_in(parent).map_err(|e| WispError::internal(e.to_string()))?;
     let summary = render_site(&model, staging.path())?;
 
-    recheck_export_view(repo, ref_name, head)?;
-
-    let tx = repo.ledger.begin_immediate()?;
     let export_id = PayloadId::new();
     let at = OffsetDateTime::now_utc()
         .format(&Rfc3339)
-        .map_err(|e| WispError::internal(e.to_string()))?;
-    Ledger::insert_export(
-        &tx,
-        &wisp_store::ExportRow {
-            id: export_id,
-            changeset: head,
-            kind: "html".to_string(),
-            at: at.clone(),
-            destination: Some(dest.display().to_string()),
-            manifest_sha256: Some(summary.manifest_sha256.clone()),
-            status: "published".to_string(),
-        },
-    )?;
-    tx.commit()
         .map_err(|e| WispError::internal(e.to_string()))?;
 
     let staging_path = staging.path().to_path_buf();
@@ -94,6 +80,23 @@ pub fn export_html(
 
     fs::rename(&staging_path, dest)
         .map_err(|e| WispError::internal(format!("publish export to {}: {}", dest.display(), e)))?;
+
+    let tx = repo.ledger.begin_immediate()?;
+    recheck_export_view_conn(&tx, ref_name, head)?;
+    Ledger::insert_export(
+        &tx,
+        &wisp_store::ExportRow {
+            id: export_id,
+            changeset: head,
+            kind: "html".to_string(),
+            at: at.clone(),
+            destination: Some(dest.display().to_string()),
+            manifest_sha256: Some(summary.manifest_sha256.clone()),
+            status: "published".to_string(),
+        },
+    )?;
+    tx.commit()
+        .map_err(|e| WispError::internal(e.to_string()))?;
 
     Ok(json!({
         "kind": "html",
@@ -139,16 +142,19 @@ fn validate_destination(repo: &Repository, dest: &Path) -> Result<()> {
     Ok(())
 }
 
-fn recheck_export_view(repo: &Repository, ref_name: &str, head: ChangesetId) -> Result<()> {
-    let now = repo
-        .head(ref_name)?
+fn recheck_export_view_conn(
+    conn: &rusqlite::Connection,
+    ref_name: &str,
+    head: ChangesetId,
+) -> Result<()> {
+    let now = Ledger::head(conn, ref_name)?
         .ok_or_else(|| WispError::usage(format!("ref {ref_name} has no head")))?;
     if now != head {
         return Err(WispError::usage(
             "repository changed during export; retry the export",
         ));
     }
-    if !Ledger::pending_erasures(repo.ledger.conn())?.is_empty() {
+    if !Ledger::pending_erasures(conn)?.is_empty() {
         return Err(WispError::usage(
             "erasure recovery became pending during export; retry",
         ));
@@ -166,10 +172,11 @@ struct HotSnap {
 fn parse_since(since: Option<&str>) -> Result<Option<ChangesetId>> {
     match since {
         None => Ok(None),
-        Some(s) => Ok(Some(
-            s.parse()
-                .map_err(|_| WispError::usage(format!("bad changeset id {s:?}")))?,
-        )),
+        Some(s) => {
+            Ok(Some(s.parse().map_err(|_| {
+                WispError::usage(format!("bad changeset id {s:?}"))
+            })?))
+        }
     }
 }
 
@@ -178,8 +185,7 @@ fn sign_manifest(repo: &Repository, manifest_sha256: &str) -> Result<Option<Rece
     let row = repo
         .find_actor(&actor_name)?
         .ok_or_else(|| WispError::usage("export --sign requires a registered default actor"))?;
-    let digest = hex::decode(manifest_sha256)
-        .map_err(|_| WispError::internal("manifest hash"))?;
+    let digest = hex::decode(manifest_sha256).map_err(|_| WispError::internal("manifest hash"))?;
     let digest: [u8; 32] = digest
         .try_into()
         .map_err(|_| WispError::internal("manifest hash length"))?;
@@ -208,7 +214,12 @@ fn in_export_window(
     Ok(true)
 }
 
-fn collect(repo: &Repository, ref_name: &str, opts: &HtmlExportOptions, since: Option<ChangesetId>) -> Result<SiteModel> {
+fn collect(
+    repo: &Repository,
+    ref_name: &str,
+    opts: &HtmlExportOptions,
+    since: Option<ChangesetId>,
+) -> Result<SiteModel> {
     let content = opts.content;
     let head = repo.head(ref_name)?;
     let Some(head_cs) = head else {
@@ -260,6 +271,11 @@ fn collect(repo: &Repository, ref_name: &str, opts: &HtmlExportOptions, since: O
                 concept_markdown.push((c.concept, render_concept_markdown(conn, c.concept)?));
             }
         }
+        erasures.sort_by(|a, b| {
+            a.concept_path
+                .cmp(&b.concept_path)
+                .then_with(|| a.section_id.cmp(&b.section_id))
+        });
         (
             concepts_state,
             retracted,
@@ -372,7 +388,7 @@ fn collect(repo: &Repository, ref_name: &str, opts: &HtmlExportOptions, since: O
             .get(ref_name)
             .ok_or_else(|| WispError::internal("hot tier not open"))?;
         let conn = hot.conn();
-        retracted
+        let mut rows: Vec<RetractionRow> = retracted
             .into_iter()
             .map(|(id, path)| {
                 let reason = Hot::retracted(conn, id)
@@ -385,7 +401,13 @@ fn collect(repo: &Repository, ref_name: &str, opts: &HtmlExportOptions, since: O
                     reason,
                 }
             })
-            .collect()
+            .collect();
+        rows.sort_by(|a, b| {
+            a.path
+                .cmp(&b.path)
+                .then_with(|| a.concept_id.cmp(&b.concept_id))
+        });
+        rows
     };
 
     for row in &retractions {
@@ -420,8 +442,7 @@ fn collect(repo: &Repository, ref_name: &str, opts: &HtmlExportOptions, since: O
     });
     overview_links.sort_by(|a, b| a.path.cmp(&b.path));
 
-    let activity =
-        collect_activity(repo, &hot_snap, &mut history, head_cs, since)?;
+    let activity = collect_activity(repo, &hot_snap, &mut history, head_cs, since)?;
     let actors = collect_actors(repo, &mut history, head_cs, since)?;
     let merges = collect_merges(repo, &mut history, head_cs, since)?;
     let removals = collect_removals(&retractions, &erasures);
@@ -517,31 +538,31 @@ fn collect_section_pages(
         let slice = visible[start..end].iter();
         let mut versions = Vec::new();
         for ch in slice {
-        let skipped = history.skipped_at(ch.id, head)?;
-        let not_kept = merge_skips_for_change(history, ch.id, head)?;
+            let skipped = history.skipped_at(ch.id, head)?;
+            let not_kept = history.merge_skips_at(ch.id, head)?;
 
-        let (actor, at) = changeset_meta(repo, ch.changeset)?;
-        let inputs = format_inputs(repo, hot, history, head, ch)?;
-        let (body, diff, word_diff, diff_missing) = if content {
-            section_version_body_and_diff(repo, history, ch, skipped)?
-        } else {
-            (None, None, None, false)
-        };
+            let (actor, at) = changeset_meta(repo, ch.changeset)?;
+            let inputs = format_inputs(repo, hot, history, head, ch)?;
+            let (body, diff, word_diff, diff_missing) = if content {
+                section_version_body_and_diff(repo, history, ch, skipped)?
+            } else {
+                (None, None, None, false)
+            };
 
-        versions.push(SectionVersion {
-            change_id: ch.id.to_string(),
-            changeset_id: ch.changeset.to_string(),
-            actor,
-            at,
-            inputs_complete: ch.inputs_complete,
-            inputs,
-            inputs_truncated: ch.inputs.len() > MAX_INPUTS_PER_VERSION,
-            not_kept_at_merge: not_kept,
-            body,
-            diff_vs_predecessor: diff,
-            word_diff_vs_predecessor: word_diff,
-            diff_missing_baseline: diff_missing,
-        });
+            versions.push(SectionVersion {
+                change_id: ch.id.to_string(),
+                changeset_id: ch.changeset.to_string(),
+                actor,
+                at,
+                inputs_complete: ch.inputs_complete,
+                inputs,
+                inputs_truncated: ch.inputs.len() > MAX_INPUTS_PER_VERSION,
+                not_kept_at_merge: not_kept,
+                body,
+                diff_vs_predecessor: diff,
+                word_diff_vs_predecessor: word_diff,
+                diff_missing_baseline: diff_missing,
+            });
         }
 
         let page = page_idx + 1;
@@ -590,9 +611,9 @@ fn collect_activity(
         }
         let (actor, at) = changeset_meta(repo, ch.changeset)?;
         let (concept_id, section_id) = match &ch.target {
-            Target::Section { concept, section, .. } => {
-                (Some(concept.to_string()), Some(section.to_string()))
-            }
+            Target::Section {
+                concept, section, ..
+            } => (Some(concept.to_string()), Some(section.to_string())),
             Target::Concept { concept } => (Some(concept.to_string()), None),
             _ => (None, None),
         };
@@ -697,24 +718,6 @@ fn collect_removals(
     }
     out.sort_by(|a, b| a.kind.cmp(&b.kind).then_with(|| a.target.cmp(&b.target)));
     out
-}
-
-fn merge_skips_for_change(
-    history: &mut History,
-    change: ChangeId,
-    head: ChangesetId,
-) -> Result<Vec<String>> {
-    let mut out = Vec::new();
-    for (merge_cs, ch) in Ledger::all_merge_replay_skips(history.conn())? {
-        if ch != change {
-            continue;
-        }
-        if history.is_ancestor_or_self(merge_cs, head)? {
-            out.push(merge_cs.to_string());
-        }
-    }
-    out.sort();
-    Ok(out)
 }
 
 fn changeset_meta(repo: &Repository, cs: ChangesetId) -> Result<(String, String)> {

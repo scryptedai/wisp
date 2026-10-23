@@ -127,10 +127,12 @@ fn merged_sections_for_concept(model: &SiteModel, concept_id: &str) -> Vec<Merge
         if page.concept_id != concept_id {
             continue;
         }
-        let entry = by_id.entry(page.id.clone()).or_insert_with(|| MergedSection {
-            meta: page.clone(),
-            versions: Vec::new(),
-        });
+        let entry = by_id
+            .entry(page.id.clone())
+            .or_insert_with(|| MergedSection {
+                meta: page.clone(),
+                versions: Vec::new(),
+            });
         entry.versions.extend(page.versions.clone());
         entry.meta.total_versions = page.total_versions;
         entry.meta.versions_truncated = page.versions_truncated || page.page_count > 1;
@@ -381,12 +383,11 @@ fn render_wisp_section(model: &SiteModel, body: &mut String, merged: &MergedSect
         return;
     }
 
-    let (current, past): (&[SectionVersion], &[SectionVersion]) =
-        if merged.versions.len() == 1 {
-            (&merged.versions[..], &[][..])
-        } else {
-            (&merged.versions[..1], &merged.versions[1..])
-        };
+    let (current, past): (&[SectionVersion], &[SectionVersion]) = if merged.versions.len() == 1 {
+        (&merged.versions[..], &[][..])
+    } else {
+        (&merged.versions[..1], &merged.versions[1..])
+    };
 
     for v in current {
         render_revision(model, body, v, true);
@@ -510,10 +511,11 @@ fn render_revision(model: &SiteModel, body: &mut String, v: &SectionVersion, is_
 }
 
 pub fn markdown_to_html(md: &str) -> String {
-    use crate::sanitize::sanitize_markdown_html;
+    use crate::sanitize::{sanitize_markdown_events, sanitize_markdown_html};
     use pulldown_cmark::{html, Options, Parser};
     let opts = Options::empty();
     let parser = Parser::new_ext(md, opts);
+    let parser = sanitize_markdown_events(parser);
     let mut out = String::new();
     html::push_html(&mut out, parser);
     sanitize_markdown_html(&out)
@@ -558,7 +560,10 @@ fn write_activity_index(model: &SiteModel, path: &Path) -> Result<(), WispError>
         };
         body.push_str(&format!(
             "<tr data-filter=\"{}\"><td>{}</td><td>{}</td><td>{}</td><td>{}</td></tr>",
-            html_attr(&format!("{} {} {} {}", row.at, row.actor, row.op, row.target)),
+            html_attr(&format!(
+                "{} {} {} {}",
+                row.at, row.actor, row.op, row.target
+            )),
             html_text(&row.at),
             html_text(&row.actor),
             html_text(&row.op),
@@ -648,7 +653,10 @@ fn write_removals_index(model: &SiteModel, path: &Path) -> Result<(), WispError>
         if let Some(r) = &row.reason {
             body.push_str(&format!("{} ", html_text(r)));
         }
-        body.push_str(&format!("<span class=\"muted\">{}</span>", html_text(&row.target)));
+        body.push_str(&format!(
+            "<span class=\"muted\">{}</span>",
+            html_text(&row.target)
+        ));
         if let Some(at) = &row.at {
             body.push_str(&format!(
                 " <time datetime=\"{}\">{}</time>",

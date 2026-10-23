@@ -11,10 +11,10 @@ use std::path::Path;
 use walkdir::WalkDir;
 use wisp_engine::erase::{erase, EraseTarget};
 use wisp_engine::html_export::{export_html, verify_html_export};
-use wisp_html::HtmlExportOptions;
 use wisp_engine::merge::merge_refs;
 use wisp_engine::query::{branch, fsck};
 use wisp_engine::repo::{Repository, MAIN_REF};
+use wisp_html::HtmlExportOptions;
 use wisp_invariants::{catalog, init_and_record_bundle};
 use wisp_model::Reason;
 
@@ -234,8 +234,12 @@ fn export_html_verify_and_indexes() {
 
 #[test]
 fn hostile_markdown_sanitized() {
-    let md = "[x](javascript:alert(1))\n\n<script>alert(1)</script>";
+    let md =
+        "[x](javascript:alert(1))\n\n<script>alert(1)</script>\n\n[data:exfil](data:text/html,bad)";
     let html = wisp_html::markdown_to_html(md);
-    assert!(!html.to_ascii_lowercase().contains("javascript:"));
-    assert!(!html.to_ascii_lowercase().contains("<script"));
+    let lower = html.to_ascii_lowercase();
+    assert!(!lower.contains("javascript:"));
+    assert!(!lower.contains("<script"));
+    assert!(!lower.contains("data:text"));
+    assert!(lower.contains("&lt;script") || lower.contains("alert(1)"));
 }

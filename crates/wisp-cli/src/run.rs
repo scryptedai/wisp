@@ -937,12 +937,19 @@ pub fn run(cli: Cli) -> CliResult {
             strip_anchors,
         } => {
             if let Some(dir) = verify {
-                return Ok(Output::json(wisp_engine::html_export::verify_html_export(&dir)?));
+                return Ok(Output::json(wisp_engine::html_export::verify_html_export(
+                    &dir,
+                )?));
             }
             let kinds = [git.is_some(), archive.is_some(), html.is_some()];
             if kinds.iter().filter(|&x| *x).count() != 1 {
                 return Err(WispError::usage(
                     "export: specify exactly one of --git <dir>, --archive <file>, --html <dir>, or --verify <dir>",
+                ));
+            }
+            if *no_content && html.is_none() {
+                return Err(WispError::usage(
+                    "--no-content applies only to --html exports",
                 ));
             }
             let mut repo = open(&cli)?;

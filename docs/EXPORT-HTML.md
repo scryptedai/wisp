@@ -123,17 +123,14 @@ If no guard meets the contract, add **narrow engine API** first and re-estimate.
 
 ## Delivery order
 
-```text
-0. Locking spike → document chosen option (DECISIONS.md if new API)
-1. Redaction canary fixtures + collector skeleton (no HTML yet)
-2. wisp-html crate + golden tests on redacted model
-3. Three page types + manifest/receipt/README
-4. CLI wire-up + export registration + destination races (incl. Windows)
-5. Corpus: extend impact-demo or add export-demo; wisp-invariants acceptance tests
-6. Browser smoke + 5-viewer script; update README status + CHANGELOG
-```
+Shipped on **0.1.x** (see `CHANGELOG.md` and `contrib/export-html/README.md`):
 
-**Estimate:** ~1–2 focused weeks including spike, review, and tests (Andy doc). Re-estimate after phase 0 if new engine locking is required.
+1. `wisp-html` crate (model v3, semantic concept pages, indexes, manifest/receipt).
+2. `wisp export --html` with worktree lock, hot-tier collector, scoped redaction, staging beside destination (same filesystem as publish target).
+3. Export registry row written **after** successful publish (inside an immediate transaction with a head/erasure recheck) so failed publishes do not leave `exports` rows.
+4. `wisp-invariants` acceptance tests (`export_html.rs`); demo via `impact-demo` / desk workspace scripts.
+
+Part 2 flags (`--since`, `--ids-only`, `--no-content`, `--sign`, `export --verify`, activity/actors/merges/removals indexes) ship in the same release train as Part 1.
 
 ---
 
@@ -148,22 +145,13 @@ If no guard meets the contract, add **narrow engine API** first and re-estimate.
 | Erasure | Per-scope canaries absent from **every** output byte |
 | `--no-content` | No bodies/values/diffs/messages anywhere |
 | Offline safety | Hostile markdown inert; relative links resolve; no auto network |
-| Publish | Existing dirs untouched; register-before-publish; `fsck` still passes |
+| Publish | Existing dirs untouched; registry after atomic publish; `fsck` still passes |
 
 ---
 
-## Part 2 reference (not approved)
+## Part 2 (shipped)
 
-When approved separately: `--since`, `--ids-only`, activity/actors/merges/removals pages, provenance graph (depth/node bounds), word-level diffs, pagination, optional signing/`--verify`, richer export registry (destination, manifest hash, status). Budget **+2–4 weeks** before optional modules. **First Part 2 candidate:** merges index (completes the “two agents collided” story Part 1 only hints via section markers).
-
----
-
-## Decisions to record in `DECISIONS.md` when implementing
-
-- Locking option A vs B (and any new guard API).
-- Template engine choice (`askama` vs `minijinja`) after dependency review.
-- Whether Part 1 demo reuses `impact-demo` only or adds `export-demo` for HTML-specific canaries.
-- Exact `manifest.json` schema version and CSP directive string per browser matrix.
+`--since`, `--ids-only`, activity/actors/merges/removals indexes, provenance graph (bounded depth/nodes), word-level diffs, section-history pagination, optional `--sign` / `export --verify`, and export registry fields (destination, manifest hash, status). See `DECISIONS.md` for locking (worktree lock), renderer (`wisp-html` string templates), and manifest schema `wisp-html-export/3`.
 
 ---
 

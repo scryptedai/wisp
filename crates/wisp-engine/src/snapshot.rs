@@ -195,6 +195,21 @@ impl<'a> History<'a> {
         Ok(false)
     }
 
+    /// Merge changesets reachable from `at` that recorded `change` as not kept.
+    pub fn merge_skips_at(&mut self, change: ChangeId, at: ChangesetId) -> Result<Vec<String>> {
+        let Some(merges) = self.skips.get(&change).cloned() else {
+            return Ok(Vec::new());
+        };
+        let mut out = Vec::new();
+        for m in merges {
+            if self.is_ancestor_or_self(m, at)? {
+                out.push(m.to_string());
+            }
+        }
+        out.sort();
+        Ok(out)
+    }
+
     /// All changes that set `unit`'s state, oldest first.
     pub fn unit_rows(&mut self, unit: Unit) -> Result<Rc<Vec<(i64, Change)>>> {
         if let Some(r) = self.unit_rows.get(&unit) {

@@ -13,10 +13,13 @@ mod verify;
 pub use diff::{line_diff, word_diff};
 pub use graph::render_provenance_svg;
 pub use model::*;
-pub use options::{HtmlExportOptions, DEFAULT_GRAPH_DEPTH, DEFAULT_GRAPH_MAX_NODES, HISTORY_PAGE_SIZE};
+pub use options::{
+    HtmlExportOptions, DEFAULT_GRAPH_DEPTH, DEFAULT_GRAPH_MAX_NODES, HISTORY_PAGE_SIZE,
+};
 pub use redact::{apply_ids_only, redact_site_model};
 pub use render::{
-    markdown_to_html, render_receipt, render_site, validate_page_id, ReceiptSignature, RenderSummary,
+    markdown_to_html, render_receipt, render_site, validate_page_id, ReceiptSignature,
+    RenderSummary,
 };
 pub use sanitize::sanitize_markdown_html;
 pub use verify::verify_site_dir;
@@ -62,7 +65,7 @@ mod tests {
         let model = empty_site_model(true);
         let dir = tempfile::tempdir().unwrap();
         let s = render_site(&model, dir.path()).unwrap();
-        assert_eq!(s.page_count, 1);
+        assert_eq!(s.page_count, 5);
         assert!(dir.path().join("index.html").is_file());
         assert!(dir.path().join("manifest.json").is_file());
     }

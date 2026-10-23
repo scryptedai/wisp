@@ -112,7 +112,7 @@ Deviations from the OKF store v1 design (ledger, parse, merge, sync, profiles), 
 
 ## HTML export (`wisp export --html`)
 
-- **Consistent view (Part 1).** Export holds the advisory `worktree.lock` for collect → render → `exports` registration → publish rename, refuses when `pending_erasures` is non-empty, and **rechecks** ref head (and pending erasures) immediately before registering the export. If the head moved, the command fails with “repository changed during export; retry”. Part 2 may extend rechecks (erasure tombstones, hot generation).
+- **Consistent view (Part 1).** Export holds the advisory `worktree.lock` for collect → render → publish rename → `exports` registration, refuses when `pending_erasures` is non-empty, stages beside the destination directory (same filesystem as the final path), and **rechecks** ref head (and pending erasures) inside an immediate transaction immediately before inserting the export row (after a successful publish rename). If the head moved, the command fails with “repository changed during export; retry”. Part 2 may extend rechecks (erasure tombstones, hot generation).
 - **Merge skip markers.** Section history reads skip decisions from `merge_replay_skips` in the ledger (via `snapshot::History`), never from `.wisp/cache/.../merge-skip.json`.
 - **Plaintext copy.** Every HTML page and the CLI success payload include a plaintext-copy warning; the export is not recalled by later erasures (`docs/TRUST-BOUNDARY.md`).
 - **Renderer split.** `wisp-engine` collects a redacted `SiteModel`; `wisp-html` renders files only. Page filenames are opaque ids (26-character ULIDs), not paths or titles.

@@ -16,7 +16,7 @@ wisp-profile.workspace = true
 wisp-sub-embed.workspace = true
 wisp-sub-tokens.workspace = true
 wisp-index.workspace = true
-wisp-html = { path = "../wisp-html" }
+wisp-html.workspace = true
 wisp-vector-pg = { workspace = true, optional = true }
 serde.workspace = true
 serde_json.workspace = true

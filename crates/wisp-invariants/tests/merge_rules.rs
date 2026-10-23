@@ -33,6 +33,7 @@ fn apply_one(repo: &mut Repository, ref_name: &str, actor: &str, message: &str, 
             inputs: vec![],
             assert: vec![],
             assert_head: None,
+            inputs_complete: false,
         },
         None,
     )
@@ -106,6 +107,7 @@ fn add_section_after_ref(
             note: None,
             split_from: None,
             merged_from: None,
+            ..Default::default()
         },
     );
 }
@@ -302,6 +304,7 @@ fn rule_remove_vs_update() {
             note: None,
             split_from: None,
             merged_from: None,
+            ..Default::default()
         },
     );
     let (_, ver_m) = section_at(&mut repo, "tables/orders", "Schema");
@@ -351,6 +354,7 @@ fn rule_frontmatter_same_commitment() {
                 note: None,
                 split_from: None,
                 merged_from: None,
+                ..Default::default()
             },
         );
     }
@@ -384,6 +388,7 @@ fn rule_frontmatter_different() {
             note: None,
             split_from: None,
             merged_from: None,
+            ..Default::default()
         },
     );
     apply_one(
@@ -407,6 +412,7 @@ fn rule_frontmatter_different() {
             note: None,
             split_from: None,
             merged_from: None,
+            ..Default::default()
         },
     );
     assert_eq!(
@@ -445,6 +451,7 @@ fn rule_verify_union() {
                 note: None,
                 split_from: None,
                 merged_from: None,
+                ..Default::default()
             },
         );
     }
@@ -509,10 +516,12 @@ fn rule_two_concepts_same_path_record() {
                 note: None,
                 split_from: None,
                 merged_from: None,
+                ..Default::default()
             }],
             inputs: vec![],
             assert: vec![],
             assert_head: None,
+            inputs_complete: false,
         },
         None,
     )
@@ -633,6 +642,7 @@ fn rule_set_status_conflict() {
                 note: None,
                 split_from: None,
                 merged_from: None,
+                ..Default::default()
             },
         );
     }

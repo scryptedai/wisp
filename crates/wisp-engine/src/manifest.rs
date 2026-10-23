@@ -4,6 +4,14 @@ use serde::{Deserialize, Serialize};
 use std::path::Path;
 use wisp_model::*;
 
+/// `repo.format` of a repository created by `wisp init`.
+pub const FORMAT_BASE: u32 = 1;
+/// `repo.format` once any change records `inputs_complete` (written the first time a change
+/// uses it, never on upgrade, so repositories that never use it stay readable by older builds).
+pub const FORMAT_INPUTS_COMPLETE: u32 = 2;
+/// The newest `repo.format` this build reads.
+pub const FORMAT_SUPPORTED: u32 = FORMAT_INPUTS_COMPLETE;
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Manifest {
     pub repo: RepoSection,

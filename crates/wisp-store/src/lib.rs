@@ -66,6 +66,7 @@ mod tests {
             lineage: None,
             origin: None,
             reason: None,
+            inputs_complete: false,
         }
     }
 

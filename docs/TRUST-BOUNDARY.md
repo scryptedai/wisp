@@ -13,6 +13,8 @@ What **cryptographic erasure** and **sync** guarantee inside a wisp bundle, and 
 
 Erasure is **scoped** (section, concept, asset, actor, group). It does not revoke data already exported under another system.
 
+- **Opaque ids remain.** Erasure removes content and labels, not the random ids of erased concepts and sections: they sit in insert-only, digest-covered records (change targets, input references, scope rows), so `wisp impact` can still trace dependents from them. An id is not derived from content, but it is linkable: a saved `wisp impact --json`, a log, or a ticket made while labels were visible can connect it back to the erased item. Such exports are plaintext copies and are not recalled by erasure.
+
 ## HTTP cold pack (`wisp serve --http`, sync over HTTPS)
 
 | Default | Risk if misconfigured |

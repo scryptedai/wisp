@@ -28,9 +28,13 @@ pub struct ApplyBatch {
     pub assert: Vec<ApplyAssert>,
     #[serde(default)]
     pub assert_head: Option<ChangesetId>,
+    /// The batch-level `inputs` are the complete dependency set of each content change that
+    /// receives them (see docs/APPLY.md).
+    #[serde(default)]
+    pub inputs_complete: bool,
 }
 
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Default, Deserialize)]
 pub struct ApplyInput {
     pub concept: String,
     #[serde(default)]
@@ -48,7 +52,7 @@ pub struct ApplyAssert {
 }
 
 /// `base_version` is a change ID, `"absent"`, or `"any"`.
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Default, Deserialize)]
 pub struct ApplyOp {
     pub op: String,
     pub path: String,
@@ -78,6 +82,13 @@ pub struct ApplyOp {
     pub split_from: Option<SectionId>,
     #[serde(default)]
     pub merged_from: Option<Vec<SectionId>>,
+    /// Derivation inputs for this op only. When present they replace the batch-level `inputs`
+    /// for this op's content changes; when absent the batch-level inputs apply (docs/APPLY.md).
+    #[serde(default)]
+    pub inputs: Option<Vec<ApplyInput>>,
+    /// Overrides the batch-level `inputs_complete` for this op.
+    #[serde(default)]
+    pub inputs_complete: Option<bool>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -517,8 +528,9 @@ pub fn apply(repo: &mut Repository, batch: ApplyBatch, default_ref: Option<&str>
         ops.push(plan_op(repo, &ref_name, o, le)?);
     }
     // A `create` may be followed by frontmatter and content in the same batch.
-    let mut extra: Vec<PlannedOp> = Vec::new();
-    for (o, p) in batch.ops.iter().zip(ops.iter()) {
+    // Extra planned ops, each tagged with the index of the batch op it belongs to.
+    let mut extra: Vec<(usize, PlannedOp)> = Vec::new();
+    for (oi, (o, p)) in batch.ops.iter().zip(ops.iter()).enumerate() {
         if p.op == Op::CreateConcept {
             let Target::Concept { concept } = &p.target else {
                 continue;
@@ -563,7 +575,7 @@ pub fn apply(repo: &mut Repository, batch: ApplyBatch, default_ref: Option<&str>
                     key: Some(k),
                     ..Default::default()
                 };
-                extra.push(e);
+                extra.push((oi, e));
             }
             // The preamble, with the given content.
             let sid = SectionId::new();
@@ -577,7 +589,8 @@ pub fn apply(repo: &mut Repository, batch: ApplyBatch, default_ref: Option<&str>
                 after: None,
                 at_start: true,
             };
-            extra.push(
+            extra.push((
+                oi,
                 PlannedOp::new(
                     Op::AddSection,
                     Target::Section {
@@ -592,23 +605,42 @@ pub fn apply(repo: &mut Repository, batch: ApplyBatch, default_ref: Option<&str>
                 })
                 .with_payload(PayloadKind::Section, sb.encode())
                 .with_path(p.path.clone().unwrap_or_default()),
-            );
+            ));
         }
     }
-    ops.extend(extra);
+    // Inputs: an op's own `inputs` replace the batch-level inputs for that op; otherwise the
+    // batch-level inputs apply. They attach to content changes only.
+    let batch_inputs = resolve_inputs(repo, &ref_name, &batch.inputs)?;
+    let mut op_inputs: Vec<Vec<InputRef>> = Vec::with_capacity(batch.ops.len());
+    for o in &batch.ops {
+        op_inputs.push(match &o.inputs {
+            Some(own) => resolve_inputs(repo, &ref_name, own)?,
+            None => batch_inputs.clone(),
+        });
+    }
+    let op_complete: Vec<bool> = batch
+        .ops
+        .iter()
+        .map(|o| o.inputs_complete.unwrap_or(batch.inputs_complete))
+        .collect();
+    for (oi, p) in ops.iter_mut().enumerate() {
+        if p.op.is_content_change() {
+            p.inputs = op_inputs[oi].clone();
+            p.inputs_complete = op_complete[oi];
+        }
+    }
+    for (oi, p) in extra.iter_mut() {
+        if p.op.is_content_change() {
+            p.inputs = op_inputs[*oi].clone();
+            p.inputs_complete = op_complete[*oi];
+        }
+    }
+    ops.extend(extra.into_iter().map(|(_, p)| p));
 
     let mut req = CommitRequest::new(&ref_name, &actor);
     req.base = batch.base;
     req.message = batch.message.clone();
     req.assert_head = batch.assert_head;
-    for i in &batch.inputs {
-        let (c, _) = resolve_target(repo, &ref_name, &i.concept)?;
-        req.inputs.push(InputRef::Concept {
-            concept: c.concept,
-            section: i.section,
-            at: i.at,
-        });
-    }
     for a in &batch.assert {
         let (c, _) = resolve_target(repo, &ref_name, &a.path)?;
         match a.section {
@@ -643,13 +675,143 @@ pub fn apply(repo: &mut Repository, batch: ApplyBatch, default_ref: Option<&str>
             v
         })
         .collect();
-    Ok(json!({
+    let mut result = json!({
         "ref": ref_name,
         "changeset": out.changeset.to_string(),
         "seq": out.seq,
         "head": out.changeset.to_string(),
         "changes": versions,
         "worktree_files_rewritten": rewritten,
+    });
+    if let Some(w) = missing_inputs_warning(&actor, &out.changes) {
+        result["warnings"] = json!([w]);
+    }
+    Ok(result)
+}
+
+/// Parse `<path>[#<section>[@<changeset>]]` (the `--input` syntax). A section id that does not
+/// parse is an error rather than a silent fall back to a whole-concept input.
+pub fn parse_input_spec(spec: &str) -> Result<ApplyInput> {
+    let Some((path, rest)) = spec.split_once('#') else {
+        return Ok(ApplyInput {
+            concept: spec.to_string(),
+            section: None,
+            at: None,
+        });
+    };
+    let (sec, at) = match rest.split_once('@') {
+        Some((s, a)) => (s, Some(a)),
+        None => (rest, None),
+    };
+    let section = sec.parse::<SectionId>().map_err(|_| {
+        WispError::usage(format!(
+            "--input {spec:?}: bad section id {sec:?} (expected <path>[#<section>[@<changeset>]])"
+        ))
+    })?;
+    let at =
+        match at {
+            Some(a) => Some(a.parse::<ChangesetId>().map_err(|_| {
+                WispError::usage(format!("--input {spec:?}: bad changeset id {a:?}"))
+            })?),
+            None => None,
+        };
+    Ok(ApplyInput {
+        concept: path.to_string(),
+        section: Some(section),
+        at,
+    })
+}
+
+/// Resolve declared inputs against `ref_name` and validate any pinned snapshot: the changeset
+/// must exist and the section (or concept) must exist at it, under the concept the path names.
+/// An input without `at` stays unpinned; the read snapshot is never inferred from the head.
+pub fn resolve_inputs(
+    repo: &mut Repository,
+    ref_name: &str,
+    inputs: &[ApplyInput],
+) -> Result<Vec<InputRef>> {
+    let mut out = Vec::with_capacity(inputs.len());
+    for i in inputs {
+        let (c, _) = resolve_target(repo, ref_name, &i.concept)?;
+        if let Some(at) = i.at {
+            validate_pin(repo, &i.concept, c.concept, i.section, at)?;
+        }
+        out.push(InputRef::Concept {
+            concept: c.concept,
+            section: i.section,
+            at: i.at,
+        });
+    }
+    Ok(out)
+}
+
+fn validate_pin(
+    repo: &Repository,
+    path: &str,
+    concept: ConceptId,
+    section: Option<SectionId>,
+    at: ChangesetId,
+) -> Result<()> {
+    let conn = repo.ledger.conn();
+    let mut h = crate::snapshot::History::new(conn)?;
+    if !h.changeset_exists(at)? {
+        let as_change = ChangeId::from_bytes(at.bytes());
+        if Ledger::get_change(conn, as_change)?.is_some() {
+            return Err(WispError::usage(format!(
+                "input pin {at} is a change (section version), not a changeset; pin the snapshot you read, e.g. `head` from `wisp cat --json`"
+            )));
+        }
+        return Err(WispError::not_found(format!(
+            "input pin {at}: no such changeset"
+        )));
+    }
+    match section {
+        Some(s) => {
+            let st = h.section_at(s, at, None)?.ok_or_else(|| {
+                WispError::not_found(format!(
+                    "input {path}#{s}@{at}: section does not exist at that snapshot"
+                ))
+            })?;
+            if st.target.concept() != Some(concept) {
+                return Err(WispError::usage(format!(
+                    "input {path}#{s}@{at}: at that snapshot the section belongs to another concept"
+                )));
+            }
+        }
+        None => {
+            if !h.concept_exists_at(concept, at)? {
+                return Err(WispError::not_found(format!(
+                    "input {path}@{at}: concept does not exist at that snapshot"
+                )));
+            }
+        }
+    }
+    Ok(())
+}
+
+/// A structured warning (never a refusal) when a non-human actor writes section content and
+/// declares no inputs. It checks that inputs were declared, not that they are complete.
+pub fn missing_inputs_warning(actor: &str, changes: &[Change]) -> Option<Value> {
+    if actor.starts_with("human:") {
+        return None;
+    }
+    let sections: Vec<Value> = changes
+        .iter()
+        .filter(|c| {
+            crate::snapshot::writes_section_content(c.op)
+                && c.inputs.is_empty()
+                && !c.inputs_complete
+        })
+        .filter_map(|c| c.target.section().map(|s| json!(s.to_string())))
+        .collect();
+    if sections.is_empty() {
+        return None;
+    }
+    Some(json!({
+        "code": "no_declared_inputs",
+        "message": "section content was written by a non-human actor with no declared inputs; pass --input <path>#<section>@<changeset> for what it was derived from",
+        "actor": actor,
+        "sections": sections,
     }))
 }
 
@@ -748,6 +910,7 @@ pub fn single(
         inputs: vec![],
         assert: vec![],
         assert_head: None,
+        inputs_complete: false,
     };
     apply(repo, batch, None)
 }

@@ -10,6 +10,10 @@ This document matches `wisp erase`, `crates/wisp-engine/src/erase.rs`, and recov
 
 Copies in **other scopes**, **external exports**, **backups without `.wisp/`**, or **plaintext outside Wisp-managed paths** are out of scope unless you erase those scopes too or destroy the copies yourself. See also **[docs/TRUST-BOUNDARY.md](TRUST-BOUNDARY.md)**.
 
+## Dependents
+
+Before and after it erases, `wisp erase` lists recorded work that depends on what it removes, on **every** branch: `dependents_by_ref` groups the dependent section and frontmatter versions by ref (the same walk as `wisp impact`, run from each erased concept or section on each ref), and `flagged` is the union of dependent concepts. It is a list for review; erase changes nothing in them. Afterwards `wisp impact <concept-id>` still traces from the erased item by its opaque id, because input references are metadata that outlive the key; labels (paths, headings, actor names) are gone.
+
 ## Managed working copies (no whole-disk scan)
 
 Wisp only rewrites checkouts it knows about:

@@ -164,6 +164,17 @@ impl Repository {
             )));
         }
         let manifest = Manifest::load(&wisp_dir.join("manifest.toml"))?;
+        if manifest.repo.format > crate::manifest::FORMAT_SUPPORTED {
+            return Err(WispError::new(
+                ExitCode::Refused,
+                "this repository uses a newer format; upgrade wisp",
+            )
+            .with_details(serde_json::json!({
+                "code": "format_too_new",
+                "format": manifest.repo.format,
+                "supported": crate::manifest::FORMAT_SUPPORTED,
+            })));
+        }
         let profile = wisp_profile::by_id(&manifest.repo.profile).ok_or_else(|| {
             WispError::usage(format!(
                 "manifest names unknown profile {}",
@@ -406,6 +417,17 @@ impl Repository {
             std::ptr::drop_in_place(repo as *mut Repository);
         }
         (root, wisp_dir)
+    }
+
+    /// Raise `repo.format` in the manifest to at least `format` (never lowers it). Called before
+    /// the first ledger write that needs the newer format, so older builds refuse the repository
+    /// with an upgrade message instead of misreading it.
+    pub fn require_format(&mut self, format: u32) -> Result<()> {
+        if self.manifest.repo.format >= format {
+            return Ok(());
+        }
+        self.manifest.repo.format = format;
+        self.manifest.save(&self.wisp_dir.join("manifest.toml"))
     }
 
     pub fn head(&self, ref_name: &str) -> Result<Option<ChangesetId>> {

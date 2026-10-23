@@ -46,10 +46,12 @@ CREATE TABLE IF NOT EXISTS changes (
   lineage   BLOB,
   origin    BLOB,
   reason    TEXT,
+  inputs_complete INTEGER,
   UNIQUE (changeset, ordinal)
 );
 CREATE INDEX IF NOT EXISTS changes_by_concept ON changes(concept, section);
 CREATE INDEX IF NOT EXISTS changes_by_op ON changes(op);
+CREATE INDEX IF NOT EXISTS changes_by_section ON changes(section);
 CREATE TABLE IF NOT EXISTS tombstones (
   erase_change BLOB PRIMARY KEY REFERENCES changes(id),
   target       BLOB NOT NULL,
@@ -202,10 +204,32 @@ impl Ledger {
         conn.execute_batch("PRAGMA journal_mode = WAL; PRAGMA secure_delete = ON; PRAGMA auto_vacuum = INCREMENTAL; PRAGMA synchronous = NORMAL;")
             .map_err(sql_err)?;
         conn.execute_batch(SCHEMA).map_err(sql_err)?;
+        Self::migrate(&conn)?;
         Ok(Ledger {
             conn,
             wisp_dir: wisp_dir.to_path_buf(),
         })
+    }
+
+    /// Additive column migrations for ledgers created by earlier builds. Adding a nullable
+    /// column is not an update of any row, so the insert-only triggers are unaffected.
+    fn migrate(conn: &Connection) -> Result<()> {
+        let has = |table: &str, col: &str| -> Result<bool> {
+            let mut st = conn
+                .prepare(&format!("PRAGMA table_info({table})"))
+                .map_err(sql_err)?;
+            let names: Vec<String> = st
+                .query_map([], |r| r.get::<_, String>(1))
+                .map_err(sql_err)?
+                .filter_map(|r| r.ok())
+                .collect();
+            Ok(names.iter().any(|n| n == col))
+        };
+        if !has("changes", "inputs_complete")? {
+            conn.execute_batch("ALTER TABLE changes ADD COLUMN inputs_complete INTEGER")
+                .map_err(sql_err)?;
+        }
+        Ok(())
     }
 
     pub fn conn(&self) -> &Connection {
@@ -388,8 +412,8 @@ impl Ledger {
         }
         for c in changes {
             conn.execute(
-                "INSERT INTO changes (id, changeset, ordinal, op, target, concept, section, scope, payload, note, inputs, valid, lineage, origin, reason)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)",
+                "INSERT INTO changes (id, changeset, ordinal, op, target, concept, section, scope, payload, note, inputs, valid, lineage, origin, reason, inputs_complete)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16)",
                 params![
                     c.id.bytes().to_vec(),
                     c.changeset.bytes().to_vec(),
@@ -406,6 +430,7 @@ impl Ledger {
                     c.lineage.as_ref().map(serde_json::to_vec).transpose()?,
                     c.origin.as_ref().map(serde_json::to_vec).transpose()?,
                     c.reason.map(|r| r.as_str()),
+                    if c.inputs_complete { Some(1i64) } else { None },
                 ],
             )
             .map_err(sql_err)?;
@@ -529,6 +554,7 @@ impl Ledger {
         let lineage: Option<Vec<u8>> = r.get(10)?;
         let origin: Option<Vec<u8>> = r.get(11)?;
         let reason: Option<String> = r.get(12)?;
+        let inputs_complete: Option<i64> = r.get(13)?;
         Ok(Change {
             id: ChangeId::from_bytes(blob16(r.get::<_, Vec<u8>>(0)?)),
             changeset: ChangesetId::from_bytes(blob16(r.get::<_, Vec<u8>>(1)?)),
@@ -549,11 +575,12 @@ impl Ledger {
             lineage: lineage.and_then(|b| serde_json::from_slice(&b).ok()),
             origin: origin.and_then(|b| serde_json::from_slice(&b).ok()),
             reason: reason.and_then(|s| Reason::parse(&s)),
+            inputs_complete: inputs_complete.unwrap_or(0) != 0,
         })
     }
 
     const CHANGE_COLS: &'static str =
-        "c.id, c.changeset, c.ordinal, c.op, c.target, c.scope, c.payload, c.note, c.inputs, c.valid, c.lineage, c.origin, c.reason";
+        "c.id, c.changeset, c.ordinal, c.op, c.target, c.scope, c.payload, c.note, c.inputs, c.valid, c.lineage, c.origin, c.reason, c.inputs_complete";
 
     pub fn changes_of(conn: &Connection, cs: ChangesetId) -> Result<Vec<Change>> {
         let sql = format!(
@@ -588,7 +615,7 @@ impl Ledger {
         let mut st = conn.prepare(&sql).map_err(sql_err)?;
         let rows = st
             .query_map(params![since], |r| {
-                Ok((r.get::<_, i64>(13)?, Self::row_to_change(r)?))
+                Ok((r.get::<_, i64>(14)?, Self::row_to_change(r)?))
             })
             .map_err(sql_err)?
             .filter_map(|r| r.ok())
@@ -614,8 +641,58 @@ impl Ledger {
                     concept.bytes().to_vec(),
                     section.map(|s| s.bytes().to_vec())
                 ],
-                |r| Ok((r.get::<_, i64>(13)?, Self::row_to_change(r)?)),
+                |r| Ok((r.get::<_, i64>(14)?, Self::row_to_change(r)?)),
             )
+            .map_err(sql_err)?
+            .filter_map(|r| r.ok())
+            .collect();
+        Ok(rows)
+    }
+
+    /// Changes whose target is `section`, in any concept (a moved section keeps its id), oldest first.
+    pub fn changes_for_section(
+        conn: &Connection,
+        section: SectionId,
+    ) -> Result<Vec<(i64, Change)>> {
+        let sql = format!(
+            "SELECT {}, s.seq FROM changes c JOIN changesets s ON s.id = c.changeset WHERE c.section = ?1 ORDER BY s.seq, c.ordinal",
+            Self::CHANGE_COLS
+        );
+        let mut st = conn.prepare(&sql).map_err(sql_err)?;
+        let rows = st
+            .query_map(params![section.bytes().to_vec()], |r| {
+                Ok((r.get::<_, i64>(14)?, Self::row_to_change(r)?))
+            })
+            .map_err(sql_err)?
+            .filter_map(|r| r.ok())
+            .collect();
+        Ok(rows)
+    }
+
+    /// Changes that carry lineage (split, merge, copy, move), oldest first. Metadata only.
+    pub fn changes_with_lineage(conn: &Connection) -> Result<Vec<(i64, Change)>> {
+        let sql = format!(
+            "SELECT {}, s.seq FROM changes c JOIN changesets s ON s.id = c.changeset WHERE c.lineage IS NOT NULL ORDER BY s.seq, c.ordinal",
+            Self::CHANGE_COLS
+        );
+        let mut st = conn.prepare(&sql).map_err(sql_err)?;
+        let rows = st
+            .query_map([], |r| Ok((r.get::<_, i64>(14)?, Self::row_to_change(r)?)))
+            .map_err(sql_err)?
+            .filter_map(|r| r.ok())
+            .collect();
+        Ok(rows)
+    }
+
+    /// Changes that declare at least one input, oldest first. Metadata only.
+    pub fn changes_with_inputs(conn: &Connection) -> Result<Vec<(i64, Change)>> {
+        let sql = format!(
+            "SELECT {}, s.seq FROM changes c JOIN changesets s ON s.id = c.changeset WHERE c.inputs IS NOT NULL ORDER BY s.seq, c.ordinal",
+            Self::CHANGE_COLS
+        );
+        let mut st = conn.prepare(&sql).map_err(sql_err)?;
+        let rows = st
+            .query_map([], |r| Ok((r.get::<_, i64>(14)?, Self::row_to_change(r)?)))
             .map_err(sql_err)?
             .filter_map(|r| r.ok())
             .collect();
@@ -1344,6 +1421,24 @@ impl Ledger {
             .map_err(sql_err)?
             .filter_map(|r| r.ok())
             .filter_map(|b| ChangeId::from_slice(&b))
+            .collect();
+        Ok(rows)
+    }
+
+    /// Every merge replay skip row as `(merge_changeset, change_id)`, for any ref.
+    pub fn all_merge_replay_skips(conn: &Connection) -> Result<Vec<(ChangesetId, ChangeId)>> {
+        let mut st = conn
+            .prepare("SELECT merge_changeset, change_id FROM merge_replay_skips")
+            .map_err(sql_err)?;
+        let rows = st
+            .query_map([], |r| {
+                Ok((
+                    ChangesetId::from_bytes(blob16(r.get::<_, Vec<u8>>(0)?)),
+                    ChangeId::from_bytes(blob16(r.get::<_, Vec<u8>>(1)?)),
+                ))
+            })
+            .map_err(sql_err)?
+            .filter_map(|r| r.ok())
             .collect();
         Ok(rows)
     }

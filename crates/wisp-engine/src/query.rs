@@ -200,17 +200,30 @@ pub fn show(repo: &mut Repository, ref_name: &str, cs_id: ChangesetId) -> Result
     }))
 }
 
-/// `wisp why <path>[#section] --depth n`: content history, actors, origins, and the input graph.
+/// `wisp why <path>[#section] --depth n`: content history, actors, origins, and the input graph,
+/// limited to changes reachable from `ref_name` (the same scope as `wisp impact`).
 pub fn why(repo: &mut Repository, ref_name: &str, spec: &str, depth: usize) -> Result<Value> {
     let (c, section) = resolve_target(repo, ref_name, spec)?;
+    let scope: std::collections::HashSet<ChangesetId> = match repo.head(ref_name)? {
+        Some(h) => Ledger::changesets_closure(repo.ledger.conn(), h)?
+            .into_iter()
+            .map(|r| r.changeset.id)
+            .collect(),
+        None => Default::default(),
+    };
     fn history(
         repo: &Repository,
+        scope: &std::collections::HashSet<ChangesetId>,
         concept: ConceptId,
         section: Option<SectionId>,
         depth: usize,
         seen: &mut Vec<ConceptId>,
     ) -> Result<Value> {
-        let rows = Ledger::changes_for_concept(repo.ledger.conn(), concept, section)?;
+        let rows: Vec<(i64, Change)> =
+            Ledger::changes_for_concept(repo.ledger.conn(), concept, section)?
+                .into_iter()
+                .filter(|(_, ch)| scope.contains(&ch.changeset))
+                .collect();
         let mut events = Vec::new();
         let mut inputs_graph = Vec::new();
         for (seq, ch) in rows {
@@ -230,6 +243,9 @@ pub fn why(repo: &mut Repository, ref_name: &str, spec: &str, depth: usize) -> R
             if let Some(l) = &ch.lineage {
                 e["lineage"] = serde_json::to_value(l).unwrap_or(Value::Null);
             }
+            if ch.inputs_complete {
+                e["inputs_complete"] = json!(true);
+            }
             if !ch.inputs.is_empty() {
                 e["inputs"] = serde_json::to_value(&ch.inputs).unwrap_or(Value::Null);
                 if depth > 0 {
@@ -242,7 +258,7 @@ pub fn why(repo: &mut Repository, ref_name: &str, spec: &str, depth: usize) -> R
                         {
                             if !seen.contains(ic) {
                                 seen.push(*ic);
-                                inputs_graph.push(json!({ "concept": ic.to_string(), "section": is.map(|s| s.to_string()), "history": history(repo, *ic, *is, depth - 1, seen)? }));
+                                inputs_graph.push(json!({ "concept": ic.to_string(), "section": is.map(|s| s.to_string()), "history": history(repo, scope, *ic, *is, depth - 1, seen)? }));
                             }
                         }
                     }
@@ -256,9 +272,9 @@ pub fn why(repo: &mut Repository, ref_name: &str, spec: &str, depth: usize) -> R
         Ok(json!({ "events": events, "inputs": inputs_graph }))
     }
     let mut seen = vec![c.concept];
-    let h = history(repo, c.concept, section, depth, &mut seen)?;
+    let h = history(repo, &scope, c.concept, section, depth, &mut seen)?;
     Ok(
-        json!({ "path": c.path, "concept": c.concept.to_string(), "section": section.map(|s| s.to_string()), "history": h }),
+        json!({ "path": c.path, "concept": c.concept.to_string(), "section": section.map(|s| s.to_string()), "ref": ref_name, "history": h }),
     )
 }
 

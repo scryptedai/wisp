@@ -160,6 +160,7 @@ fn spy_fail_assert_observation_version_mismatch() {
             note: None,
             split_from: None,
             merged_from: None,
+            ..Default::default()
         }],
         inputs: vec![],
         assert: vec![ApplyAssert {
@@ -168,6 +169,7 @@ fn spy_fail_assert_observation_version_mismatch() {
             version: bogus,
         }],
         assert_head: None,
+        inputs_complete: false,
     };
     let err = apply(&mut repo, batch, None).unwrap_err();
     assert_eq!(err.code, ExitCode::Conflict);
@@ -214,10 +216,12 @@ fn spy_fail_assert_head_after_concurrent_commit() {
             note: None,
             split_from: None,
             merged_from: None,
+            ..Default::default()
         }],
         inputs: vec![],
         assert: vec![],
         assert_head: Some(head_before),
+        inputs_complete: false,
     };
     let err = apply(&mut repo, batch, None).unwrap_err();
     assert_eq!(err.code, ExitCode::Conflict);

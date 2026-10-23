@@ -243,6 +243,10 @@ pub fn change_metadata(c: &Change) -> Cbor {
         .opt("lineage", c.lineage.as_ref().map(lineage))
         .opt("origin", c.origin.as_ref().map(origin))
         .opt("reason", c.reason.map(|r| Cbor::text(r.as_str())))
+        .opt(
+            "inputs_complete",
+            c.inputs_complete.then_some(Cbor::Bool(true)),
+        )
         .build()
 }
 
@@ -323,6 +327,7 @@ mod tests {
             lineage: None,
             origin: None,
             reason: None,
+            inputs_complete: false,
         };
         let mut c2 = c1.clone();
         c2.id = ChangeId::new();
@@ -346,5 +351,44 @@ mod tests {
             &[c2, c1],
         );
         assert_eq!(a, b);
+    }
+
+    #[test]
+    fn inputs_complete_is_omitted_when_false() {
+        let c = Change {
+            id: ChangeId::new(),
+            changeset: ChangesetId::new(),
+            ordinal: 0,
+            op: Op::UpdateSection,
+            target: Target::Section {
+                concept: ConceptId::new(),
+                section: SectionId::new(),
+            },
+            scope: ScopeId::new(),
+            payload: None,
+            note: None,
+            inputs: vec![],
+            valid: None,
+            lineage: None,
+            origin: None,
+            reason: None,
+            inputs_complete: false,
+        };
+        let plain = change_metadata(&c).encode();
+        let Cbor::Map(entries) = change_metadata(&c) else {
+            panic!()
+        };
+        assert!(entries
+            .iter()
+            .all(|(k, _)| k != &Cbor::text("inputs_complete")));
+        let mut flagged = c.clone();
+        flagged.inputs_complete = true;
+        assert_ne!(change_metadata(&flagged).encode(), plain);
+        // The pre-flag encoding is unchanged: a record without the key decodes to false and
+        // re-encodes to the same bytes.
+        let json = serde_json::to_value(&c).unwrap();
+        assert!(json.get("inputs_complete").is_none());
+        let back: Change = serde_json::from_value(json).unwrap();
+        assert_eq!(change_metadata(&back).encode(), plain);
     }
 }

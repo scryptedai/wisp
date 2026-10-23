@@ -6,6 +6,7 @@ pub mod checkout;
 pub mod commit;
 pub mod erase;
 pub mod headless;
+pub mod impact;
 pub mod manifest;
 pub mod merge;
 pub mod payloads;
@@ -14,6 +15,7 @@ pub mod record;
 pub mod repo;
 pub mod search;
 pub mod signing;
+pub mod snapshot;
 pub mod vector;
 pub mod worktree;
 

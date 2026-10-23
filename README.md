@@ -63,6 +63,16 @@ wisp pack tables/orders.md --budget 4000    # JSON, within a token budget, repor
 wisp why tables/orders.md#01JAD2V7… --depth 2   # actors, origins, the input graph
 ```
 
+A source turned out to be wrong? Ask what recorded work depends on it (read-only; historical mode):
+
+```sh
+wisp impact sources/payments-api.md               # dependents on the current branch, with the evidence chain
+wisp impact sources/payments-api.md#01JAD2V7… --depth 5 --ref main --json
+wisp impact 01JAD2V7000000000000000000            # an erased or removed source, by its concept id
+```
+
+Each result is a section or frontmatter version (`kind`) with its actor, timestamp, and `via` path back to the source: declared inputs (`pinned` to the snapshot the writer read, or `unversioned`), `inherited` from the version it replaced, or carried over by a `split`, `merge`, or `copy`. A write declared with `--inputs-complete` stops inheritance. Results are only as complete as the inputs writers declared, so an empty answer reads "No recorded dependents found within the selected scope." `wisp impact` never writes; opening a repository may complete a pending erase. Pin what you read with `--input <path>#<section>@<head from wisp cat --json>`.
+
 Erase, and prove it (§10; see **[docs/ERASE.md](docs/ERASE.md)**):
 
 ```sh

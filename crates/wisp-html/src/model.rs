@@ -1,0 +1,155 @@
+use serde::{Deserialize, Serialize};
+
+pub const PLAINTEXT_NOTICE: &str =
+    "This export is a plaintext copy. Later wisp erasures cannot remove content from this folder or copies of it.";
+
+pub const SCHEMA_VERSION: &str = "wisp-html-export/3";
+pub const RENDERER_VERSION: &str = "0.3.0";
+pub const MAX_SECTION_VERSIONS: usize = 20;
+pub const MAX_INPUTS_PER_VERSION: usize = 12;
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct SiteModel {
+    pub ref_name: String,
+    pub head: Option<String>,
+    pub content: bool,
+    pub ids_only: bool,
+    pub since: Option<String>,
+    pub overview: Overview,
+    pub concepts: Vec<ConceptPage>,
+    pub sections: Vec<SectionPage>,
+    pub section_pages: Vec<SectionPage>,
+    pub activity: Vec<ActivityRow>,
+    pub actors: Vec<ActorIndexRow>,
+    pub merges: Vec<MergeIndexRow>,
+    pub removals: Vec<RemovalIndexRow>,
+    pub graphs: Vec<ProvenanceGraph>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct ActivityRow {
+    pub changeset_id: String,
+    pub change_id: String,
+    pub at: String,
+    pub actor: String,
+    pub op: String,
+    pub target: String,
+    pub concept_id: Option<String>,
+    pub section_id: Option<String>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct ActorIndexRow {
+    pub actor_id: String,
+    pub display: String,
+    pub changeset_count: usize,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct MergeIndexRow {
+    pub merge_changeset_id: String,
+    pub at: String,
+    pub actor: String,
+    pub skipped_changes: Vec<String>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct RemovalIndexRow {
+    pub kind: String,
+    pub target: String,
+    pub reason: Option<String>,
+    pub at: Option<String>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct ProvenanceGraph {
+    pub section_id: String,
+    pub version_id: String,
+    pub svg: String,
+    pub truncated: bool,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct Overview {
+    pub concept_count: usize,
+    pub section_count: usize,
+    pub concepts: Vec<ConceptLink>,
+    pub retractions: Vec<RetractionRow>,
+    pub erasures: Vec<ErasureMarkerRow>,
+    pub demo_concept_id: Option<String>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct ConceptLink {
+    pub id: String,
+    pub path: String,
+    pub status: Option<String>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct RetractionRow {
+    pub concept_id: String,
+    pub path: String,
+    pub reason: Option<String>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct ErasureMarkerRow {
+    pub concept_id: String,
+    pub concept_path: String,
+    pub section_id: String,
+    pub reason: String,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct ConceptPage {
+    pub id: String,
+    pub path: String,
+    pub type_name: String,
+    pub status: Option<String>,
+    pub retracted: bool,
+    pub markdown_html: Option<String>,
+    pub sections: Vec<SectionLink>,
+    pub badges: Vec<String>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct SectionLink {
+    pub id: String,
+    pub heading: String,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct SectionPage {
+    pub id: String,
+    pub concept_id: String,
+    pub concept_path: String,
+    pub heading: String,
+    pub versions: Vec<SectionVersion>,
+    pub total_versions: usize,
+    pub versions_truncated: bool,
+    pub page: u32,
+    pub page_count: u32,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct SectionVersion {
+    pub change_id: String,
+    pub changeset_id: String,
+    pub actor: String,
+    pub at: String,
+    pub inputs_complete: bool,
+    pub inputs: Vec<InputRow>,
+    pub inputs_truncated: bool,
+    pub not_kept_at_merge: Vec<String>,
+    pub body: Option<String>,
+    pub diff_vs_predecessor: Option<String>,
+    pub word_diff_vs_predecessor: Option<String>,
+    pub diff_missing_baseline: bool,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct InputRow {
+    pub label: String,
+    pub state: String,
+}

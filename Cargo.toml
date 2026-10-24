@@ -19,6 +19,7 @@ members = [
     "crates/wisp-vector-pg",
     "crates/wisp-sub-tokens",
     "crates/wisp-git",
+    "crates/wisp-html",
 ]
 
 [workspace.package]
@@ -44,6 +45,7 @@ wisp-index = { path = "crates/wisp-index" }
 wisp-vector-pg = { path = "crates/wisp-vector-pg" }
 wisp-sub-tokens = { path = "crates/wisp-sub-tokens" }
 wisp-git = { path = "crates/wisp-git" }
+wisp-html = { path = "crates/wisp-html" }
 wisp-engine = { path = "crates/wisp-engine" }
 wisp-corpus = { path = "crates/wisp-corpus" }
 wisp-invariants = { path = "crates/wisp-invariants" }
@@ -72,6 +74,7 @@ globset = "0.4"
 tar = "0.4"
 zstd = "0.13"
 ureq = { version = "2", default-features = false, features = ["tls"] }
+similar = "2"
 
 [profile.release]
 lto = "thin"

@@ -926,30 +926,65 @@ pub fn run(cli: Cli) -> CliResult {
         Command::Export {
             git,
             archive,
+            html,
+            no_content,
+            since,
+            ids_only,
+            sign,
+            verify,
             profile,
             r#ref,
             strip_anchors,
-        } => match (git, archive) {
-            (Some(dir), _) => {
-                let mut repo = open(&cli)?;
-                let ref_name = ref_of(&repo, r#ref);
-                Ok(Output::json(wisp_git::export_git(
-                    &mut repo, &ref_name, dir,
-                )?))
+        } => {
+            if let Some(dir) = verify {
+                return Ok(Output::json(wisp_engine::html_export::verify_html_export(
+                    dir,
+                )?));
             }
-            (None, Some(file)) => {
-                let mut repo = open(&cli)?;
-                let ref_name = ref_of(&repo, r#ref);
-                Ok(Output::json(wisp_git::export_archive(
+            let kinds = [git.is_some(), archive.is_some(), html.is_some()];
+            if kinds.iter().filter(|&x| *x).count() != 1 {
+                return Err(WispError::usage(
+                    "export: specify exactly one of --git <dir>, --archive <file>, --html <dir>, or --verify <dir>",
+                ));
+            }
+            if *no_content && html.is_none() {
+                return Err(WispError::usage(
+                    "--no-content applies only to --html exports",
+                ));
+            }
+            let mut repo = open(&cli)?;
+            let ref_name = ref_of(&repo, r#ref);
+            if let Some(dir) = git {
+                return Ok(Output::json(wisp_git::export_git(
+                    &mut repo, &ref_name, dir,
+                )?));
+            }
+            if let Some(file) = archive {
+                return Ok(Output::json(wisp_git::export_archive(
                     &mut repo,
                     &ref_name,
                     file,
                     profile.as_deref(),
                     *strip_anchors,
-                )?))
+                )?));
             }
-            (None, None) => Err(WispError::usage("export --git <dir> | --archive <file>")),
-        },
+            let dir = html.as_ref().expect("checked above");
+            let opts = wisp_html::HtmlExportOptions {
+                content: !*no_content,
+                since: since.clone(),
+                ids_only: *ids_only,
+                graph_depth: wisp_html::DEFAULT_GRAPH_DEPTH,
+                graph_max_nodes: wisp_html::DEFAULT_GRAPH_MAX_NODES,
+                sign: *sign,
+            };
+            let data = wisp_engine::html_export::export_html(&mut repo, &ref_name, dir, opts)?;
+            let human = format!(
+                "HTML export written to {}\nWarning: {}",
+                data["dir"].as_str().unwrap_or(""),
+                wisp_html::PLAINTEXT_NOTICE
+            );
+            Ok(Output::text(data, human))
+        }
         Command::Index { rebuild } => {
             let mut repo = open(&cli)?;
             let built = query::index(&mut repo, rebuild.as_deref())?;

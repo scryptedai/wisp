@@ -173,6 +173,18 @@ pub struct ActorRow {
     pub name_index: Option<[u8; 32]>,
 }
 
+/// A published export row (`exports` table).
+#[derive(Clone, Debug)]
+pub struct ExportRow {
+    pub id: PayloadId,
+    pub changeset: ChangesetId,
+    pub kind: String,
+    pub at: String,
+    pub destination: Option<String>,
+    pub manifest_sha256: Option<String>,
+    pub status: String,
+}
+
 /// A scope row.
 #[derive(Clone, Debug)]
 pub struct ScopeRow {
@@ -228,6 +240,20 @@ impl Ledger {
         if !has("changes", "inputs_complete")? {
             conn.execute_batch("ALTER TABLE changes ADD COLUMN inputs_complete INTEGER")
                 .map_err(sql_err)?;
+        }
+        if !has("exports", "destination")? {
+            conn.execute_batch("ALTER TABLE exports ADD COLUMN destination TEXT")
+                .map_err(sql_err)?;
+        }
+        if !has("exports", "manifest_sha256")? {
+            conn.execute_batch("ALTER TABLE exports ADD COLUMN manifest_sha256 TEXT")
+                .map_err(sql_err)?;
+        }
+        if !has("exports", "status")? {
+            conn.execute_batch(
+                "ALTER TABLE exports ADD COLUMN status TEXT NOT NULL DEFAULT 'published'",
+            )
+            .map_err(sql_err)?;
         }
         Ok(())
     }
@@ -1516,6 +1542,24 @@ impl Ledger {
         self.conn
             .execute_batch("PRAGMA incremental_vacuum; PRAGMA wal_checkpoint(TRUNCATE);")
             .map_err(sql_err)?;
+        Ok(())
+    }
+
+    /// Record a published export (`exports` table).
+    pub fn insert_export(conn: &Connection, row: &ExportRow) -> Result<()> {
+        conn.execute(
+            "INSERT INTO exports (id, changeset, kind, at, destination, manifest_sha256, status) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+            params![
+                row.id.bytes().to_vec(),
+                row.changeset.bytes().to_vec(),
+                row.kind,
+                row.at,
+                row.destination,
+                row.manifest_sha256,
+                row.status,
+            ],
+        )
+        .map_err(sql_err)?;
         Ok(())
     }
 }

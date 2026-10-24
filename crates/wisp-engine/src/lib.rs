@@ -6,6 +6,7 @@ pub mod checkout;
 pub mod commit;
 pub mod erase;
 pub mod headless;
+pub mod html_export;
 pub mod impact;
 pub mod manifest;
 pub mod merge;

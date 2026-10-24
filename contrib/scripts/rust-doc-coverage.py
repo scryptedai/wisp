@@ -156,9 +156,21 @@ def main() -> int:
 
     try:
         added_by_file = git_diff_added_lines(base, args.staged)
-    except subprocess.CalledProcessError as e:
-        print(f"rust-doc-coverage: git failed: {e}", file=sys.stderr)
-        return 1
+    except subprocess.CalledProcessError:
+        if base and not args.staged:
+            subprocess.run(
+                ["git", "fetch", "origin", base.removeprefix("origin/")],
+                capture_output=True,
+                text=True,
+            )
+            try:
+                added_by_file = git_diff_added_lines(base, args.staged)
+            except subprocess.CalledProcessError as e:
+                print(f"rust-doc-coverage: git failed: {e}", file=sys.stderr)
+                return 1
+        else:
+            print("rust-doc-coverage: git diff failed", file=sys.stderr)
+            return 1
 
     rust_files = [f for f in added_by_file if should_check_file(f)]
     if not rust_files:

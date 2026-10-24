@@ -1,22 +1,27 @@
 //! `wisp-engine`: orchestrates record, checkout, erase, headless writes, and queries; owns transactions.
 
 pub mod apply;
+pub mod apply_resolve;
 pub mod cache;
 pub mod checkout;
+pub mod cold_flush;
 pub mod commit;
 pub mod erase;
 pub mod headless;
 pub mod html_export;
 pub mod impact;
 pub mod manifest;
+pub mod materialize;
 pub mod merge;
 pub mod payloads;
+pub mod publish;
 pub mod query;
 pub mod record;
 pub mod repo;
 pub mod search;
 pub mod signing;
 pub mod snapshot;
+pub mod timing;
 pub mod vector;
 pub mod worktree;
 

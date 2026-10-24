@@ -1448,6 +1448,9 @@ pub fn config(repo: &mut Repository, key: &str, value: Option<&str>) -> Result<V
             repo.manifest.save(&repo.wisp_dir.join("manifest.toml"))?;
             Ok(json!({ "render.erasure_markers": repo.manifest.render.erasure_markers }))
         }
+        ("commit.busy_timeout_ms", None) => {
+            Ok(json!({ "commit.busy_timeout_ms": repo.manifest.commit.busy_timeout_ms }))
+        }
         ("commit.busy_timeout_ms", Some(v)) => {
             repo.manifest.commit.busy_timeout_ms = v
                 .parse()
@@ -1455,12 +1458,35 @@ pub fn config(repo: &mut Repository, key: &str, value: Option<&str>) -> Result<V
             repo.manifest.save(&repo.wisp_dir.join("manifest.toml"))?;
             Ok(json!({ "commit.busy_timeout_ms": repo.manifest.commit.busy_timeout_ms }))
         }
+        ("commit.retries", None) => Ok(json!({ "commit.retries": repo.manifest.commit.retries })),
         ("commit.retries", Some(v)) => {
             repo.manifest.commit.retries = v
                 .parse()
                 .map_err(|_| WispError::usage("integer expected"))?;
             repo.manifest.save(&repo.wisp_dir.join("manifest.toml"))?;
             Ok(json!({ "commit.retries": repo.manifest.commit.retries }))
+        }
+        ("materialize.enabled", None) => {
+            Ok(json!({ "materialize.enabled": repo.manifest.materialize.enabled }))
+        }
+        ("materialize.enabled", Some(v)) => {
+            repo.manifest.materialize.enabled = v == "true" || v == "1";
+            repo.manifest.save(&repo.wisp_dir.join("manifest.toml"))?;
+            Ok(json!({ "materialize.enabled": repo.manifest.materialize.enabled }))
+        }
+        ("materialize.tick_ms", None) => {
+            Ok(json!({ "materialize.tick_ms": repo.manifest.materialize.tick_ms }))
+        }
+        ("materialize.tick_ms", Some(v)) => {
+            let ms = v
+                .parse::<u64>()
+                .map_err(|_| WispError::usage("integer expected"))?;
+            if ms == 0 {
+                return Err(WispError::usage("materialize.tick_ms must be >= 1"));
+            }
+            repo.manifest.materialize.tick_ms = ms;
+            repo.manifest.save(&repo.wisp_dir.join("manifest.toml"))?;
+            Ok(json!({ "materialize.tick_ms": repo.manifest.materialize.tick_ms }))
         }
         (k, None) => Err(WispError::not_found(format!("unknown config key {k}"))),
         (k, Some(_)) => Err(WispError::usage(format!("config key {k} is not settable"))),

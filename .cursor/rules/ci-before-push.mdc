@@ -1,0 +1,52 @@
+---
+description: Run the same checks as GitHub Actions before commit or push
+alwaysApply: true
+---
+
+# CI gate before commit / push
+
+GitHub Actions runs `.github/workflows/ci.yml` on every PR. **Do not push** until the same checks pass locally.
+
+## Required command
+
+From the repo root:
+
+```sh
+./contrib/ci-check.sh
+```
+
+Use `CARGO_TARGET_DIR=./target` if bindgen/sqlite fails in a sandbox (see `AGENTS.md`).
+
+## What fails most often (fix these first)
+
+| Step | Typical mistake |
+|------|-----------------|
+| `./contrib/coderabbit-check.sh` | New `pub fn` / user doc with migration wording (“Previously”, “we now”); needs a real merge base with `main` (CI fetches `pull_request.base.sha`, not shallow `origin/main` alone) |
+| `cargo fmt --all -- --check` | Edited Rust without running `cargo fmt --all` |
+| `cargo clippy` | `print_literal`, `uninlined_format_args`, unused imports — match CI allowlist in `ci-check.sh` |
+| `cargo test -p wisp-invariants` | Async **materialize**: headless apply updates hot before disk; call `flush_materialize()` before erase preflight or disk snapshots |
+| `mandoc -T lint -Wall contrib/man/wisp.1` | CI runs on **ubuntu**; `ci-check.sh` runs it on **any OS** when `mandoc` is installed (macOS has it). **pre-commit** lints staged `contrib/man/wisp.1` and fails if `mandoc` is missing. |
+| `wisp-cli` build | `contrib/man/wisp.1` must exist (`build.rs` gate) |
+
+## Git hooks (optional, recommended)
+
+One-time install from repo root:
+
+```sh
+./contrib/install-git-hooks.sh
+```
+
+| Hook | Runs |
+|------|------|
+| `pre-commit` | `cargo fmt --all -- --check`; staged `contrib/man/wisp.1` → `mandoc -T lint -Wall`; staged paths → `coderabbit-check.sh --staged` |
+| `pre-push` | `./contrib/ci-check.sh` (full CI test job) |
+
+Bypass only when intentional: `git commit --no-verify` / `git push --no-verify`.
+
+## Agent workflow
+
+1. Implement + tests.
+2. Run **`./contrib/ci-check.sh`** before push (hooks do this automatically after `install-git-hooks.sh`).
+3. Only then `git commit` / `git push`.
+
+Optional heavy job (separate CI `stress` job): see `contrib/ci-check.sh` header comment in `AGENTS.md` stress section — not run by default locally.

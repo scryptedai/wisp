@@ -109,6 +109,18 @@ pub enum Command {
     },
     /// Changed, new, missing, and non-conformant files; pending erasures
     Status,
+    /// Flush async worktree materialize (disk cache behind hot after headless commits)
+    #[command(
+        long_about = "Managed checkouts are caches of the hot tier. After wisp apply or other \
+headless writes, dirty paths publish on a manifest heartbeat (materialize.tick_ms). \
+wisp record drains the queue before return. Use materialize --wait (or wisp cat / search) \
+before reading bundle paths from disk. See docs/WORKTREE.md."
+    )]
+    Materialize {
+        /// Block until the publish queue for this repository is empty
+        #[arg(long)]
+        wait: bool,
+    },
     /// Section-level diff of the working tree against the ref
     Diff {
         path: Option<String>,
@@ -546,10 +558,15 @@ pub enum Command {
     /// Commit a batch of operations from a file or stdin as one changeset
     #[command(long_about = help_text::APPLY_LONG)]
     Apply {
+        /// Batch JSON path (default: stdin)
         #[arg(long)]
         file: Option<PathBuf>,
+        /// Target ref (default: checked-out ref or main)
         #[arg(long)]
         r#ref: Option<String>,
+        /// On section_conflict (exit 3), refresh base_version from hot and retry (bounded)
+        #[arg(long)]
+        resolve: bool,
     },
 }
 
@@ -671,6 +688,7 @@ impl Command {
             Command::Init { .. } => "init",
             Command::Import { .. } => "import",
             Command::Status => "status",
+            Command::Materialize { .. } => "materialize",
             Command::Diff { .. } => "diff",
             Command::Record { .. } => "record",
             Command::Checkout { .. } => "checkout",

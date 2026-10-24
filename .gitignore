@@ -18,6 +18,10 @@
 .ci-fastembed-cache/
 
 # wisp repositories created while trying things out
+# Local Cargo layout override (see wisp-target.example.toml).
+/wisp-target.toml
+/contrib/dev-target.local.toml
+
 .wisp/
 .wispignore
 

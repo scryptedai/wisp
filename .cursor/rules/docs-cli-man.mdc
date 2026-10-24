@@ -1,0 +1,35 @@
+---
+description: Authoritative docs, CLI --help, and man page must stay aligned with product behavior
+alwaysApply: true
+---
+
+# Documentation, help, and man (pre-1.0)
+
+wisp is **pre-release**. Do not document “migration from older behavior,” “backward compatible,” or “we changed X to Y” unless `DECISIONS.md` records a deliberate spec deviation. User-facing text is **authoritative present tense**: what the tool does now.
+
+## Three surfaces (keep in sync)
+
+| Surface | Location | Rule |
+|---------|----------|------|
+| **Man** | `contrib/man/wisp.1` | Source of truth for installed `man wisp`. Must exist before `wisp-cli` builds (`build.rs` checks). Update when CLI behavior changes. |
+| **`--help`** | `crates/wisp-cli/src/cli.rs` | Every user-visible flag and subcommand needs a useful one-line (and `long_about` where the command is non-obvious). Point to `docs/*.md` when the full contract is long (`apply`, fleets, materialize). |
+| **Docs** | `docs/`, `README.md`, `contrib/claude-skill/` | Same facts as help/man; prefer links over duplication. Agent fleets: **`docs/AGENT-WRITERS.md`**. Disk cache: **`docs/WORKTREE.md`**. |
+
+## Behavior changes
+
+When adding or changing CLI or writer behavior:
+
+1. Implement + tests (TDD in `AGENTS.md`).
+2. Update **`contrib/man/wisp.1`** and **`cli.rs` help** in the same change.
+3. Update the relevant **`docs/`** page (and `DECISIONS.md` if spec deviation).
+4. Do not leave `contrib/claude-skill/project-memory/SKILL.md` contradicting hot vs disk or exit-3 flow.
+
+## Man install
+
+Release and `cargo install` consumers expect `contrib/man/wisp.1` beside the repo; CI lints with `mandoc` on Linux. Packagers copy to `man1/wisp.1`.
+
+## Anti-patterns
+
+- “Previously …” / “now …” / “instead of synchronously …” in user docs (ok in `DECISIONS.md` as decision records).
+- Documenting flags that exist only in code without man/help.
+- Claiming headless writes update the working tree without naming materialize barriers.

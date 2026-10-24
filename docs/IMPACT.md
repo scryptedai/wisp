@@ -33,7 +33,7 @@ Agents should pin reads: use `at` from `wisp cat --json` / read assertions, not 
 | Depth | `depth_truncation_is_reported_only_when_dependencies_remain` | `truncated` only when outgoing deps were cut |
 | Erasure | `erased_source_and_intermediate_trace_by_opaque_id` | Opaque concept id still resolves; labels may be absent |
 | Lineage | `split_and_merge_lineage_carry_dependencies` | Split/merge does not silently drop recorded deps |
-| Safety | `impact_is_read_only` | No ledger writes from `impact` |
+| Safety | `impact_is_read_only` | No ledger writes from `impact`; harness flushes materialize after headless apply so disk/`checkout.idx` stay stable during the read-only check |
 | Scale | `impact_scaling_probe` (ignored) | Local timing probe; not CI-gated |
 | Follow-ups | `impact_followups.rs` | Frontmatter units, identical-merge union, erase-on-ref behavior |
 | `wisp why` | `why_scope.rs` | Backward walk scoped to selected ref |

@@ -30,6 +30,12 @@ license = "GPL-2.0-only"
 repository = "https://github.com/scryptedai/wisp"
 rust-version = "1.88"
 
+# Default local dev: one shared artifact dir (see wisp-target.example.toml).
+# Override per clone with gitignored wisp-target.toml; CI always uses ./target.
+[workspace.metadata.wisp-dev]
+target = "shared"
+shared-cache-subdir = "wisp/target"
+
 [workspace.dependencies]
 wisp-model = { path = "crates/wisp-model" }
 wisp-store = { path = "crates/wisp-store" }

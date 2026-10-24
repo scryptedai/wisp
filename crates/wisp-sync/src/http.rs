@@ -105,7 +105,7 @@ fn dispatch(state: &Arc<Mutex<HttpState>>, mut request: tiny_http::Request) -> R
     let guard = state.lock().map_err(|_| WispError::internal("http lock"))?;
     let mut repo = Repository::open(&guard.root, &guard.unlock)?;
     if method == &tiny_http::Method::Get {
-        let body = pack_bytes(&repo)?;
+        let body = pack_bytes(&mut repo)?;
         request
             .respond(tiny_http::Response::from_data(body).with_header(
                 tiny_http::Header::from_bytes(&b"Content-Type"[..], b"application/zstd").unwrap(),

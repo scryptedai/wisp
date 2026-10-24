@@ -1,0 +1,57 @@
+# Adversarial exit-3 battery — contrib/battery-exit3-adversarial/README.md
+# Runner: crates/wisp-invariants/tests/battery_exit3_adversarial.rs
+
+[meta]
+bundle_id = "battery-exit3-adversarial"
+frontier_path = "notes/swarm-metrics"
+frontier_heading = "Frontier"
+arena_path = "arena/stampede"
+arena_heading_prefix = "S"
+default_writers = 8
+heavy_writers = 32
+
+# A: stale base on shared section — every writer must exit 3, zero silent commits
+[[phase]]
+id = "A1-stale-stampede"
+kind = "stale_stampede"
+writers = 8
+rounds = 1
+
+# A: same stampede, then parallel resolve-with-refresh until all writers succeed
+[[phase]]
+id = "A2-parallel-resolve"
+kind = "parallel_resolve"
+writers = 8
+max_attempts = 24
+
+# B: disjoint sections — exit 3 must stay zero
+[[phase]]
+id = "B1-disjoint-parallel"
+kind = "disjoint_parallel"
+writers = 8
+ops_per_writer = 2
+
+# C: logging patch vs optimistic replace
+[[phase]]
+id = "C1-append-stale-update"
+kind = "append_stale_update"
+rounds = 3
+
+[[phase]]
+id = "C2-stale-then-blind-append"
+kind = "stale_then_blind_append"
+rounds = 3
+
+# D: resolution economics
+[[phase]]
+id = "D1-retry-budget"
+kind = "retry_budget"
+writers = 6
+waves = 2
+max_retries = 12
+
+[[phase]]
+id = "D2-poison-neighbor"
+kind = "poison_neighbor"
+good_writers = 4
+poison_attempts = 8

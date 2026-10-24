@@ -12,8 +12,8 @@ set -euo pipefail
 root="$(cd "$(dirname "$0")/../.." && pwd)"
 cd "$root"
 
-export CARGO_TARGET_DIR="${WISP_CARGO_TARGET_DIR:-$root/target}"
-mkdir -p "$CARGO_TARGET_DIR"
+# shellcheck source=../build-env.sh
+source "$root/contrib/build-env.sh"
 
 avail_kb="$(df -k "$CARGO_TARGET_DIR" | awk 'NR==2 {print $4}')"
 if [[ "${avail_kb:-0}" -lt 8388608 ]]; then

@@ -145,6 +145,10 @@ pub fn cat(
                 let sb = SectionBody::decode(&pt)?;
                 json!({ "heading": sb.heading, "level": sb.level, "content": sb.body })
             }
+            Op::AppendSection | Op::PrependSection => {
+                let f = crate::payloads::SectionFragment::decode(&pt)?;
+                json!({ "content": f.content })
+            }
             _ => json!({ "content": String::from_utf8_lossy(&pt) }),
         };
         return Ok(
@@ -319,6 +323,42 @@ fn plan_op(repo: &mut Repository, ref_name: &str, o: &ApplyOp, le: &str) -> Resu
                     sections: m.clone(),
                 });
             }
+            Ok(p)
+        }
+        Op::AppendSection | Op::PrependSection => {
+            let spec = match o.section {
+                Some(s) => format!("{}#{}", o.path, s),
+                None => o.path.clone(),
+            };
+            let (c, section) = resolve_target(repo, ref_name, &spec)?;
+            let s = section
+                .ok_or_else(|| WispError::usage("append/prepend requires <path>#<section>"))?;
+            let st = Hot::section(repo.hot(ref_name)?.conn(), s)?
+                .ok_or_else(|| WispError::not_found("section"))?;
+            let content = o
+                .content
+                .clone()
+                .ok_or_else(|| WispError::usage("append/prepend requires --content"))?;
+            let frag = crate::payloads::SectionFragment {
+                content: ensure_trailing_newline(content, le),
+            };
+            let mut p = PlannedOp::new(
+                op,
+                Target::Section {
+                    concept: c.concept,
+                    section: s,
+                },
+                st.scope,
+            )
+            .with_payload(PayloadKind::SectionFragment, frag.encode())
+            .with_precondition(Precondition::Any)
+            .with_path(format!("{}.md", c.path));
+            p.policy = PolicyFacts {
+                concept_type: c.type_.clone(),
+                section_heading: Some(st.heading.clone()),
+                ..Default::default()
+            };
+            p.note = o.note.clone();
             Ok(p)
         }
         Op::RemoveSection => {
@@ -514,8 +554,20 @@ fn plan_op(repo: &mut Repository, ref_name: &str, o: &ApplyOp, le: &str) -> Resu
     }
 }
 
+pub use crate::apply_resolve::{
+    apply_with_resolve, patch_batch_from_conflicts, ApplyResolvePolicy, ApplyResolveStats,
+};
+
 /// `wisp apply`: one batch, one changeset. Every other headless command is shorthand for a one-op batch.
 pub fn apply(repo: &mut Repository, batch: ApplyBatch, default_ref: Option<&str>) -> Result<Value> {
+    crate::timing::phase("apply.total", || apply_inner(repo, batch, default_ref))
+}
+
+fn apply_inner(
+    repo: &mut Repository,
+    batch: ApplyBatch,
+    default_ref: Option<&str>,
+) -> Result<Value> {
     let ref_name = batch
         .r#ref
         .clone()
@@ -525,7 +577,9 @@ pub fn apply(repo: &mut Repository, batch: ApplyBatch, default_ref: Option<&str>
     let le = "\n";
     let mut ops = Vec::with_capacity(batch.ops.len());
     for o in &batch.ops {
-        ops.push(plan_op(repo, &ref_name, o, le)?);
+        ops.push(crate::timing::phase("apply.plan_op", || {
+            plan_op(repo, &ref_name, o, le)
+        })?);
     }
     // A `create` may be followed by frontmatter and content in the same batch.
     // Extra planned ops, each tagged with the index of the batch op it belongs to.
@@ -610,11 +664,15 @@ pub fn apply(repo: &mut Repository, batch: ApplyBatch, default_ref: Option<&str>
     }
     // Inputs: an op's own `inputs` replace the batch-level inputs for that op; otherwise the
     // batch-level inputs apply. They attach to content changes only.
-    let batch_inputs = resolve_inputs(repo, &ref_name, &batch.inputs)?;
+    let batch_inputs = crate::timing::phase("apply.resolve_inputs", || {
+        resolve_inputs(repo, &ref_name, &batch.inputs)
+    })?;
     let mut op_inputs: Vec<Vec<InputRef>> = Vec::with_capacity(batch.ops.len());
     for o in &batch.ops {
         op_inputs.push(match &o.inputs {
-            Some(own) => resolve_inputs(repo, &ref_name, own)?,
+            Some(own) => crate::timing::phase("apply.resolve_inputs", || {
+                resolve_inputs(repo, &ref_name, own)
+            })?,
             None => batch_inputs.clone(),
         });
     }
@@ -657,9 +715,7 @@ pub fn apply(repo: &mut Repository, batch: ApplyBatch, default_ref: Option<&str>
         }
     }
     req.ops = ops;
-    let out = commit(repo, req)?;
-    // Effect on working trees: rewrite files whose on-disk content still matches their base (§11.3).
-    let rewritten = refresh_worktree_after_headless(repo, &ref_name)?;
+    let out = crate::timing::phase("apply.commit", || commit(repo, req))?;
     let versions: Vec<Value> = out
         .changes
         .iter()
@@ -681,7 +737,6 @@ pub fn apply(repo: &mut Repository, batch: ApplyBatch, default_ref: Option<&str>
         "seq": out.seq,
         "head": out.changeset.to_string(),
         "changes": versions,
-        "worktree_files_rewritten": rewritten,
     });
     if let Some(w) = missing_inputs_warning(&actor, &out.changes) {
         result["warnings"] = json!([w]);
@@ -825,60 +880,72 @@ pub fn refresh_worktree_after_headless(
         return Ok(vec![]);
     }
     let root = repo.root.clone();
-    let _lock = checkout::WorktreeLock::acquire(&repo.wisp_dir)?;
+    let _lock = crate::timing::phase("worktree.lock", || {
+        checkout::WorktreeLock::acquire(&repo.wisp_dir)
+    })?;
     let idx_path = checkout::checkout_idx_path(repo, &root);
-    let Some(old) = checkout::CheckoutIndex::load(&idx_path)? else {
+    let Some(old) = crate::timing::phase("worktree.load_index", || {
+        checkout::CheckoutIndex::load(&idx_path)
+    })?
+    else {
         return Ok(vec![]);
     };
     // Which files have unrecorded edits?
     let mut dirty: std::collections::HashSet<String> = std::collections::HashSet::new();
-    for (rel, rec) in &old.files {
-        if checkout::file_changed(&root.join(rel), rec) {
-            dirty.insert(rel.clone());
+    crate::timing::phase("worktree.scan_dirty", || {
+        for (rel, rec) in &old.files {
+            if checkout::file_changed(&root.join(rel), rec) {
+                dirty.insert(rel.clone());
+            }
         }
-    }
+    });
     // Render the new view into a temp dir, then copy over only clean files.
     let tmp = repo
         .wisp_dir
         .join("cache")
         .join(format!("headless-{}", ChangeId::new()));
     std::fs::create_dir_all(&tmp)?;
-    let fresh = checkout::write_tree(repo, ref_name, &tmp, false, false, false)?;
+    let fresh = crate::timing::phase("worktree.write_tree", || {
+        checkout::write_tree(repo, ref_name, &tmp, false, false, false)
+    })?;
     let mut new_idx = old.clone();
     new_idx.head = fresh.head;
     let mut rewritten = Vec::new();
-    for (rel, rec) in &fresh.files {
-        if dirty.contains(rel) {
-            continue;
+    crate::timing::phase("worktree.sync_files", || -> Result<()> {
+        for (rel, rec) in &fresh.files {
+            if dirty.contains(rel) {
+                continue;
+            }
+            let src = tmp.join(rel);
+            let dst = root.join(rel);
+            let bytes = std::fs::read(&src).map_err(|e| {
+                let listing: Vec<String> = std::fs::read_dir(&tmp)
+                    .map(|rd| {
+                        rd.flatten()
+                            .map(|x| x.file_name().to_string_lossy().to_string())
+                            .collect()
+                    })
+                    .unwrap_or_default();
+                WispError::internal(format!(
+                    "read {}: {e}; tmp exists={} listing={:?} files={:?}",
+                    src.display(),
+                    tmp.exists(),
+                    listing,
+                    fresh.files.keys().collect::<Vec<_>>()
+                ))
+            })?;
+            let same = std::fs::read(&dst).map(|b| b == bytes).unwrap_or(false);
+            if !same {
+                checkout::write_atomic(&dst, &bytes)?;
+                rewritten.push(rel.clone());
+            }
+            new_idx.files.insert(
+                rel.clone(),
+                checkout::file_record(&dst, &rec.kind, rec.id.clone())?,
+            );
         }
-        let src = tmp.join(rel);
-        let dst = root.join(rel);
-        let bytes = std::fs::read(&src).map_err(|e| {
-            let listing: Vec<String> = std::fs::read_dir(&tmp)
-                .map(|rd| {
-                    rd.flatten()
-                        .map(|x| x.file_name().to_string_lossy().to_string())
-                        .collect()
-                })
-                .unwrap_or_default();
-            WispError::internal(format!(
-                "read {}: {e}; tmp exists={} listing={:?} files={:?}",
-                src.display(),
-                tmp.exists(),
-                listing,
-                fresh.files.keys().collect::<Vec<_>>()
-            ))
-        })?;
-        let same = std::fs::read(&dst).map(|b| b == bytes).unwrap_or(false);
-        if !same {
-            checkout::write_atomic(&dst, &bytes)?;
-            rewritten.push(rel.clone());
-        }
-        new_idx.files.insert(
-            rel.clone(),
-            checkout::file_record(&dst, &rec.kind, rec.id.clone())?,
-        );
-    }
+        Ok(())
+    })?;
     // Base versions for clean concepts advance; dirty files keep their old base.
     for (cid, base) in &fresh.concepts {
         let rel = format!("{}.md", base.path);
@@ -887,8 +954,10 @@ pub fn refresh_worktree_after_headless(
         }
     }
     new_idx.assets = fresh.assets.clone();
-    new_idx.save(&idx_path)?;
-    let _ = std::fs::remove_dir_all(&tmp);
+    crate::timing::phase("worktree.save_index", || new_idx.save(&idx_path))?;
+    crate::timing::phase("worktree.cleanup_tmp", || {
+        let _ = std::fs::remove_dir_all(&tmp);
+    });
     Ok(rewritten)
 }
 

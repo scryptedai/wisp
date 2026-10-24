@@ -27,6 +27,49 @@ impl SectionBody {
     }
 }
 
+/// Delta for `append_section` / `prepend_section` (§8).
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SectionFragment {
+    pub content: String,
+}
+
+impl SectionFragment {
+    /// JSON bytes stored as a section-fragment payload.
+    pub fn encode(&self) -> Vec<u8> {
+        serde_json::to_vec(self).expect("serializable")
+    }
+    /// Parse a section-fragment payload from cold storage.
+    pub fn decode(b: &[u8]) -> Result<Self> {
+        serde_json::from_slice(b)
+            .map_err(|e| WispError::integrity(format!("section fragment: {e}")))
+    }
+}
+
+fn ensure_nl(s: &str) -> String {
+    if s.is_empty() {
+        return String::new();
+    }
+    if s.ends_with('\n') {
+        s.to_string()
+    } else {
+        format!("{s}\n")
+    }
+}
+
+/// Join section body with a fragment (logging-style patches).
+pub fn stitch_section_body(existing: &str, fragment: &str, prepend: bool) -> String {
+    let frag = ensure_nl(fragment);
+    if existing.is_empty() {
+        return frag;
+    }
+    let base = ensure_nl(existing);
+    if prepend {
+        format!("{frag}{base}")
+    } else {
+        format!("{base}{frag}")
+    }
+}
+
 pub fn encode_frontmatter(key: &str, raw: &str) -> Vec<u8> {
     serde_json::to_vec(&FrontmatterPayload {
         key: key.to_string(),

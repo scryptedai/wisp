@@ -79,7 +79,9 @@ pub fn head(repo: &mut Repository, ref_name: &str) -> ChangesetId {
 
 pub fn apply_json(repo: &mut Repository, batch: Value) -> Result<Value> {
     let b: ApplyBatch = serde_json::from_value(batch).expect("batch json");
-    apply(repo, b, None)
+    let out = apply(repo, b, None)?;
+    repo.flush_materialize()?;
+    Ok(out)
 }
 
 /// One `update_section` against the section's current version.

@@ -50,6 +50,8 @@ pub struct Status {
     pub generated_modified: Vec<String>,
     pub warnings: Vec<String>,
     pub pending_erasures: usize,
+    #[serde(default)]
+    pub materialize: crate::materialize::MaterializeStatus,
 }
 
 /// The planned changeset, before commit.
@@ -1197,6 +1199,7 @@ pub fn record(repo: &mut Repository, opts: &RecordOptions) -> Result<RecordResul
     }
     let actor = opts.actor.clone().unwrap_or_else(|| repo.default_actor());
     let mut req = CommitRequest::new(&ref_name, &actor);
+    req.materialize_reconcile = true;
     req.base = p.base;
     req.message = opts.message.clone();
     req.inputs = opts.inputs.clone();
@@ -1208,11 +1211,8 @@ pub fn record(repo: &mut Repository, opts: &RecordOptions) -> Result<RecordResul
     if let Some(w) = crate::headless::missing_inputs_warning(&actor, &out.changes) {
         warnings.push(w);
     }
-    // Steps 10–11: rewrite the tree (anchors, wisp_id, managed keys, generated views) and record the index.
-    let root = repo.root.clone();
-    let _lock = checkout::WorktreeLock::acquire(&repo.wisp_dir)?;
-    let idx = checkout::write_tree(repo, &ref_name, &root, false, false, true)?;
-    idx.save(&checkout::checkout_idx_path(repo, &root))?;
+    // `record` is disk-driven: barrier so the next scan sees a clean tree (headless stays async).
+    repo.flush_materialize()?;
     if opts.resolve_merge {
         match merge::read_merge_state(repo)? {
             Some(state) => {
@@ -1274,7 +1274,9 @@ pub fn status(repo: &mut Repository, ref_name: Option<&str>) -> Result<Status> {
         dry_run: true,
         ..Default::default()
     };
-    Ok(plan(repo, &opts)?.status)
+    let mut s = plan(repo, &opts)?.status;
+    s.materialize = repo.materialize_status();
+    Ok(s)
 }
 
 /// `wisp diff [--explain]`: a section-level description of what `record` would commit.

@@ -38,8 +38,12 @@ fn open(root: &Path) -> Repository {
     Repository::open(root, &Unlock::default()).unwrap()
 }
 
+fn sync_disk(repo: &mut Repository) {
+    repo.flush_materialize().unwrap();
+}
+
 fn rec(repo: &mut Repository, actor: &str) -> crate::record::RecordResult {
-    record(
+    let r = record(
         repo,
         &RecordOptions {
             actor: Some(actor.into()),
@@ -47,7 +51,9 @@ fn rec(repo: &mut Repository, actor: &str) -> crate::record::RecordResult {
             ..Default::default()
         },
     )
-    .unwrap()
+    .unwrap();
+    sync_disk(repo);
+    r
 }
 
 #[test]
@@ -284,6 +290,7 @@ fn i16_i17_concurrent_headless_writers_disjoint_sections() {
     let total: i32 = handles.into_iter().map(|h| h.join().unwrap()).sum();
     assert_eq!(total, 40);
     let mut repo = open(&root);
+    sync_disk(&mut repo);
     assert_eq!(Ledger::max_seq(repo.ledger.conn()).unwrap(), 41); // 1 record + 40 headless
     {
         let hot = repo.hot(MAIN_REF).unwrap();
@@ -357,9 +364,46 @@ fn i16_i17_concurrent_headless_writers_disjoint_sections() {
         op2,
     )
     .unwrap();
+    sync_disk(&mut repo);
+    // `apply_with_resolve` performs the same refresh loop agents are expected to use.
+    let stale = ApplyOp {
+        op: "update_section".into(),
+        path: "doc.md".into(),
+        section: Some(ids[0]),
+        base_version: Some(base_versions[0].to_string()),
+        heading: None,
+        level: None,
+        content: Some("via-resolve\n".into()),
+        after: None,
+        key: None,
+        value: None,
+        r#type: None,
+        frontmatter: None,
+        note: None,
+        split_from: None,
+        merged_from: None,
+        ..Default::default()
+    };
+    let batch = ApplyBatch {
+        actor: Some("process:resolve".into()),
+        message: Some("resolve".into()),
+        ops: vec![stale],
+        inputs: vec![],
+        assert: vec![],
+        r#ref: None,
+        base: None,
+        assert_head: None,
+        inputs_complete: false,
+    };
+    let policy = crate::headless::ApplyResolvePolicy::default();
+    let (out, stats) =
+        crate::headless::apply_with_resolve(&mut repo, batch, None, &policy).unwrap();
+    assert!(stats.conflict_rounds >= 1);
+    assert_eq!(out["changes"][0]["op"], "update_section");
+    sync_disk(&mut repo);
     // I19: the working tree was refreshed (no unrecorded edits), so the file shows the headless writes.
     let text = read(&f.root, "doc.md");
-    assert!(text.contains("synthesized"), "{text}");
+    assert!(text.contains("via-resolve"), "{text}");
     assert!(text.contains("writer 3 write 4"));
 }
 
@@ -410,8 +454,20 @@ fn i19_headless_commit_preserves_unrecorded_edits() {
     let after = read(&f.root, "doc.md");
     assert!(after.contains("alpha edited locally"));
     assert!(!after.contains("beta by agent"));
+    // Materialize may refresh generated views (e.g. log.md) before the human records.
+    sync_disk(&mut repo);
     // The next record commits the disjoint edit cleanly, validated against the new head.
-    let r = rec(&mut repo, "human:alex");
+    let r = record(
+        &mut repo,
+        &RecordOptions {
+            actor: Some("human:alex".into()),
+            message: Some("test".into()),
+            adopt_generated: true,
+            ..Default::default()
+        },
+    )
+    .unwrap();
+    sync_disk(&mut repo);
     assert!(r.changeset.is_some());
     let final_text = read(&f.root, "doc.md");
     assert!(final_text.contains("alpha edited locally"));
@@ -677,6 +733,7 @@ fn retract_restore_revert_and_policies() {
         },
     )
     .unwrap();
+    sync_disk(&mut repo);
     let t = read(&f.root, "calc/revenue.md");
     assert!(t.contains("status: draft"), "{t}");
     assert!(t.contains("verified:"), "{t}");
@@ -948,6 +1005,7 @@ fn assets_and_nonconformant_and_generated_edits() {
         },
     )
     .unwrap();
+    sync_disk(&mut repo);
     assert!(r.changeset.is_some());
     assert!(!read(&f.root, "index.md").contains("hand edited"));
     // Missing asset → retract.
@@ -1067,6 +1125,51 @@ fn mv_rewrites_links_and_i25_staging_recovers() {
         .payloads_dir()
         .join(Ledger::payload_rel_path(pid))
         .exists());
+}
+
+#[test]
+fn cold_flush_runs_async_then_barrier() {
+    let f = fixture();
+    Repository::init(&f.root, "0.2", &Unlock::default()).unwrap();
+    write(
+        &f.root,
+        "notes/x.md",
+        "---\ntype: Note\ntitle: X\n---\n\n## A\n\none\n",
+    );
+    let mut repo = open(&f.root);
+    rec(&mut repo, "human:alex");
+    let (sec, ver) = {
+        let hot = repo.hot(MAIN_REF).unwrap();
+        let c = Hot::concept_by_path(hot.conn(), "notes/x")
+            .unwrap()
+            .unwrap()
+            .concept;
+        let s = Hot::sections_of(hot.conn(), c)
+            .unwrap()
+            .into_iter()
+            .find(|s| s.heading == "A")
+            .unwrap();
+        (s.section, s.version)
+    };
+    crate::headless::single(
+        &mut repo,
+        Some(MAIN_REF),
+        Some("human:alex".into()),
+        Some("touch".into()),
+        None,
+        ApplyOp {
+            op: "update_section".into(),
+            path: "notes/x.md".into(),
+            section: Some(sec),
+            base_version: Some(ver.to_string()),
+            content: Some("two\n".into()),
+            ..Default::default()
+        },
+    )
+    .unwrap();
+    repo.flush_cold_payloads().unwrap();
+    assert_eq!(Ledger::staged_backlog_bytes(repo.ledger.conn()).unwrap(), 0);
+    assert!(crate::query::fsck(&mut repo).is_ok());
 }
 
 #[test]

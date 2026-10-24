@@ -684,6 +684,134 @@ fn tempfile_hot() -> Result<Hot> {
     Hot::open(&dir.join("hot.db"))
 }
 
+/// Materialize a publish set into a managed tree (deferred drain / delta publish).
+pub fn publish_ref_delta(
+    repo: &mut Repository,
+    ref_name: &str,
+    tree_root: &Path,
+    dirty: &crate::publish::DirtySet,
+) -> Result<Vec<String>> {
+    if dirty.is_empty() {
+        return Ok(vec![]);
+    }
+    let _lock = WorktreeLock::acquire(&repo.wisp_dir)?;
+    let idx_path = checkout_idx_path(repo, tree_root);
+    let head = repo.head(ref_name)?;
+    let mut idx = match CheckoutIndex::load(&idx_path)? {
+        Some(i) if i.ref_name == ref_name => i,
+        Some(_) => return Ok(vec![]),
+        None => CheckoutIndex {
+            ref_name: ref_name.to_string(),
+            head,
+            ..Default::default()
+        },
+    };
+    let mut disk_dirty: std::collections::HashSet<String> = std::collections::HashSet::new();
+    for (rel, rec) in &idx.files {
+        if file_changed(&tree_root.join(rel), rec) {
+            disk_dirty.insert(rel.clone());
+        }
+    }
+    repo.hot(ref_name)?;
+    let hot = repo.hots.get(ref_name).expect("hot");
+    let conn = hot.conn();
+    let mut rewritten = Vec::new();
+
+    for path in &dirty.concept_paths {
+        let rel = format!("{path}.md");
+        if !dirty.reconcile && disk_dirty.contains(&rel) {
+            continue;
+        }
+        let Some(c) = Hot::concept_by_path(conn, path)? else {
+            continue;
+        };
+        let text = render_concept(repo, conn, &c, false, None, None)?;
+        let dst = tree_root.join(&rel);
+        if let Some(parent) = dst.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+        let bytes = text.as_bytes();
+        let same = std::fs::read(&dst).map(|b| b == bytes).unwrap_or(false);
+        if !same {
+            write_atomic(&dst, bytes)?;
+            rewritten.push(rel.clone());
+        }
+        idx.files.insert(
+            rel,
+            file_record(&dst, "concept", Some(c.concept.to_string()))?,
+        );
+        idx.concepts
+            .insert(c.concept.to_string(), concept_base(conn, &c)?);
+    }
+
+    for ap in &dirty.asset_paths {
+        if !dirty.reconcile && disk_dirty.contains(ap) {
+            continue;
+        }
+        let Some(a) = Hot::assets(conn)?.into_iter().find(|x| x.path == *ap) else {
+            continue;
+        };
+        let dst = tree_root.join(ap);
+        if let Some(parent) = dst.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+        write_atomic(&dst, &a.bytes)?;
+        rewritten.push(ap.clone());
+        idx.files.insert(
+            ap.clone(),
+            file_record(&dst, "asset", Some(a.asset.to_string()))?,
+        );
+        idx.assets.insert(ap.clone(), (a.asset, a.version));
+    }
+
+    if !dirty.view_dirs.is_empty() {
+        let views = render_views(repo, conn, ref_name, None)?;
+        for (rel, content) in views.files {
+            let dir = view_dir_of_generated(&rel);
+            if !dirty.view_dirs.contains(&dir) {
+                continue;
+            }
+            if !dirty.reconcile && disk_dirty.contains(&rel) {
+                continue;
+            }
+            let dst = tree_root.join(&rel);
+            if let Some(parent) = dst.parent() {
+                std::fs::create_dir_all(parent)?;
+            }
+            write_atomic(&dst, content.as_bytes())?;
+            rewritten.push(rel.clone());
+            idx.files.insert(rel, file_record(&dst, "generated", None)?);
+        }
+    }
+
+    for rel in &dirty.prune_rels {
+        if !dirty.reconcile && disk_dirty.contains(rel) {
+            continue;
+        }
+        let p = tree_root.join(rel);
+        if p.exists() {
+            let _ = std::fs::remove_file(&p);
+            rewritten.push(rel.clone());
+        }
+        idx.files.remove(rel);
+        idx.concepts.retain(|_, b| format!("{}.md", b.path) != *rel);
+    }
+
+    idx.head = head;
+    idx.save(&idx_path)?;
+    Ok(rewritten)
+}
+
+fn view_dir_of_generated(rel: &str) -> String {
+    if rel == "index.md" || rel == "log.md" {
+        return String::new();
+    }
+    match rel.rfind('/') {
+        Some(i) => rel[..i].to_string(),
+        None => String::new(),
+    }
+}
+
 pub fn concept_base(conn: &rusqlite::Connection, c: &ConceptState) -> Result<ConceptBase> {
     Ok(ConceptBase {
         path: c.path.clone(),

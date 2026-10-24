@@ -24,7 +24,11 @@ Use --resolve after committing merge resolutions from `.wisp/merge.json`.";
 
 pub const APPLY_LONG: &str = "\
 Commit a **batch** of headless operations from JSON/YAML (file or stdin) as one changeset.\n\n\
-Each op is equivalent to a single `update`, `add-section`, `create`, etc. See docs/APPLY.md (`wisp doc apply`).";
+Ops include update_section (full replace, base_version), append_section and prepend_section \
+(log fragments, no version precondition), create, set, and others. Truth is hot tier and \
+`wisp cat`; disk may lag until `wisp materialize --wait`. With --resolve, section_conflict \
+(exit 3) refreshes base_version from hot and retries (bounded). Merge working-tree cleanup \
+uses `wisp record --resolve` instead. See `wisp doc apply` and `wisp doc AGENT-WRITERS.md`.";
 
 pub const ERASE_LONG: &str = "\
 Destroy scope keys and cold payloads for a section, concept, asset, group, or actor.\n\n\

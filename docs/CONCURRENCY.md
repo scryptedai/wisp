@@ -1,6 +1,6 @@
 # Concurrency and writer throughput (§11)
 
-This document matches [README.md](../README.md), [DECISIONS.md](../DECISIONS.md) §6.3 and §9, and the engine commit path.
+This document matches [README.md](../README.md), [DECISIONS.md](../DECISIONS.md) §6.3 and §9, and the engine commit path. For headless agent fleets (exit 3 handling, append/prepend, materialize), see **[AGENT-WRITERS.md](AGENT-WRITERS.md)**.
 
 ## What wisp guarantees
 
@@ -11,7 +11,7 @@ This document matches [README.md](../README.md), [DECISIONS.md](../DECISIONS.md)
 ## What wisp does not guarantee
 
 - **Not lock-free:** the **ledger** uses SQLite with `BEGIN IMMEDIATE` on commit (`crates/wisp-store/src/ledger.rs`). Writers **serialize** at the database layer even when their logical edits do not conflict.
-- **Managed checkout rewrites:** `.wisp/worktree.lock` (SQLite advisory lock) serializes **full-tree re-renders** across processes after record/commit (`DECISIONS.md` §9).
+- **Managed checkout rewrites:** `.wisp/worktree.lock` (SQLite advisory lock) serializes **delta materialize** drains across processes (`docs/WORKTREE.md`, `DECISIONS.md` §9).
 - **Not a swarm database:** many agents hammering the **same ref** with ledger-heavy commits will **queue** on SQLite; use **branches/worktrees**, **disjoint sections**, or **batch/apply** patterns when throughput matters.
 
 ## Commit ordering (hot vs ledger)
@@ -27,6 +27,8 @@ WISP_STRESS=1 WISP_STRESS_WRITERS=50 cargo test -p wisp-invariants -- --ignored 
 ```
 
 See [contrib/concurrency/README.md](../contrib/concurrency/README.md).
+
+Adversarial exit-3 stampedes (resolution must succeed, poison clients isolated): `cargo test -p wisp-invariants battery_exit3_adversarial -- --nocapture` — [contrib/battery-exit3-adversarial/README.md](../contrib/battery-exit3-adversarial/README.md).
 
 ## CLI exit codes (§16)
 

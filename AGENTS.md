@@ -25,21 +25,34 @@ Do not confuse:
 | `crates/wisp-invariants` | Integration tests (CI gate) |
 | `crates/wisp-sync`, `wisp-git`, `wisp-feed`, `wisp-sub-*`, `wisp-index` | M5–M8 modules |
 | `DECISIONS.md` | Spec deviations (required reading for behavior changes) |
-| `docs/SEARCH.md`, `docs/EXTENSIONS.md`, `docs/MERGE.md`, `docs/ERASE.md` | Search, extensions, merge, erasure & managed checkouts |
+| `docs/SEARCH.md`, `docs/EXTENSIONS.md`, `docs/MERGE.md`, `docs/ERASE.md`, `docs/WORKTREE.md` | Search, extensions, merge, erasure, async worktree materialize |
+| `docs/AGENT-WRITERS.md` | Headless fleets: exit 3, append/prepend, materialize, batteries |
+| `docs/FEDERATION.md` | Composite KB / vendor sketch (not fully productized) |
 | `docs/CONCURRENCY.md`, `docs/TRUST-BOUNDARY.md`, `docs/INVARIANTS.md`, `docs/GIT-INTEROP.md` | Writers, erasure/sync limits, §17 test manifest, Git export/import |
 
 ## Build and test (required before PR)
 
+Run the same steps as GitHub Actions (see `.github/workflows/ci.yml`):
+
 ```sh
-cargo fmt --all -- --check
-cargo clippy --all-targets -- -D warnings
-cargo test --workspace
-cargo test -p wisp-invariants
-cargo build --release
+./contrib/ci-check.sh
 ```
 
-Rust **1.88+** (see workspace `rust-version`). If `libsqlite3-sys` bindgen fails in a sandbox, use  
-`CARGO_TARGET_DIR=./target cargo test --workspace`.
+Rust **1.88+** (see workspace `rust-version`). If `libsqlite3-sys` bindgen fails in a sandbox, use 
+`CARGO_TARGET_DIR=./target ./contrib/ci-check.sh`.
+
+### Build caching (why it still feels like “full rebuilds”)
+
+| Lane | When | What recompiles |
+|------|------|------------------|
+| **dev + default features** | `cargo test`, `cargo build`, IDE | Incremental under shared `CARGO_TARGET_DIR` (default `~/.cache/wisp/target`) |
+| **dev + `--no-default-features`** | second `ci-check` test pass | `wisp-engine` without `semantic` — separate graph (no onnx) |
+| **release** | `ci-check` release `wisp-cli` builds | `target/release/` under the same root — full release compile |
+| **clippy** | after `cargo test --no-run` | Reuses deps; only re-checks with Clippy |
+
+**Target layout:** `[workspace.metadata.wisp-dev]` in `Cargo.toml` defaults to **`target = "shared"`**. Hooks/`ci-check` source **`contrib/build-env.sh`** → **`contrib/scripts/resolve-cargo-target-dir.py`**. Per-clone override: gitignored **`wisp-target.toml`** (`wisp-target.example.toml`). Per-worktree `target/`: `contrib/configure-dev-target.sh --worktree`. CI/`GITHUB_ACTIONS` always uses **`$REPO/target`**. IDE: run **`configure-dev-target.sh`** or set `rust-analyzer.cargo.extraEnv.CARGO_TARGET_DIR`. Optional: **`sccache`** + `RUSTC_WRAPPER=sccache`.
+
+Agents: **do not push** until `ci-check.sh` passes locally (especially `cargo fmt --all -- --check` and `./contrib/coderabbit-check.sh`). Contributors may install `./contrib/install-git-hooks.sh` (`pre-commit` = fmt + staged coderabbit checks, `pre-push` = `ci-check.sh`).
 
 ## TDD contract
 
@@ -54,6 +67,10 @@ Search IR battery: edit **`contrib/search-battery/cases.toml` only** (Rust `sear
 
 Merge rule battery: edit **`contrib/merge-rules/cases.toml` only**; tests in `wisp-invariants/tests/merge_rules.rs`. See `contrib/merge-rules/README.md` and `docs/MERGE.md`.
 
+Error-three battery (timing + merge): edit **`contrib/battery-error-three/cases.toml` only**; runner `wisp-invariants/tests/battery_error_three.rs`. See `contrib/battery-error-three/README.md` and **`docs/AGENT-WRITERS.md`**.
+
+Exit-3 adversarial battery: edit **`contrib/battery-exit3-adversarial/cases.toml` only**; runner `wisp-invariants/tests/battery_exit3_adversarial.rs`. See `contrib/battery-exit3-adversarial/README.md`.
+
 ## Coding norms
 
 - **`.wisp/cache/` and Windows:** hot SQLite files stay open until `Repository` is dropped or `close_all_hots()` runs. Never `remove_dir_all` on `cache/` (or delete `hot.db` / `merge-skip.json`) while a repo handle is open — use `wisp_engine::cache::reopen_without_cache` in tests. See `docs/MERGE.md` (cache lifecycle).
@@ -62,6 +79,18 @@ Merge rule battery: edit **`contrib/merge-rules/cases.toml` only**; tests in `wi
 - Do not add proprietary or alternate licenses in this repo.
 - Prefer `wisp-engine` APIs over duplicating ledger/hot logic in CLI.
 - Section-level concurrency: disjoint sections should not conflict; preserve optimistic commit preconditions.
+
+## Documentation, help, and man
+
+Pre-1.0: no “migration from old behavior” in user-facing text — write what the product **does** (present tense). See **`.cursor/rules/docs-cli-man.mdc`**.
+
+| Surface | Update when CLI or writer behavior changes |
+|---------|---------------------------------------------|
+| `contrib/man/wisp.1` | Required; `wisp-cli` `build.rs` fails if missing |
+| `crates/wisp-cli/src/cli.rs` | `--help` / `long_about` for non-obvious commands |
+| `docs/` + README + `contrib/claude-skill/` | Same facts as man/help |
+
+CI on Linux runs `mandoc -T lint` on `contrib/man/wisp.1`.
 
 ## CLI and JSON
 

@@ -21,6 +21,7 @@ Deviations from the OKF store v1 design (ledger, parse, merge, sync, profiles), 
 
 ## §6.3 Reads and writes
 
+- **Async cold payload flush.** After a successful commit, ciphertext stays in `staged_payloads` and a background thread drains to `.wisp/payloads/` (readers still use staged-first). `Repository::flush_cold_payloads`, `Repository::drop`, and `open` recovery flush before sync/export barriers. Backpressure: when staged ciphertext exceeds `WISP_MAX_STAGED_PAYLOAD_BYTES` (default 128 MiB), the commit path blocks with a synchronous drain. Power-loss immediately after commit may leave payloads staged until the next `open` (I25).
 - **Commit order inside the critical section.** The spec commits the ledger, then the hot tier. This build commits the hot tier first, then the ledger, both while holding the ledger write lock. Reason: with ledger-first, a writer acquiring the lock between the two commits sees a head whose changes are not yet in the tier and would wrongly conclude the tier is stale. If a process dies between the commits the tier is ahead of the ledger; `Repository::hot` sees an unknown head and rebuilds.
 - **Rebuild holds the ledger write lock.** A rebuild computed from a stale head could otherwise be committed over a newer tier state.
 - Built-in search indexes live in each ref’s `hot.db` under `cache/refs/` (`docs/SEARCH.md`). Token rollup DBs are not fully materialized; `pack` uses `tok:approx:chars4`.
@@ -49,7 +50,9 @@ Deviations from the OKF store v1 design (ledger, parse, merge, sync, profiles), 
 ## §9 Record pipeline
 
 - Change detection records a SHA-256 of the bytes wisp last wrote in `checkout.idx`, so an mtime-only touch is not an edit and a concurrent rewrite is detected by content.
-- After a commit, `record` re-renders every tracked file from the hot tier (step 10) rather than splicing anchors into the edited file. Byte-level losslessness is preserved by the lossless entry and section storage; the cost is proportional to the bundle size, which is acceptable for v1 and noted for optimization.
+- **Section logging patches.** `append_section` / `prepend_section` store a fragment payload and stitch onto the hot body without a section-version precondition (headless). `update_section` remains the default full replace with optimistic concurrency. Ref merge treats divergent patch-only chains on the same section as compatible (replay both). See `docs/APPLY.md` and **`docs/AGENT-WRITERS.md`**.
+- **Apply resolve loop.** `wisp apply --resolve` and `headless::apply_with_resolve` refresh `base_version` on `section_conflict` (exit 3) and retry; exit 7 may be retried again after in-engine `commit.retries`. Other conflict kinds are not auto-resolved.
+- **Delta materialize (async).** After a commit, wisp enqueues a **publish set** derived from the changeset and drains it on a manifest heartbeat (`[materialize]`, default `tick_ms = 250`). Only dirty concept paths, assets, and affected directory views are rendered from hot (`publish_ref_delta`); unrecorded edits on disk are not overwritten. `record` and `headless` share this path. Full-tree render is reserved for `checkout`, `switch`, erase recovery, and explicit barriers (`wisp materialize --wait`, sync/pack, `Repository::drop`). See `docs/WORKTREE.md`.
 - A working-tree advisory lock (`.wisp/worktree.lock`, a SQLite `BEGIN IMMEDIATE`) serializes tree rewrites across processes.
 
 ## §10.1 Keys

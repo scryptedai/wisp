@@ -137,7 +137,9 @@ pub fn group_create(repo: &mut Repository, name: &str) -> Result<Value> {
     Ledger::insert_group(&tx, id, &label.reference)?;
     tx.commit()
         .map_err(|e| WispError::internal(e.to_string()))?;
-    repo.ledger.flush_staged()?;
+    repo.maybe_backpressure_cold_flush()?;
+    repo.notify_cold_flush();
+    repo.flush_cold_payloads()?;
     Ok(json!({ "group": id.to_string(), "name": name }))
 }
 
@@ -390,6 +392,8 @@ pub fn erase(
         &markers,
     )?;
 
+    // Drain staged cold payloads before shred so async flush cannot resurrect ciphertext.
+    repo.flush_cold_payloads()?;
     // Phase 1 and Phase 2 (idempotent; recovery reruns them).
     shred(repo, &scopes, erase_change, &flagged)?;
     finish_erase_worktree_rewrite(repo, discard_unrecorded)?;
@@ -484,6 +488,29 @@ pub fn shred(
     Ok(())
 }
 
+fn erase_cause_for_pending(conn: &rusqlite::Connection, pending: &[ScopeId]) -> Result<ChangeId> {
+    let mut best: Option<(i64, ChangeId)> = None;
+    for t in Ledger::tombstones(conn)? {
+        if !t.scopes.iter().any(|s| pending.contains(s)) {
+            continue;
+        }
+        let seq = Ledger::get_change(conn, t.erase_change)?
+            .and_then(|ch| Ledger::get_changeset(conn, ch.changeset).ok().flatten())
+            .map(|row| row.seq)
+            .unwrap_or(0);
+        if best.as_ref().map(|(s, _)| seq > *s).unwrap_or(true) {
+            best = Some((seq, t.erase_change));
+        }
+    }
+    if let Some((_, id)) = best {
+        return Ok(id);
+    }
+    if let Some(ch) = Ledger::erase_changes_without_tombstones(conn)?.last() {
+        return Ok(ch.id);
+    }
+    Ok(ChangeId::new())
+}
+
 /// On open: finish any interrupted erase before anything else (§10.5 Recovery).
 pub fn recover(repo: &mut Repository) -> Result<()> {
     finish_erase_bookkeeping(repo)?;
@@ -493,11 +520,8 @@ pub fn recover(repo: &mut Repository) -> Result<()> {
         return Ok(());
     }
     if !pending.is_empty() {
-        let cause = Ledger::tombstones(repo.ledger.conn())?
-            .into_iter()
-            .find(|t| t.scopes.iter().any(|s| pending.contains(s)))
-            .map(|t| t.erase_change)
-            .unwrap_or_else(ChangeId::new);
+        repo.flush_cold_payloads()?;
+        let cause = erase_cause_for_pending(repo.ledger.conn(), &pending)?;
         shred(repo, &pending, cause, &[])?;
     }
     if rewrite_pending || !pending.is_empty() {
@@ -762,4 +786,145 @@ fn assert_erase_complete(repo: &Repository, scopes: &[ScopeId]) -> Result<()> {
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod erase_cause_tests {
+    use super::erase_cause_for_pending;
+    use crate::commit::{CommitRequest, PlannedOp};
+    use crate::repo::{Repository, Unlock, MAIN_REF};
+    use wisp_model::{ChangeId, Op, Reason, ScopeId, Target};
+    use wisp_store::{Ledger, Tombstone};
+
+    fn write(root: &std::path::Path, rel: &str, text: &str) {
+        let p = root.join(rel);
+        std::fs::create_dir_all(p.parent().unwrap()).unwrap();
+        std::fs::write(p, text).unwrap();
+    }
+
+    fn insert_erase_tombstone(repo: &mut Repository, scope: ScopeId, erase_change: ChangeId) {
+        let tx = repo.ledger.begin_immediate().unwrap();
+        Ledger::insert_tombstone(
+            &tx,
+            &Tombstone {
+                erase_change,
+                target: Target::Erase {
+                    scopes: vec![scope],
+                },
+                scopes: vec![scope],
+                reason: Reason::Policy,
+                flagged: vec![],
+            },
+        )
+        .unwrap();
+        tx.commit().unwrap();
+    }
+
+    fn erase_change_id(repo: &mut Repository, scope: ScopeId) -> ChangeId {
+        let mut op = PlannedOp::new(
+            Op::Erase,
+            Target::Erase {
+                scopes: vec![scope],
+            },
+            repo.repo_scope(),
+        );
+        op.reason = Some(Reason::Policy);
+        let mut req = CommitRequest::new(MAIN_REF, "human:test");
+        req.ops = vec![op];
+        let out = crate::commit::commit(repo, req).unwrap();
+        out.changes
+            .iter()
+            .find(|c| c.op == Op::Erase)
+            .map(|c| c.id)
+            .expect("erase change")
+    }
+
+    #[test]
+    fn erase_cause_for_pending_picks_latest_erase_changeset() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().join("bundle");
+        write(
+            &root,
+            "doc.md",
+            "---\ntype: Doc\n---\n## A\n\none\n\n## B\n\ntwo\n",
+        );
+        Repository::init(&root, "0.2", &Unlock::default()).unwrap();
+        let mut repo = Repository::open(&root, &Unlock::default()).unwrap();
+        crate::record::record(
+            &mut repo,
+            &crate::record::RecordOptions {
+                actor: Some("human:test".into()),
+                message: Some("init".into()),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        let text = std::fs::read_to_string(root.join("doc.md")).unwrap();
+        let parsed = wisp_parse::parse_file(&text);
+        let scope_ids: Vec<ScopeId> = parsed
+            .sections()
+            .iter()
+            .skip(1)
+            .map(|s| match &s.anchor {
+                Some(wisp_parse::Anchor::Valid(id)) => {
+                    Ledger::scope_of_section(repo.ledger.conn(), *id)
+                        .unwrap()
+                        .unwrap()
+                        .id
+                }
+                _ => panic!("anchor"),
+            })
+            .collect();
+        assert_eq!(scope_ids.len(), 2);
+        let older = erase_change_id(&mut repo, scope_ids[0]);
+        let newer = erase_change_id(&mut repo, scope_ids[1]);
+        let seq = |ch: ChangeId| -> i64 {
+            let row = Ledger::get_change(repo.ledger.conn(), ch).unwrap().unwrap();
+            Ledger::get_changeset(repo.ledger.conn(), row.changeset)
+                .unwrap()
+                .unwrap()
+                .seq
+        };
+        assert!(
+            seq(newer) > seq(older),
+            "second erase must land on a later ledger seq"
+        );
+        insert_erase_tombstone(&mut repo, scope_ids[0], older);
+        insert_erase_tombstone(&mut repo, scope_ids[1], newer);
+        let pending = vec![scope_ids[0], scope_ids[1]];
+        let picked = erase_cause_for_pending(repo.ledger.conn(), &pending).unwrap();
+        assert_eq!(picked, newer);
+    }
+
+    #[test]
+    fn erase_cause_for_pending_without_tombstone_uses_erase_change() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().join("bundle");
+        write(&root, "doc.md", "---\ntype: Doc\n---\n## A\n\none\n");
+        Repository::init(&root, "0.2", &Unlock::default()).unwrap();
+        let mut repo = Repository::open(&root, &Unlock::default()).unwrap();
+        crate::record::record(
+            &mut repo,
+            &crate::record::RecordOptions {
+                actor: Some("human:test".into()),
+                message: Some("init".into()),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        let text = std::fs::read_to_string(root.join("doc.md")).unwrap();
+        let parsed = wisp_parse::parse_file(&text);
+        let scope = match &parsed.sections().get(1).and_then(|s| s.anchor.as_ref()) {
+            Some(wisp_parse::Anchor::Valid(id)) => {
+                Ledger::scope_of_section(repo.ledger.conn(), *id)
+                    .unwrap()
+                    .unwrap()
+                    .id
+            }
+            _ => panic!("anchor"),
+        };
+        let ch = erase_change_id(&mut repo, scope);
+        let picked = erase_cause_for_pending(repo.ledger.conn(), &[scope]).unwrap();
+        assert_eq!(picked, ch);
+    }
 }

@@ -236,7 +236,7 @@ fn transfer_cold(src: &Repository, dst: &mut Repository) -> Result<TransferStats
 
     stats.scope_keys = sync_trusted_scope_keys(src, dst)?;
 
-    dst.ledger.flush_staged()?;
+    dst.flush_cold_payloads()?;
     Ok(stats)
 }
 

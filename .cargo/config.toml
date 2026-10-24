@@ -1,0 +1,7 @@
+# Artifact directory: do not pin target-dir here (worktrees would each get a full copy).
+# Default is a shared cache via [workspace.metadata.wisp-dev] + contrib/build-env.sh.
+# Per-checkout override: wisp-target.toml (see wisp-target.example.toml).
+# IDE: run ./contrib/configure-dev-target.sh once, or set rust-analyzer.cargo.extraEnv.
+
+[build]
+incremental = true

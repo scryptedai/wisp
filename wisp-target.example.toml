@@ -1,0 +1,12 @@
+# Local Cargo artifact layout (copy to wisp-target.toml in the repo root).
+# Overrides [workspace.metadata.wisp-dev] in Cargo.toml for this clone only.
+#
+#   cp wisp-target.example.toml wisp-target.toml
+#   ./contrib/configure-dev-target.sh   # optional: sync rust-analyzer / shell hint
+#
+# mode = "shared"   — one target dir for all worktrees (default; saves disk)
+# mode = "worktree" — target/ under this checkout only
+
+[build]
+mode = "shared"
+# shared_dir = "~/.cache/wisp/target"  # optional; default uses XDG_CACHE_HOME/wisp/target

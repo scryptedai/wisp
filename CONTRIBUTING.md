@@ -77,7 +77,7 @@ git worktree add ../wisp-feature-b -b fix/other origin/main
 
 Rules of thumb:
 
-- One worktree directory per branch; build artifacts live in each tree’s `target/` (or set `CARGO_TARGET_DIR` to a shared path if you prefer).
+- One worktree directory per branch. **Default:** all worktrees share one Cargo cache (`~/.cache/wisp/target`); see [README — Cargo target directory](README.md#cargo-target-directory-shared-vs-worktree). **Opt-in per-worktree `target/`:** `contrib/configure-dev-target.sh --worktree`.
 - Remove when done: `git worktree remove ../wisp-feature-a` (after merge or abandon).
 - **`wisp worktree`** in the product is unrelated — it manages OKF bundle checkouts, not this source repo.
 
@@ -88,13 +88,18 @@ Inspired by [Git’s patch submission](https://git-scm.com/docs/SubmittingPatche
 1. **Fork** and branch from `main`, or use a worktree as above.
 2. **One logical change per PR** when possible (easier review, cleaner history).
 3. **Write a clear subject and body** — what problem, what approach, how tested.
-4. **Run CI locally** before push:
+4. **Run CI locally** before push (mirrors [.github/workflows/ci.yml](.github/workflows/ci.yml)):
 
    ```sh
-   cargo fmt --all -- --check
-   cargo clippy --all-targets -- -D warnings
-   cargo test --workspace
-   cargo test -p wisp-invariants
+   ./contrib/ci-check.sh
+   ```
+
+   CodeRabbit-style gate (also in CI): `./contrib/coderabbit-check.sh` — present-tense user docs and `///` on new pub items in your diff (80% threshold; see `.coderabbit.yaml`).
+
+   Optional git hooks (fmt + doc lint on commit, full CI on push):
+
+   ```sh
+   ./contrib/install-git-hooks.sh
    ```
 
 5. **Update docs** when you change user-visible behavior (`README`, `DECISIONS.md`, `docs/`).

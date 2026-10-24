@@ -8,7 +8,7 @@ Copyright © 2026 Scrypted. Author: Tim Cotten (tcotten@scrypted.ai).
 
 wisp stores a bundle as an append-only log of **section-level** changes with encrypted, destroyable payloads, and materializes a conformant OKF directory on demand. It is built for **agent fleets on a shared bundle**: **optimistic, section-scope commits** (conflicts → exit 3), provenance on every change, and cryptographic erasure inside the store while the digest chain still verifies. **Ledger writes serialize on SQLite** (retryable lock contention → exit 7); managed checkout rewrites use `.wisp/worktree.lock`. See **[docs/CONCURRENCY.md](docs/CONCURRENCY.md)**.
 
-Release **0.1.0** behavior is specified in **[docs/SEARCH.md](docs/SEARCH.md)** (retrieval), **[docs/ERASE.md](docs/ERASE.md)** (erasure and managed checkouts), **[docs/TRUST-BOUNDARY.md](docs/TRUST-BOUNDARY.md)** (what erasure and sync do not cover), **[docs/EXTENSIONS.md](docs/EXTENSIONS.md)** (optional product hooks), **[DECISIONS.md](DECISIONS.md)** (OKF/store deltas), and **[docs/MERGE.md](docs/MERGE.md)** (ref merge).
+Release **0.1.0** behavior is specified in **[docs/SEARCH.md](docs/SEARCH.md)** (retrieval), **[docs/ERASE.md](docs/ERASE.md)** (erasure and managed checkouts), **[docs/WORKTREE.md](docs/WORKTREE.md)** (async materialize; disk is a cache after headless writes), **[docs/AGENT-WRITERS.md](docs/AGENT-WRITERS.md)** (agent fleets, exit 3, `apply --resolve`, append/prepend), **[docs/TRUST-BOUNDARY.md](docs/TRUST-BOUNDARY.md)** (what erasure and sync do not cover), **[docs/EXTENSIONS.md](docs/EXTENSIONS.md)** (optional product hooks), **[DECISIONS.md](DECISIONS.md)** (OKF/store deltas), and **[docs/MERGE.md](docs/MERGE.md)** (ref merge). Installed **`man wisp`** comes from **[contrib/man/wisp.1](contrib/man/wisp.1)** (copied to `man1/` when packaging).
 
 ## Contributing
 
@@ -17,10 +17,22 @@ Fork, use **git worktrees** for parallel branches, and open PRs — see **[CONTR
 ## Build
 
 ```sh
-cargo build --release        # one static binary: target/release/wisp
+cargo build --release        # one static binary: target/release/wisp (path depends on target mode below)
 cargo test                   # unit + engine invariant tests (§17)
 cargo test -p wisp-invariants  # OKF corpus + search IR (semantic on by default; first run may fetch ~128MiB model)
 ```
+
+### Cargo target directory (shared vs worktree)
+
+By default this repo uses **one shared artifact directory** for all checkouts and Cursor sessions (`~/.cache/wisp/target` or `$XDG_CACHE_HOME/wisp/target`), configured in **`Cargo.toml`** under `[workspace.metadata.wisp-dev]`. Git hooks and `./contrib/ci-check.sh` source **`contrib/build-env.sh`**, which resolves that path automatically. CI uses `./target` in the job workspace (GitHub `rust-cache`).
+
+| Mode | Who | How |
+|------|-----|-----|
+| **Shared** (default) | Most local dev | Nothing to do, or `cp wisp-target.example.toml wisp-target.toml` |
+| **Per worktree** | Parallel branches with isolated `target/` | `contrib/configure-dev-target.sh --worktree` or `wisp-target.toml` with `mode = "worktree"` |
+| **Explicit path** | Any | `export WISP_CARGO_TARGET_DIR=/path` |
+
+Run **`./contrib/configure-dev-target.sh`** once to create `wisp-target.toml` and point **rust-analyzer** at the same directory. Override the team default in gitignored **`wisp-target.toml`**; see **`wisp-target.example.toml`**.
 
 **Air-gapped or offline CI:** build and test without neural search (no model download):
 

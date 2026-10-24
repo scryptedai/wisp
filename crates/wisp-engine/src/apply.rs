@@ -232,6 +232,23 @@ pub fn apply_change(
             }
             touch_concept(conn, *concept, cs, c, true)?;
         }
+        (Op::AppendSection | Op::PrependSection, Target::Section { concept, section }) => {
+            let Some(pt) = plaintext else { return Ok(()) };
+            let frag = crate::payloads::SectionFragment::decode(pt)?;
+            if let Some(mut st) = Hot::section(conn, *section)? {
+                st.body = crate::payloads::stitch_section_body(
+                    &st.body,
+                    &frag.content,
+                    c.op == Op::PrependSection,
+                );
+                st.version = c.id;
+                Hot::upsert_section(conn, &st)?;
+                if let Some(cstate) = Hot::concept(conn, *concept)? {
+                    index_links(conn, *concept, &cstate.path, *section, &st.body)?;
+                }
+            }
+            touch_concept(conn, *concept, cs, c, true)?;
+        }
         (Op::RemoveSection, Target::Section { concept, section }) => {
             Hot::delete_section(conn, *section)?;
             touch_concept(conn, *concept, cs, c, true)?;

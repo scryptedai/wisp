@@ -123,6 +123,10 @@ pub enum Op {
     CreateConcept,
     AddSection,
     UpdateSection,
+    /// Append plaintext to an existing section body (no optimistic version check).
+    AppendSection,
+    /// Prepend plaintext to an existing section body (no optimistic version check).
+    PrependSection,
     RemoveSection,
     MoveSection,
     ReorderSections,
@@ -151,6 +155,8 @@ impl Op {
             Op::CreateConcept => "create_concept",
             Op::AddSection => "add_section",
             Op::UpdateSection => "update_section",
+            Op::AppendSection => "append_section",
+            Op::PrependSection => "prepend_section",
             Op::RemoveSection => "remove_section",
             Op::MoveSection => "move_section",
             Op::ReorderSections => "reorder_sections",
@@ -178,6 +184,8 @@ impl Op {
             "create_concept" => Op::CreateConcept,
             "add_section" => Op::AddSection,
             "update_section" => Op::UpdateSection,
+            "append_section" => Op::AppendSection,
+            "prepend_section" => Op::PrependSection,
             "remove_section" => Op::RemoveSection,
             "move_section" => Op::MoveSection,
             "reorder_sections" => Op::ReorderSections,
@@ -208,6 +216,8 @@ impl Op {
             Op::CreateConcept
                 | Op::AddSection
                 | Op::UpdateSection
+                | Op::AppendSection
+                | Op::PrependSection
                 | Op::RemoveSection
                 | Op::MoveSection
                 | Op::ReorderSections
@@ -465,6 +475,7 @@ pub enum PayloadKind {
     SectionOrder = 11,
     Status = 12,
     GroupMember = 13,
+    SectionFragment = 14,
 }
 
 impl PayloadKind {
@@ -483,6 +494,7 @@ impl PayloadKind {
             11 => PayloadKind::SectionOrder,
             12 => PayloadKind::Status,
             13 => PayloadKind::GroupMember,
+            14 => PayloadKind::SectionFragment,
             _ => return None,
         })
     }
@@ -501,6 +513,7 @@ impl PayloadKind {
             PayloadKind::SectionOrder => "section_order",
             PayloadKind::Status => "status",
             PayloadKind::GroupMember => "group_member",
+            PayloadKind::SectionFragment => "section_fragment",
         }
     }
 }

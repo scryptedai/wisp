@@ -257,6 +257,16 @@ fn status_human(s: &wisp_engine::record::Status) -> String {
     if s.pending_erasures > 0 {
         out.push_str(&format!("Pending erasures: {}\n", s.pending_erasures));
     }
+    if s.materialize.pending_jobs > 0 || s.materialize.pending_paths > 0 {
+        out.push_str(&format!(
+            "Materialize backlog: {} job(s), {} path(s)",
+            s.materialize.pending_jobs, s.materialize.pending_paths
+        ));
+        if let Some(ms) = s.materialize.lag_ms {
+            out.push_str(&format!(" (lag ~{ms} ms)"));
+        }
+        out.push_str(" — wisp materialize --wait or use wisp cat\n");
+    }
     if s.changed.is_empty()
         && s.new.is_empty()
         && s.missing.is_empty()
@@ -365,7 +375,7 @@ fn run_doc(topic: &Option<String>, list: bool, path: bool, man: bool) -> CliResu
         let mut human = format!("Documentation root: {}\n\nTopics:\n", root.display());
         for (name, p, present) in crate::doc_paths::list_topics(&root) {
             let mark = if present { "" } else { " (missing)" };
-            human.push_str(&format!("  {:<14} {}\n", name, mark));
+            human.push_str(&format!("  {name:<14} {mark}\n"));
             if !present {
                 human.push_str(&format!("                 expected {}\n", p.display()));
             }
@@ -483,6 +493,16 @@ pub fn run(cli: Cli) -> CliResult {
             let s = wisp_engine::record::status(&mut repo, None)?;
             let human = status_human(&s);
             Ok(Output::text(serde_json::to_value(&s)?, human))
+        }
+        Command::Materialize { wait } => {
+            let mut repo = open(&cli)?;
+            if *wait {
+                repo.flush_materialize()?;
+            }
+            Ok(Output::json(json!({
+                "materialize": repo.materialize_status(),
+                "wait": wait,
+            })))
         }
         Command::Diff {
             path,
@@ -1390,7 +1410,11 @@ pub fn run(cli: Cli) -> CliResult {
                 &mut repo, b, None,
             )?))
         }
-        Command::Apply { file, r#ref } => {
+        Command::Apply {
+            file,
+            r#ref,
+            resolve,
+        } => {
             let mut repo = open(&cli)?;
             let text = match file {
                 Some(f) => std::fs::read_to_string(f)?,
@@ -1406,11 +1430,35 @@ pub fn run(cli: Cli) -> CliResult {
                 batch.actor = Some(actor_of(&cli, &repo));
             }
             let default_ref = r#ref.clone().unwrap_or_else(|| query::current_ref(&repo));
-            Ok(Output::json(wisp_engine::headless::apply(
-                &mut repo,
-                batch,
-                Some(&default_ref),
-            )?))
+            if *resolve {
+                let policy = wisp_engine::headless::ApplyResolvePolicy::from_manifest(
+                    repo.manifest.commit.retries,
+                );
+                let (result, stats) = wisp_engine::headless::apply_with_resolve(
+                    &mut repo,
+                    batch,
+                    Some(&default_ref),
+                    &policy,
+                )?;
+                let mut out = result;
+                if let Some(obj) = out.as_object_mut() {
+                    obj.insert(
+                        "resolve".into(),
+                        serde_json::json!({
+                            "attempts": stats.attempts,
+                            "conflict_rounds": stats.conflict_rounds,
+                            "retryable_errors": stats.retryable_errors,
+                        }),
+                    );
+                }
+                Ok(Output::json(out))
+            } else {
+                Ok(Output::json(wisp_engine::headless::apply(
+                    &mut repo,
+                    batch,
+                    Some(&default_ref),
+                )?))
+            }
         }
     }
 }

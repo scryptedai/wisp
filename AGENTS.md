@@ -71,6 +71,8 @@ Error-three battery (timing + merge): edit **`contrib/battery-error-three/cases.
 
 Exit-3 adversarial battery: edit **`contrib/battery-exit3-adversarial/cases.toml` only**; runner `wisp-invariants/tests/battery_exit3_adversarial.rs`. See `contrib/battery-exit3-adversarial/README.md`.
 
+Exit-7 adversarial battery: edit **`contrib/battery-exit7-adversarial/cases.toml` only**; runner `wisp-invariants/tests/battery_exit7_adversarial.rs`. See `contrib/battery-exit7-adversarial/README.md`.
+
 ## Coding norms
 
 - **`.wisp/cache/` and Windows:** hot SQLite files stay open until `Repository` is dropped or `close_all_hots()` runs. Never `remove_dir_all` on `cache/` (or delete `hot.db` / `merge-skip.json`) while a repo handle is open — use `wisp_engine::cache::reopen_without_cache` in tests. See `docs/MERGE.md` (cache lifecycle).

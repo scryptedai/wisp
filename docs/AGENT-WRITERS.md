@@ -87,14 +87,17 @@ Run before changing writer behavior:
 |---------|---------|--------|
 | **error-three** | `cargo test -p wisp-invariants battery_error_three_section_one -- --nocapture` | Timing + solo / dual exit 3 / triple merge |
 | **exit3-adversarial** | `cargo test -p wisp-invariants battery_exit3_adversarial -- --nocapture` | Stampede, resolve, disjoint control, poison neighbor |
+| **exit7-adversarial** | `cargo test -p wisp-invariants battery_exit7_adversarial -- --nocapture` | Write-queue saturation, client vs engine retry, batch compare, commit profile |
 
-Edit cases only in `contrib/battery-error-three/cases.toml` and `contrib/battery-exit3-adversarial/cases.toml`.
+Edit cases only in `contrib/battery-error-three/cases.toml`, `contrib/battery-exit3-adversarial/cases.toml`, and `contrib/battery-exit7-adversarial/cases.toml`.
 
 Heavy scale (optional):
 
 ```sh
 WISP_EXIT3_BATTERY=1 WISP_EXIT3_BATTERY_WRITERS=32 \
   cargo test -p wisp-invariants battery_exit3_adversarial_heavy -- --ignored --nocapture
+WISP_EXIT7_BATTERY=1 WISP_EXIT7_BATTERY_WRITERS=16 \
+  cargo test -p wisp-invariants battery_exit7_adversarial_heavy -- --ignored --nocapture
 WISP_STRESS=1 WISP_STRESS_WRITERS=50 \
   cargo test -p wisp-invariants -- --ignored stress_many_disjoint_writers
 ```

@@ -26,6 +26,7 @@ struct Job {
     reply: Sender<Result<Value, WispError>>,
 }
 
+/// Cumulative counters for the commit-queue writer (jobs, commits, coalesce merges).
 #[derive(Debug, Clone, Default)]
 pub struct QueueStats {
     pub jobs_submitted: u64,
@@ -71,6 +72,7 @@ impl CommitQueue {
         }))
     }
 
+    /// Snapshot of [`QueueStats`] since this queue was spawned.
     pub fn stats(&self) -> QueueStats {
         self.shared.lock().expect("queue stats").stats.clone()
     }
@@ -128,6 +130,7 @@ impl CommitQueue {
         }
     }
 
+    /// Stop the writer thread and drain the queue (idempotent).
     pub fn shutdown(&self) {
         if let Some(tx) = self.tx.lock().expect("queue tx").take() {
             let _ = tx.send(QueueMsg::Stop);

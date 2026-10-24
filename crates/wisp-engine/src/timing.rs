@@ -65,6 +65,7 @@ pub struct LedgerLockHeldGuard {
 }
 
 impl LedgerLockHeldGuard {
+    /// Start measuring ledger lock hold time until the guard is dropped.
     pub fn new() -> Self {
         Self { t0: Instant::now() }
     }

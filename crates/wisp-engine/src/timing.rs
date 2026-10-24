@@ -59,6 +59,38 @@ pub fn with_profile<R>(f: impl FnOnce() -> R) -> (R, Vec<PhaseSample>) {
     (out, phases)
 }
 
+/// Records `commit.ledger_lock_held` on drop when profiling is active.
+pub struct LedgerLockHeldGuard {
+    t0: Instant,
+}
+
+impl LedgerLockHeldGuard {
+    pub fn new() -> Self {
+        Self { t0: Instant::now() }
+    }
+}
+
+impl Default for LedgerLockHeldGuard {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl Drop for LedgerLockHeldGuard {
+    fn drop(&mut self) {
+        record_phase("commit.ledger_lock_held", self.t0.elapsed().as_nanos());
+    }
+}
+
+/// Push one sample when a profiler is active (for RAII spans).
+pub fn record_phase(name: &'static str, nanos: u128) {
+    PROFILER.with(|cell| {
+        if let Some(p) = cell.borrow_mut().as_mut() {
+            p.phases.push(PhaseSample { name, nanos });
+        }
+    });
+}
+
 /// Record elapsed time for a synchronous block when profiling is active.
 pub fn phase<R>(name: &'static str, f: impl FnOnce() -> R) -> R {
     Profiler::push(name);

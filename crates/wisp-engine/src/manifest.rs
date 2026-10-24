@@ -20,6 +20,8 @@ pub struct Manifest {
     #[serde(default)]
     pub commit: CommitSection,
     #[serde(default)]
+    pub queue: CommitQueueSection,
+    #[serde(default)]
     pub materialize: MaterializeSection,
     #[serde(default)]
     pub render: RenderSection,
@@ -75,6 +77,30 @@ impl Default for CommitSection {
         CommitSection {
             busy_timeout_ms: 5000,
             retries: 3,
+        }
+    }
+}
+
+/// Bundle-local commit queue (`docs/CONCURRENCY.md`).
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct CommitQueueSection {
+    /// When true, headless clients submit via the commit queue instead of opening the ledger directly.
+    pub enabled: bool,
+    /// Max time a client waits for the writer to finish a submitted job (ms).
+    pub timeout_ms: u64,
+    /// Writer drain window for autobatch coalescing (µs).
+    pub coalesce_window_us: u64,
+    /// Merge disjoint single-op batches in a drain window (same actor).
+    pub coalesce: bool,
+}
+
+impl Default for CommitQueueSection {
+    fn default() -> Self {
+        CommitQueueSection {
+            enabled: false,
+            timeout_ms: 120_000,
+            coalesce_window_us: 500,
+            coalesce: true,
         }
     }
 }
@@ -332,6 +358,7 @@ impl Manifest {
             },
             identity: IdentitySection::default(),
             commit: CommitSection::default(),
+            queue: CommitQueueSection::default(),
             materialize: MaterializeSection::default(),
             render: RenderSection::default(),
             config: ConfigSection::default(),

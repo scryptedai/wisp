@@ -13,6 +13,7 @@ pub const TOPICS: &[(&str, &str)] = &[
     ("apply", "APPLY.md"),
     ("trust", "TRUST-BOUNDARY.md"),
     ("concurrency", "CONCURRENCY.md"),
+    ("commit-queue", "COMMIT-QUEUE.md"),
     ("extensions", "EXTENSIONS.md"),
     ("export-html", "EXPORT-HTML.md"),
     ("git", "GIT-INTEROP.md"),

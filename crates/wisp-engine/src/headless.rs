@@ -5,13 +5,14 @@ use crate::commit::{commit, Assertion, CommitRequest, PlannedOp, PolicyFacts, Pr
 use crate::erase::resolve_target;
 use crate::payloads::*;
 use crate::repo::{Repository, MAIN_REF};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
+use std::time::Duration;
 use wisp_model::*;
 use wisp_store::{Hot, Ledger};
 
 /// The `apply` batch format (§11.3).
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct ApplyBatch {
     #[serde(default)]
     pub r#ref: Option<String>,
@@ -34,7 +35,7 @@ pub struct ApplyBatch {
     pub inputs_complete: bool,
 }
 
-#[derive(Clone, Debug, Default, Deserialize)]
+#[derive(Clone, Debug, Default, Deserialize, Serialize)]
 pub struct ApplyInput {
     pub concept: String,
     #[serde(default)]
@@ -43,7 +44,7 @@ pub struct ApplyInput {
     pub at: Option<ChangesetId>,
 }
 
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct ApplyAssert {
     pub path: String,
     #[serde(default)]
@@ -52,7 +53,7 @@ pub struct ApplyAssert {
 }
 
 /// `base_version` is a change ID, `"absent"`, or `"any"`.
-#[derive(Clone, Debug, Default, Deserialize)]
+#[derive(Clone, Debug, Default, Deserialize, Serialize)]
 pub struct ApplyOp {
     pub op: String,
     pub path: String,
@@ -558,9 +559,31 @@ pub use crate::apply_resolve::{
     apply_with_resolve, patch_batch_from_conflicts, ApplyResolvePolicy, ApplyResolveStats,
 };
 
-/// `wisp apply`: one batch, one changeset. Every other headless command is shorthand for a one-op batch.
+/// `wisp apply`: one batch, one changeset. Routes through the commit queue when `[queue] enabled` is true.
 pub fn apply(repo: &mut Repository, batch: ApplyBatch, default_ref: Option<&str>) -> Result<Value> {
+    if repo.manifest.queue.enabled {
+        return apply_via_queue(repo, batch, default_ref);
+    }
+    apply_direct(repo, batch, default_ref)
+}
+
+/// Commit on this `Repository` handle (ledger writer path; bypasses the queue).
+pub fn apply_direct(
+    repo: &mut Repository,
+    batch: ApplyBatch,
+    default_ref: Option<&str>,
+) -> Result<Value> {
     crate::timing::phase("apply.total", || apply_inner(repo, batch, default_ref))
+}
+
+/// Submit to `.wisp/commit.sock` and block until the writer returns (or queue timeout).
+pub fn apply_via_queue(
+    repo: &Repository,
+    batch: ApplyBatch,
+    default_ref: Option<&str>,
+) -> Result<Value> {
+    let timeout = Duration::from_millis(repo.manifest.queue.timeout_ms.max(1));
+    crate::commit_queue::submit_via_socket(&repo.wisp_dir, batch, default_ref, timeout)
 }
 
 fn apply_inner(

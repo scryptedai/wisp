@@ -1,0 +1,56 @@
+# Commit queue vs direct SQLite — contrib/battery-commit-queue/README.md
+# Runner: crates/wisp-invariants/tests/battery_commit_queue.rs
+
+[meta]
+bundle_id = "battery-exit7-adversarial"
+arena_path = "arena/ledger-queue"
+arena_heading_prefix = "S"
+default_writers = 5
+ops_per_writer = 20
+swarm_writers = 100
+swarm_ops_per_writer = 5
+busy_timeout_ms = 200
+commit_retries = 1
+queue_timeout_ms = 120_000
+coalesce_window_us = 2000
+
+# Baseline: five processes, direct ledger (queue disabled in manifest).
+[[phase]]
+id = "CQ-direct"
+kind = "disjoint_parallel"
+transport = "direct"
+writers = 5
+ops_per_writer = 20
+expect_some_exit7 = true
+
+# Shared commit queue + single writer (default product path).
+[[phase]]
+id = "CQ-queued"
+kind = "disjoint_parallel"
+transport = "queued"
+writers = 5
+ops_per_writer = 20
+expect_all_ok = true
+
+# Coalesce merges disjoint single-op updates in the drain window (same actor).
+[[phase]]
+id = "CQ-queued-coalesce"
+kind = "disjoint_parallel"
+transport = "queued"
+writers = 5
+ops_per_writer = 20
+shared_actor = "process:coalesce-fleet/1"
+coalesce = true
+expect_all_ok = true
+expect_fewer_commits_than_ops = true
+
+# One hundred parallel agents, disjoint sections S0–S99 (not default CI).
+[[phase]]
+id = "CQ-swarm-100"
+kind = "disjoint_parallel"
+transport = "queued"
+writers = 100
+ops_per_writer = 5
+coalesce = true
+heavy = true
+expect_all_ok = true

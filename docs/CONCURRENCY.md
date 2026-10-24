@@ -30,6 +30,10 @@ See [contrib/concurrency/README.md](../contrib/concurrency/README.md).
 
 Adversarial exit-3 stampedes (resolution must succeed, poison clients isolated): `cargo test -p wisp-invariants battery_exit3_adversarial -- --nocapture` — [contrib/battery-exit3-adversarial/README.md](../contrib/battery-exit3-adversarial/README.md).
 
+## Commit queue (optional)
+
+For multi-agent fleets, set **`[queue] enabled = true`** and run **`wisp queue --serve`**. Clients submit `ApplyBatch` jobs and await results; one writer owns `ledger.db`. Default is direct commits (`enabled = false`). **[COMMIT-QUEUE.md](COMMIT-QUEUE.md)**. Battery: `battery_commit_queue` / `battery_commit_queue_swarm` — [contrib/battery-commit-queue/README.md](../contrib/battery-commit-queue/README.md).
+
 ## CLI exit codes (§16)
 
 | Code | Meaning |

@@ -494,6 +494,24 @@ pub fn run(cli: Cli) -> CliResult {
             let human = status_human(&s);
             Ok(Output::text(serde_json::to_value(&s)?, human))
         }
+        Command::Queue { serve } => {
+            if !*serve {
+                return Err(WispError::usage("queue requires --serve"));
+            }
+            let unlock = unlock(&cli);
+            let mut repo = open(&cli)?;
+            let cfg = repo.manifest.queue.clone();
+            repo.manifest.queue.enabled = true;
+            repo.manifest.save(&repo.wisp_dir.join("manifest.toml"))?;
+            let _queue = wisp_engine::CommitQueue::bind_unix(&repo.wisp_dir, unlock, cfg)?;
+            eprintln!(
+                "wisp commit queue listening on {}/commit.sock",
+                repo.wisp_dir.display()
+            );
+            loop {
+                std::thread::sleep(std::time::Duration::from_secs(3600));
+            }
+        }
         Command::Materialize { wait } => {
             let mut repo = open(&cli)?;
             if *wait {

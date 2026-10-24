@@ -19,6 +19,7 @@ pub enum ExitCode {
     Integrity = 8,
     KeyUnavailable = 9,
     ErasePending = 10,
+    QueueTimeout = 11,
 }
 
 impl ExitCode {
@@ -38,6 +39,7 @@ impl ExitCode {
             ExitCode::Integrity => "integrity",
             ExitCode::KeyUnavailable => "key_unavailable",
             ExitCode::ErasePending => "erase_pending",
+            ExitCode::QueueTimeout => "queue_timeout",
         }
     }
 }
@@ -88,6 +90,7 @@ impl WispError {
     pub fn not_found(msg: impl Into<String>) -> Self {
         Self::new(ExitCode::NotFound, msg)
     }
+    /// Exit 7 with default write-timeout details (`retryable` only unless enriched).
     pub fn timeout(msg: impl Into<String>) -> Self {
         Self::write_timeout(msg, WriteTimeoutDetails::default())
     }
@@ -119,8 +122,14 @@ impl WispError {
         )
         .with_details(serde_json::json!({ "not_implemented": what }))
     }
+    /// True for exit 7 (`write_timeout`) and exit 11 (`queue_timeout`).
     pub fn is_retryable(&self) -> bool {
-        self.code == ExitCode::WriteTimeout
+        self.code == ExitCode::WriteTimeout || self.code == ExitCode::QueueTimeout
+    }
+
+    /// Job waited too long in the bundle commit queue (retryable).
+    pub fn queue_timeout(msg: impl Into<String>, details: Value) -> Self {
+        Self::new(ExitCode::QueueTimeout, msg).with_details(details)
     }
 }
 
@@ -147,6 +156,7 @@ impl From<serde_json::Error> for WispError {
     }
 }
 
+/// `Result` alias used across wisp crates.
 pub type Result<T> = std::result::Result<T, WispError>;
 
 /// Agent-facing exit-7 payload (`error.details` when `code` is `write_timeout`).

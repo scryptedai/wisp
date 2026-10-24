@@ -56,6 +56,20 @@ On
 refresh
 .Va base_version
 from hot and retry until success or the attempt budget is exhausted.
+.It Cm queue Fl -serve
+Run the bundle commit queue writer on
+.Pa .wisp/commit.sock .
+Enable with
+.Va queue.enabled
+in
+.Pa manifest.toml
+(or
+.Cm wisp config set queue.enabled true )
+before headless
+.Cm apply
+uses the socket.
+See
+.Cm wisp doc commit-queue .
 .It Cm materialize
 Flush the async worktree materialize queue.
 .Fl -wait
@@ -181,6 +195,8 @@ Repository config
 .Pq Cm wisp config ) :
 .Va commit.busy_timeout_ms ,
 .Va commit.retries ,
+.Va queue.enabled ,
+.Va queue.timeout_ms ,
 .Va materialize.enabled ,
 .Va materialize.tick_ms .
 .El

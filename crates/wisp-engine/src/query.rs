@@ -1466,6 +1466,22 @@ pub fn config(repo: &mut Repository, key: &str, value: Option<&str>) -> Result<V
             repo.manifest.save(&repo.wisp_dir.join("manifest.toml"))?;
             Ok(json!({ "commit.retries": repo.manifest.commit.retries }))
         }
+        ("queue.enabled", None) => Ok(json!({ "queue.enabled": repo.manifest.queue.enabled })),
+        ("queue.enabled", Some(v)) => {
+            repo.manifest.queue.enabled = v == "true" || v == "1";
+            repo.manifest.save(&repo.wisp_dir.join("manifest.toml"))?;
+            Ok(json!({ "queue.enabled": repo.manifest.queue.enabled }))
+        }
+        ("queue.timeout_ms", None) => {
+            Ok(json!({ "queue.timeout_ms": repo.manifest.queue.timeout_ms }))
+        }
+        ("queue.timeout_ms", Some(v)) => {
+            repo.manifest.queue.timeout_ms = v
+                .parse()
+                .map_err(|_| WispError::usage("integer expected"))?;
+            repo.manifest.save(&repo.wisp_dir.join("manifest.toml"))?;
+            Ok(json!({ "queue.timeout_ms": repo.manifest.queue.timeout_ms }))
+        }
         ("materialize.enabled", None) => {
             Ok(json!({ "materialize.enabled": repo.manifest.materialize.enabled }))
         }

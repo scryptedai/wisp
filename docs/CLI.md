@@ -33,8 +33,9 @@ Human text goes to stderr. Exit code matches `error.code` (numeric table below).
 | 8 | integrity | Digest or fsck failure |
 | 9 | key_unavailable | Keystore locked or missing key |
 | 10 | erase_pending | Open must finish erasure recovery first |
+| 11 | queue_timeout | Commit queue deadline (retryable; job not finished in time) |
 
-See [CONCURRENCY.md](./CONCURRENCY.md) for writers and locks.
+See [CONCURRENCY.md](./CONCURRENCY.md) for writers and locks. Optional [commit queue](./COMMIT-QUEUE.md): `[queue] enabled = true` plus `wisp queue --serve`.
 
 ### Exit 7 (`write_timeout`) details
 

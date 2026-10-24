@@ -7,7 +7,7 @@ use spy_harness::*;
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU32, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 use wisp_engine::headless::{apply, ApplyBatch, ApplyOp};
 use wisp_engine::manifest::Manifest;
@@ -231,6 +231,69 @@ fn print_metrics(rows: &[MetricRow]) {
     eprintln!();
 }
 
+fn profile_enabled() -> bool {
+    std::env::var("WISP_EXIT7_PROFILE").ok().as_deref() == Some("1")
+}
+
+fn percentile_ms(samples: &[f64], p: f64) -> f64 {
+    if samples.is_empty() {
+        return 0.0;
+    }
+    let mut v = samples.to_vec();
+    v.sort_by(|a, b| a.partial_cmp(b).unwrap());
+    let idx = ((v.len() - 1) as f64 * p).round() as usize;
+    v[idx]
+}
+
+fn print_profile_percentiles(runs: &[Vec<PhaseSample>], label: &str) {
+    let mut wait_ms: Vec<f64> = Vec::new();
+    let mut held_ms: Vec<f64> = Vec::new();
+    let mut try_ms: Vec<f64> = Vec::new();
+    for run in runs {
+        let mut w = 0u128;
+        let mut h = 0u128;
+        let mut t = 0u128;
+        for s in run {
+            match s.name {
+                "commit.ledger_begin_immediate" => w = s.nanos,
+                "commit.ledger_lock_held" => h = s.nanos,
+                "commit.try_commit" => t = s.nanos,
+                _ => {}
+            }
+        }
+        if w > 0 {
+            wait_ms.push(w as f64 / 1e6);
+        }
+        if h > 0 {
+            held_ms.push(h as f64 / 1e6);
+        }
+        if t > 0 {
+            try_ms.push(t as f64 / 1e6);
+        }
+    }
+    eprintln!(
+        "--- exit7 profile: {label} (n={} successful phase captures) ---",
+        runs.len()
+    );
+    for (name, vals) in [
+        ("ledger_begin_immediate (wait for lock)", &wait_ms),
+        ("ledger_lock_held (work while locked)", &held_ms),
+        ("try_commit (open_hot + inner)", &try_ms),
+    ] {
+        if vals.is_empty() {
+            continue;
+        }
+        let avg = vals.iter().sum::<f64>() / vals.len() as f64;
+        eprintln!(
+            "  {name}: avg={avg:.3} ms  p50={:.3}  p95={:.3}  max={:.3}",
+            percentile_ms(vals, 0.50),
+            percentile_ms(vals, 0.95),
+            vals.iter().copied().fold(0.0, f64::max)
+        );
+    }
+    eprintln!();
+}
+
 fn print_profile(agg: &BTreeMap<&'static str, (u128, usize)>) {
     eprintln!("commit/apply phase averages (ns per sample):");
     let mut total = 0u128;
@@ -283,6 +346,8 @@ fn run_disjoint_parallel(
     let total_exit7 = Arc::new(AtomicU32::new(0));
     let total_ok = Arc::new(AtomicU32::new(0));
     let total_fail = Arc::new(AtomicU32::new(0));
+    let profile_runs: Arc<Mutex<Vec<Vec<PhaseSample>>>> = Arc::new(Mutex::new(Vec::new()));
+    let do_profile = profile_enabled();
 
     let handles: Vec<_> = sections
         .into_iter()
@@ -294,6 +359,7 @@ fn run_disjoint_parallel(
             let total_exit7 = Arc::clone(&total_exit7);
             let total_ok = Arc::clone(&total_ok);
             let total_fail = Arc::clone(&total_fail);
+            let profile_runs = Arc::clone(&profile_runs);
             std::thread::spawn(move || {
                 let mut repo = Repository::open(&root, &unlock()).unwrap();
                 let actor = format!("loq-explorer-{}/0.1", i + 1);
@@ -302,15 +368,29 @@ fn run_disjoint_parallel(
                 let mut local_fail = 0u32;
                 let t0 = Instant::now();
                 for k in 0..ops {
-                    let content = format!("explorer {} op {} — disjoint section write.\n", i, k);
+                    let content = format!("explorer {i} op {k} — disjoint section write.\n");
                     let op = update_op(&path, sec, base, &content);
-                    let (r, e7, _) = apply_with_exit7_retries(
-                        &mut repo,
-                        &actor,
-                        op,
-                        "exit7-battery",
-                        client_retries,
-                    );
+                    let (r, e7, _) = if do_profile {
+                        let (inner, phases) = with_profile(|| {
+                            apply_with_exit7_retries(
+                                &mut repo,
+                                &actor,
+                                op,
+                                "exit7-battery",
+                                client_retries,
+                            )
+                        });
+                        profile_runs.lock().unwrap().push(phases);
+                        inner
+                    } else {
+                        apply_with_exit7_retries(
+                            &mut repo,
+                            &actor,
+                            op,
+                            "exit7-battery",
+                            client_retries,
+                        )
+                    };
                     local_exit7 += e7;
                     match r {
                         Ok(v) => {
@@ -351,6 +431,13 @@ fn run_disjoint_parallel(
             failures: fail,
             note: format!("{ok}/{ops} ops ok"),
         });
+    }
+
+    if do_profile {
+        let runs = profile_runs.lock().unwrap().clone();
+        print_profile_percentiles(&runs, &phase.id);
+        let agg = aggregate(&runs);
+        print_profile(&agg);
     }
 
     let exit7 = total_exit7.load(Ordering::Relaxed);

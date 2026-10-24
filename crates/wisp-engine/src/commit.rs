@@ -517,6 +517,7 @@ fn try_commit_inner(
     let tx = crate::timing::phase("commit.ledger_begin_immediate", || {
         repo.ledger.begin_immediate()
     })?;
+    let _ledger_lock_held = crate::timing::LedgerLockHeldGuard::new();
     // 3. Read head.
     let head = crate::timing::phase("commit.read_head", || Ledger::head(&tx, &req.ref_name))?;
     if let Some(ah) = req.assert_head {

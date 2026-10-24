@@ -109,6 +109,18 @@ pub enum Command {
     },
     /// Changed, new, missing, and non-conformant files; pending erasures
     Status,
+    /// Bundle-local commit queue writer (`.wisp/commit.sock`; enable with queue.enabled)
+    #[command(
+        long_about = "Off by default. Set [queue] enabled = true (wisp config set queue.enabled \
+true) so headless apply submits to commit.sock instead of opening ledger.db directly. Run one \
+writer per bundle: wisp queue --serve. Clients block until the job completes or queue_timeout \
+(exit 11). See docs/COMMIT-QUEUE.md."
+    )]
+    Queue {
+        /// Block and serve until interrupted
+        #[arg(long)]
+        serve: bool,
+    },
     /// Flush async worktree materialize (disk cache behind hot after headless commits)
     #[command(
         long_about = "Managed checkouts are caches of the hot tier. After wisp apply or other \
@@ -688,6 +700,7 @@ impl Command {
             Command::Init { .. } => "init",
             Command::Import { .. } => "import",
             Command::Status => "status",
+            Command::Queue { .. } => "queue",
             Command::Materialize { .. } => "materialize",
             Command::Diff { .. } => "diff",
             Command::Record { .. } => "record",

@@ -123,8 +123,8 @@ fn print_metrics(rows: &[MetricRow]) {
     eprintln!();
     eprintln!("battery-error-three section 1 — timings (ms)");
     eprintln!(
-        "{:<18} {:>5} {:<28} {:>12} {:>18} {:>14} {}",
-        "phase", "round", "step", "append_ms", "conflict_detect_ms", "resolution_ms", "note"
+        "{:<18} {:>5} {:<28} {:>12} {:>18} {:>14} note",
+        "phase", "round", "step", "append_ms", "conflict_detect_ms", "resolution_ms"
     );
     for r in rows {
         eprintln!(
@@ -143,7 +143,7 @@ fn print_metrics(rows: &[MetricRow]) {
 
 fn fmt_opt(v: Option<f64>) -> String {
     match v {
-        Some(x) => format!("{:.3}", x),
+        Some(x) => format!("{x:.3}"),
         None => "-".into(),
     }
 }
@@ -403,10 +403,9 @@ fn battery_error_three_section_one() {
                         });
                     }
 
-                    for i in 0..3 {
+                    for (i, branch) in branches.iter().enumerate() {
                         let t0 = Instant::now();
-                        let merged =
-                            merge_refs(&mut repo, &branches[i], MAIN_REF, None, false).unwrap();
+                        let merged = merge_refs(&mut repo, branch, MAIN_REF, None, false).unwrap();
                         let elapsed = t0.elapsed();
                         let status = merged["status"].as_str().unwrap_or("?");
                         rows.push(MetricRow {
@@ -416,7 +415,7 @@ fn battery_error_three_section_one() {
                             append_ms: None,
                             conflict_detect_ms: None,
                             resolution_ms: Some(ms(elapsed)),
-                            note: format!("{} → main ({})", branches[i], status),
+                            note: format!("{branch} → main ({status})"),
                         });
                     }
                 }

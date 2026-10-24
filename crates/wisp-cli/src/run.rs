@@ -263,7 +263,7 @@ fn status_human(s: &wisp_engine::record::Status) -> String {
             s.materialize.pending_jobs, s.materialize.pending_paths
         ));
         if let Some(ms) = s.materialize.lag_ms {
-            out.push_str(&format!(" (lag ~{} ms)", ms));
+            out.push_str(&format!(" (lag ~{ms} ms)"));
         }
         out.push_str(" — wisp materialize --wait or use wisp cat\n");
     }

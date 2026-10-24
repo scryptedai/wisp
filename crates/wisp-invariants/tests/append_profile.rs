@@ -91,7 +91,7 @@ fn append_profile_battery_error_three() {
     let iterations = 30;
     let mut runs: Vec<Vec<PhaseSample>> = Vec::new();
     for i in 0..iterations {
-        let body = format!("Profile iteration {i} — synthetic Frontier body.\n", i = i);
+        let body = format!("Profile iteration {i} — synthetic Frontier body.\n");
         let (res, phases) = with_profile(|| {
             apply_update(
                 &mut repo,
@@ -116,8 +116,7 @@ fn append_profile_battery_error_three() {
 
     eprintln!();
     eprintln!(
-        "append profile — battery-error-three, {} steady-state appends on main (debug build)",
-        iterations
+        "append profile — battery-error-three, {iterations} steady-state appends on main (debug build)"
     );
     eprintln!("repo: {}", dir.path().display());
     eprintln!(

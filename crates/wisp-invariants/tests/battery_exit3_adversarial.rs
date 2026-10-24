@@ -176,8 +176,8 @@ fn print_metrics(rows: &[MetricRow]) {
     eprintln!();
     eprintln!("battery-exit3-adversarial — metrics (ms)");
     eprintln!(
-        "{:<22} {:<28} {:>10} {:>12} {:>6} {}",
-        "phase", "step", "exit3_ms", "resolve_ms", "exit7", "note"
+        "{:<22} {:<28} {:>10} {:>12} {:>6} note",
+        "phase", "step", "exit3_ms", "resolve_ms", "exit7"
     );
     for r in rows {
         eprintln!(
@@ -195,7 +195,7 @@ fn print_metrics(rows: &[MetricRow]) {
 
 fn fmt_opt(v: Option<f64>) -> String {
     match v {
-        Some(x) => format!("{:.3}", x),
+        Some(x) => format!("{x:.3}"),
         None => "-".into(),
     }
 }
@@ -231,7 +231,6 @@ fn run_phases(meta: &Meta, phases: &[Phase], heavy: bool) -> (Vec<MetricRow>, Ph
                     )
                     .unwrap();
                     drop(repo);
-                    let stale = stale;
                     let path = meta.frontier_path.clone();
                     let handles: Vec<_> = (0..n)
                         .map(|w| {
@@ -281,7 +280,7 @@ fn run_phases(meta: &Meta, phases: &[Phase], heavy: bool) -> (Vec<MetricRow>, Ph
                                     note: "FAIL stale should not commit".into(),
                                 });
                             }
-                            Err(e) => panic!("stampede: {:?}", e),
+                            Err(e) => panic!("stampede: {e:?}"),
                         }
                     }
                     assert_eq!(
@@ -356,7 +355,7 @@ fn run_phases(meta: &Meta, phases: &[Phase], heavy: bool) -> (Vec<MetricRow>, Ph
                         step: format!("resolve_w{w}"),
                         exit3_ms: None,
                         resolve_ms: Some(ms(elapsed)),
-                        exit7: exit7,
+                        exit7,
                         note: format!("{conflicts} conflicts before ok"),
                     });
                 }

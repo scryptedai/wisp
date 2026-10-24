@@ -5,6 +5,8 @@
 //! goes to stderr. Exit codes are stable (§16).
 
 mod cli;
+mod doc_paths;
+mod help_text;
 mod run;
 
 use clap::Parser;

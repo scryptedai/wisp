@@ -139,6 +139,7 @@ pub fn group_create(repo: &mut Repository, name: &str) -> Result<Value> {
         .map_err(|e| WispError::internal(e.to_string()))?;
     repo.maybe_backpressure_cold_flush()?;
     repo.notify_cold_flush();
+    repo.flush_cold_payloads()?;
     Ok(json!({ "group": id.to_string(), "name": name }))
 }
 
@@ -391,6 +392,8 @@ pub fn erase(
         &markers,
     )?;
 
+    // Drain staged cold payloads before shred so async flush cannot resurrect ciphertext.
+    repo.flush_cold_payloads()?;
     // Phase 1 and Phase 2 (idempotent; recovery reruns them).
     shred(repo, &scopes, erase_change, &flagged)?;
     finish_erase_worktree_rewrite(repo, discard_unrecorded)?;
@@ -517,6 +520,7 @@ pub fn recover(repo: &mut Repository) -> Result<()> {
         return Ok(());
     }
     if !pending.is_empty() {
+        repo.flush_cold_payloads()?;
         let cause = erase_cause_for_pending(repo.ledger.conn(), &pending)?;
         shred(repo, &pending, cause, &[])?;
     }

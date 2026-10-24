@@ -1,0 +1,36 @@
+---
+description: Run the same checks as GitHub Actions before commit or push
+alwaysApply: true
+---
+
+# CI gate before commit / push
+
+GitHub Actions runs `.github/workflows/ci.yml` on every PR. **Do not push** until the same checks pass locally.
+
+## Required command
+
+From the repo root:
+
+```sh
+./contrib/ci-check.sh
+```
+
+Use `CARGO_TARGET_DIR=./target` if bindgen/sqlite fails in a sandbox (see `AGENTS.md`).
+
+## What fails most often (fix these first)
+
+| Step | Typical mistake |
+|------|-----------------|
+| `cargo fmt --all -- --check` | Edited Rust without running `cargo fmt --all` |
+| `cargo clippy` | `print_literal`, `uninlined_format_args`, unused imports — match CI allowlist in `ci-check.sh` |
+| `cargo test -p wisp-invariants` | Async **materialize**: headless apply updates hot before disk; call `flush_materialize()` before erase preflight or disk snapshots |
+| Linux-only in CI | `mandoc -T lint contrib/man/wisp.1` after CLI/man changes |
+| `wisp-cli` build | `contrib/man/wisp.1` must exist (`build.rs` gate) |
+
+## Agent workflow
+
+1. Implement + tests.
+2. Run **`./contrib/ci-check.sh`** (or at minimum `cargo fmt --all -- --check` and the same `clippy` / `test` lines from the script).
+3. Only then `git commit` / `git push`.
+
+Optional heavy job (separate CI `stress` job): see `contrib/ci-check.sh` header comment in `AGENTS.md` stress section — not run by default locally.

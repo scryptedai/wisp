@@ -857,9 +857,7 @@ mod erase_cause_tests {
         let older = erase_change_id(&mut repo, scope_ids[0]);
         let newer = erase_change_id(&mut repo, scope_ids[1]);
         let seq = |ch: ChangeId| -> i64 {
-            let row = Ledger::get_change(repo.ledger.conn(), ch)
-                .unwrap()
-                .unwrap();
+            let row = Ledger::get_change(repo.ledger.conn(), ch).unwrap().unwrap();
             Ledger::get_changeset(repo.ledger.conn(), row.changeset)
                 .unwrap()
                 .unwrap()

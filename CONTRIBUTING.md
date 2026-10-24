@@ -73,13 +73,10 @@ Inspired by [Git’s patch submission](https://git-scm.com/docs/SubmittingPatche
 1. **Fork** and branch from `main`, or use a worktree as above.
 2. **One logical change per PR** when possible (easier review, cleaner history).
 3. **Write a clear subject and body** — what problem, what approach, how tested.
-4. **Run CI locally** before push:
+4. **Run CI locally** before push (mirrors [.github/workflows/ci.yml](.github/workflows/ci.yml)):
 
    ```sh
-   cargo fmt --all -- --check
-   cargo clippy --all-targets -- -D warnings
-   cargo test --workspace
-   cargo test -p wisp-invariants
+   ./contrib/ci-check.sh
    ```
 
 5. **Update docs** when you change user-visible behavior (`README`, `DECISIONS.md`, `docs/`).

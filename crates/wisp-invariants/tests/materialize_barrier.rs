@@ -20,7 +20,9 @@ fn init_repo(materialize_enabled: bool) -> (tempfile::TempDir, std::path::PathBu
     Repository::init(&root, "0.2", &unlock()).unwrap();
     let mut repo = Repository::open(&root, &unlock()).unwrap();
     repo.manifest.materialize.enabled = materialize_enabled;
-    repo.manifest.save(&root.join(".wisp/manifest.toml")).unwrap();
+    repo.manifest
+        .save(&root.join(".wisp/manifest.toml"))
+        .unwrap();
     drop(repo);
     let mut repo = Repository::open(&root, &unlock()).unwrap();
     record(
@@ -148,9 +150,7 @@ fn record_commit_drains_materialize_backlog() {
     .unwrap();
     assert_eq!(repo.materialize_status().pending_jobs, 0);
     let hot = repo.hot(MAIN_REF).unwrap();
-    assert!(
-        Hot::concept_by_path(hot.conn(), "notes-extra")
-            .unwrap()
-            .is_some()
-    );
+    assert!(Hot::concept_by_path(hot.conn(), "notes-extra")
+        .unwrap()
+        .is_some());
 }

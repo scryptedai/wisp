@@ -32,16 +32,16 @@ Do not confuse:
 
 ## Build and test (required before PR)
 
+Run the same steps as GitHub Actions (see `.github/workflows/ci.yml`):
+
 ```sh
-cargo fmt --all -- --check
-cargo clippy --all-targets -- -D warnings
-cargo test --workspace
-cargo test -p wisp-invariants
-cargo build --release
+./contrib/ci-check.sh
 ```
 
-Rust **1.88+** (see workspace `rust-version`). If `libsqlite3-sys` bindgen fails in a sandbox, use  
-`CARGO_TARGET_DIR=./target cargo test --workspace`.
+Rust **1.88+** (see workspace `rust-version`). If `libsqlite3-sys` bindgen fails in a sandbox, use 
+`CARGO_TARGET_DIR=./target ./contrib/ci-check.sh`.
+
+Agents: **do not push** until `ci-check.sh` passes locally (especially `cargo fmt --all -- --check`).
 
 ## TDD contract
 

@@ -363,6 +363,10 @@ fn validate_one(conn: &Connection, i: usize, p: &PlannedOp) -> Result<Option<Raw
 
 /// Run an optimistic commit. Retries exit 7 up to `commit.retries` times, reusing prepared ciphertext.
 pub fn commit(repo: &mut Repository, req: CommitRequest) -> Result<CommitOutcome> {
+    crate::timing::phase("commit.total", || commit_inner(repo, req))
+}
+
+fn commit_inner(repo: &mut Repository, req: CommitRequest) -> Result<CommitOutcome> {
     if req.ops.is_empty() {
         return Err(WispError::usage("nothing to commit"));
     }
@@ -375,52 +379,58 @@ pub fn commit(repo: &mut Repository, req: CommitRequest) -> Result<CommitOutcome
         repo.require_format(crate::manifest::FORMAT_INPUTS_COMPLETE)?;
     }
     // 1. Actor.
-    let (actor_id, actor_kind, new_actor) = resolve_actor(repo, &req.actor)?;
+    let (actor_id, actor_kind, new_actor) =
+        crate::timing::phase("commit.resolve_actor", || resolve_actor(repo, &req.actor))?;
 
     // 2. Policy.
     if !req.skip_policy {
-        for p in &req.ops {
-            let subj = PolicySubject {
-                op: p.op,
-                concept_type: p.policy.concept_type.as_deref(),
-                section_heading: p.policy.section_heading.as_deref(),
-                key: p.policy.key.as_deref(),
-                unconditional: p.precondition == Precondition::Any,
-            };
-            if let Some(rule) =
-                check_policy(&repo.manifest.policies, &subj, Some(&req.actor), actor_kind)
-            {
-                return Err(
-                    WispError::refused(format!("refused by policy {rule}")).with_details(json!({
-                        "rule": rule, "op": p.op.as_str(), "path": p.path, "actor": req.actor
-                    })),
-                );
+        crate::timing::phase("commit.policy_check", || -> Result<()> {
+            for p in &req.ops {
+                let subj = PolicySubject {
+                    op: p.op,
+                    concept_type: p.policy.concept_type.as_deref(),
+                    section_heading: p.policy.section_heading.as_deref(),
+                    key: p.policy.key.as_deref(),
+                    unconditional: p.precondition == Precondition::Any,
+                };
+                if let Some(rule) =
+                    check_policy(&repo.manifest.policies, &subj, Some(&req.actor), actor_kind)
+                {
+                    return Err(WispError::refused(format!("refused by policy {rule}"))
+                        .with_details(json!({
+                            "rule": rule, "op": p.op.as_str(), "path": p.path, "actor": req.actor
+                        })));
+                }
             }
-        }
+            Ok(())
+        })?;
     }
 
     // 3. Prepare, unlocked: keys for new scopes, encrypted payloads, notes, message.
     let mut prepared: Vec<PreparedOp> = Vec::with_capacity(req.ops.len());
-    for p in &req.ops {
-        if let Some(kind) = &p.new_scope {
-            let _ = kind;
-            repo.new_scope_key(p.scope)?;
+    crate::timing::phase("commit.prepare_ops", || -> Result<()> {
+        for p in &req.ops {
+            if let Some(kind) = &p.new_scope {
+                let _ = kind;
+                repo.new_scope_key(p.scope)?;
+            }
+            let payload = match &p.payload {
+                Some((kind, bytes)) => Some(repo.prepare_payload(p.scope, *kind, bytes)?),
+                None => None,
+            };
+            let note = match &p.note {
+                Some(n) => Some(repo.prepare_payload(p.scope, PayloadKind::Note, n.as_bytes())?),
+                None => None,
+            };
+            prepared.push(PreparedOp {
+                planned: p.clone(),
+                payload,
+                note,
+                plaintext: p.payload.as_ref().map(|(_, b)| b.clone()),
+            });
         }
-        let payload = match &p.payload {
-            Some((kind, bytes)) => Some(repo.prepare_payload(p.scope, *kind, bytes)?),
-            None => None,
-        };
-        let note = match &p.note {
-            Some(n) => Some(repo.prepare_payload(p.scope, PayloadKind::Note, n.as_bytes())?),
-            None => None,
-        };
-        prepared.push(PreparedOp {
-            planned: p.clone(),
-            payload,
-            note,
-            plaintext: p.payload.as_ref().map(|(_, b)| b.clone()),
-        });
-    }
+        Ok(())
+    })?;
     let message = match &req.message {
         Some(m) if !m.is_empty() => {
             Some(repo.prepare_payload(repo.repo_scope(), PayloadKind::Message, m.as_bytes())?)
@@ -432,9 +442,15 @@ pub fn commit(repo: &mut Repository, req: CommitRequest) -> Result<CommitOutcome
     let mut attempt = 0;
     loop {
         attempt += 1;
-        match try_commit(repo, &req, actor_id, &new_actor, &prepared, &message) {
+        match crate::timing::phase("commit.try_commit", || {
+            try_commit(repo, &req, actor_id, &new_actor, &prepared, &message)
+        }) {
             Ok(out) => {
-                repo.ledger.flush_staged()?;
+                crate::timing::phase("commit.enqueue_cold_flush", || -> Result<()> {
+                    repo.maybe_backpressure_cold_flush()?;
+                    repo.notify_cold_flush();
+                    Ok(())
+                })?;
                 return Ok(out);
             }
             Err(e) if e.is_retryable() && attempt < retries => {
@@ -456,7 +472,7 @@ fn try_commit(
     message: &Option<PreparedPayload>,
 ) -> Result<CommitOutcome> {
     // Make sure the hot tier exists and is current before taking the ledger lock.
-    repo.hot(&req.ref_name)?;
+    crate::timing::phase("commit.open_hot", || repo.hot(&req.ref_name))?;
     let mut hot = repo.hots.remove(&req.ref_name).expect("hot opened");
     let res = try_commit_inner(repo, &mut hot, req, actor_id, new_actor, prepared, message);
     repo.hots.insert(req.ref_name.clone(), hot);
@@ -480,9 +496,11 @@ fn try_commit_inner(
     let now = now_rfc3339();
 
     // 2. Begin.
-    let tx = repo.ledger.begin_immediate()?;
+    let tx = crate::timing::phase("commit.ledger_begin_immediate", || {
+        repo.ledger.begin_immediate()
+    })?;
     // 3. Read head.
-    let head = Ledger::head(&tx, &req.ref_name)?;
+    let head = crate::timing::phase("commit.read_head", || Ledger::head(&tx, &req.ref_name))?;
     if let Some(ah) = req.assert_head {
         if head != Some(ah) {
             drop(tx);
@@ -511,68 +529,71 @@ fn try_commit_inner(
 
     // 4. Validate.
     let mut conflicts: Vec<RawConflict> = Vec::new();
-    for (i, p) in prepared.iter().enumerate() {
-        if let Some(s) = Ledger::scope(&tx, p.planned.scope)? {
-            if s.erased {
-                conflicts.push(RawConflict {
-                    kind: "scope_erased",
-                    op_index: i,
-                    concept: p.planned.target.concept(),
-                    section: p.planned.target.section(),
-                    path: p.planned.path.clone(),
-                    base_version: None,
-                    theirs_version: None,
-                    detail: None,
-                });
-                continue;
-            }
-        }
-        if let Some(c) = validate_one(hot.conn(), i, &p.planned)? {
-            conflicts.push(c);
-        }
-    }
-    for a in &req.asserts {
-        match a {
-            Assertion::Section {
-                section,
-                version,
-                path,
-            } => {
-                let cur = Hot::section(hot.conn(), *section)?.map(|s| s.version);
-                if cur != Some(*version) {
+    crate::timing::phase("commit.validate_preconditions", || -> Result<()> {
+        for (i, p) in prepared.iter().enumerate() {
+            if let Some(s) = Ledger::scope(&tx, p.planned.scope)? {
+                if s.erased {
                     conflicts.push(RawConflict {
-                        kind: "assertion_failed",
-                        op_index: usize::MAX,
-                        concept: None,
-                        section: Some(*section),
-                        path: Some(path.clone()),
-                        base_version: Some(*version),
-                        theirs_version: cur,
+                        kind: "scope_erased",
+                        op_index: i,
+                        concept: p.planned.target.concept(),
+                        section: p.planned.target.section(),
+                        path: p.planned.path.clone(),
+                        base_version: None,
+                        theirs_version: None,
                         detail: None,
                     });
+                    continue;
                 }
             }
-            Assertion::Concept {
-                concept,
-                version,
-                path,
-            } => {
-                let cur = Hot::concept(hot.conn(), *concept)?.map(|c| c.version);
-                if cur != Some(*version) {
-                    conflicts.push(RawConflict {
-                        kind: "assertion_failed",
-                        op_index: usize::MAX,
-                        concept: Some(*concept),
-                        section: None,
-                        path: Some(path.clone()),
-                        base_version: Some(*version),
-                        theirs_version: cur,
-                        detail: None,
-                    });
+            if let Some(c) = validate_one(hot.conn(), i, &p.planned)? {
+                conflicts.push(c);
+            }
+        }
+        for a in &req.asserts {
+            match a {
+                Assertion::Section {
+                    section,
+                    version,
+                    path,
+                } => {
+                    let cur = Hot::section(hot.conn(), *section)?.map(|s| s.version);
+                    if cur != Some(*version) {
+                        conflicts.push(RawConflict {
+                            kind: "assertion_failed",
+                            op_index: usize::MAX,
+                            concept: None,
+                            section: Some(*section),
+                            path: Some(path.clone()),
+                            base_version: Some(*version),
+                            theirs_version: cur,
+                            detail: None,
+                        });
+                    }
+                }
+                Assertion::Concept {
+                    concept,
+                    version,
+                    path,
+                } => {
+                    let cur = Hot::concept(hot.conn(), *concept)?.map(|c| c.version);
+                    if cur != Some(*version) {
+                        conflicts.push(RawConflict {
+                            kind: "assertion_failed",
+                            op_index: usize::MAX,
+                            concept: Some(*concept),
+                            section: None,
+                            path: Some(path.clone()),
+                            base_version: Some(*version),
+                            theirs_version: cur,
+                            detail: None,
+                        });
+                    }
                 }
             }
         }
-    }
+        Ok(())
+    })?;
     if !conflicts.is_empty() {
         // 6. Reject: roll back, then enrich conflict objects with content (§11.2).
         let reader = Reader {
@@ -581,7 +602,9 @@ fn try_commit_inner(
             keystore,
             repo_id,
         };
-        let objs = enrich_conflicts(&reader, hot.conn(), &conflicts, prepared);
+        let objs = crate::timing::phase("commit.enrich_conflicts", || {
+            enrich_conflicts(&reader, hot.conn(), &conflicts, prepared)
+        });
         drop(tx);
         return Err(WispError::conflict(
             "precondition failed",
@@ -590,194 +613,200 @@ fn try_commit_inner(
     }
 
     // 5. Commit.
-    let cs_id = ChangesetId::new();
-    let mut changes: Vec<Change> = Vec::with_capacity(prepared.len() + 1);
-    let mut ordinal = 0u32;
-    if let Some((row, name_payload)) = new_actor {
-        // register_actor is appended automatically the first time an actor commits (§8).
-        changes.push(Change {
-            id: ChangeId::new(),
-            changeset: cs_id,
-            ordinal,
-            op: Op::RegisterActor,
-            target: Target::Actor { actor: row.id },
-            scope: row.scope,
-            payload: Some(name_payload.reference),
-            note: None,
-            inputs: vec![],
-            valid: None,
-            lineage: None,
-            origin: None,
-            reason: None,
-            inputs_complete: false,
-        });
-        ordinal += 1;
-    }
-    for p in prepared {
-        let mut inputs = p.planned.inputs.clone();
-        if p.planned.op.is_content_change() {
-            for i in &req.inputs {
-                if !inputs.contains(i) {
-                    inputs.push(i.clone());
-                }
-            }
+    let outcome = crate::timing::phase("commit.persist_changeset", || -> Result<CommitOutcome> {
+        let cs_id = ChangesetId::new();
+        let mut changes: Vec<Change> = Vec::with_capacity(prepared.len() + 1);
+        let mut ordinal = 0u32;
+        if let Some((row, name_payload)) = new_actor {
+            // register_actor is appended automatically the first time an actor commits (§8).
+            changes.push(Change {
+                id: ChangeId::new(),
+                changeset: cs_id,
+                ordinal,
+                op: Op::RegisterActor,
+                target: Target::Actor { actor: row.id },
+                scope: row.scope,
+                payload: Some(name_payload.reference),
+                note: None,
+                inputs: vec![],
+                valid: None,
+                lineage: None,
+                origin: None,
+                reason: None,
+                inputs_complete: false,
+            });
+            ordinal += 1;
         }
-        changes.push(Change {
-            id: ChangeId::new(),
-            changeset: cs_id,
-            ordinal,
-            op: p.planned.op,
-            target: p.planned.target.clone(),
-            scope: p.planned.scope,
-            payload: p.payload.as_ref().map(|x| x.reference),
-            note: p.note.as_ref().map(|x| x.reference),
-            inputs,
-            valid: None,
-            lineage: p.planned.lineage.clone(),
-            origin: p.planned.origin.clone(),
-            reason: p.planned.reason,
-            inputs_complete: p.planned.inputs_complete
-                || (req.inputs_complete && p.planned.op.is_content_change()),
-        });
-        ordinal += 1;
-    }
-    let parents: Vec<ChangesetId> = head.into_iter().collect();
-    let mut parent_digests = Vec::new();
-    for p in &parents {
-        let row = Ledger::get_changeset(&tx, *p)?
-            .ok_or_else(|| WispError::integrity("parent changeset missing"))?;
-        parent_digests.push(row.changeset.digest);
-    }
-    let based_on = match (req.base, head) {
-        (Some(b), Some(h)) if b != h => Some(b),
-        (Some(b), None) => Some(b),
-        _ => None,
-    };
-    let message_ref = message.as_ref().map(|m| m.reference);
-    let digest = canonical::changeset_digest(
-        cs_id,
-        actor_id,
-        &now,
-        &parent_digests,
-        based_on,
-        message_ref.as_ref(),
-        &changes,
-    );
-    let reader = Reader {
-        conn: &tx,
-        payloads_dir: payloads_dir.clone(),
-        keystore,
-        repo_id,
-    };
-    let sig = crate::signing::sign_digest(&repo.wisp_dir, &reader, actor_id, &digest)?;
-    let cs = Changeset {
-        id: cs_id,
-        parents,
-        based_on,
-        actor_id,
-        at: now.clone(),
-        message: message_ref,
-        digest,
-        sig,
-    };
-
-    // Scopes, actors, payloads.
-    if let Some((row, name_payload)) = new_actor {
-        Ledger::insert_scope(&tx, row.scope, &ScopeKind::Actor { actor: row.id })?;
-        Ledger::insert_actor(&tx, row)?;
-        stage(&tx, name_payload)?;
-    }
-    for p in prepared {
-        if let Some(kind) = &p.planned.new_scope {
-            Ledger::insert_scope(&tx, p.planned.scope, kind)?;
-        }
-        if let Some(pl) = &p.payload {
-            stage(&tx, pl)?;
-        }
-        if let Some(n) = &p.note {
-            stage(&tx, n)?;
-        }
-    }
-    if let Some(m) = message {
-        stage(&tx, m)?;
-    }
-    let seq = Ledger::insert_changeset(&tx, &cs, &changes)?;
-    Ledger::set_head(&tx, &req.ref_name, cs_id)?;
-    // Mutable bookkeeping derived from this changeset.
-    for (p, c) in prepared
-        .iter()
-        .zip(changes.iter().skip(if new_actor.is_some() { 1 } else { 0 }))
-    {
-        match (&p.planned.op, &p.planned.target) {
-            (Op::MoveSection, Target::Section { concept, .. }) => {
-                Ledger::set_scope_concept(&tx, p.planned.scope, *concept)?
-            }
-            (Op::GroupAdd, Target::Group { group })
-            | (Op::GroupRemove, Target::Group { group }) => {
-                if let Some(pt) = &p.plaintext {
-                    let m = crate::payloads::decode_group_member(pt)?;
-                    let member = ulid_bytes(&m.member);
-                    if p.planned.op == Op::GroupAdd {
-                        Ledger::group_add_member(&tx, *group, &member, &m.kind)?;
-                    } else {
-                        Ledger::group_remove_member(&tx, *group, &member)?;
+        for p in prepared {
+            let mut inputs = p.planned.inputs.clone();
+            if p.planned.op.is_content_change() {
+                for i in &req.inputs {
+                    if !inputs.contains(i) {
+                        inputs.push(i.clone());
                     }
                 }
             }
-            (Op::ActorKey, Target::Actor { actor }) => {
-                if let Some(r) = &c.payload {
-                    Ledger::set_actor_key(&tx, *actor, r)?;
-                }
-            }
-            _ => {}
+            changes.push(Change {
+                id: ChangeId::new(),
+                changeset: cs_id,
+                ordinal,
+                op: p.planned.op,
+                target: p.planned.target.clone(),
+                scope: p.planned.scope,
+                payload: p.payload.as_ref().map(|x| x.reference),
+                note: p.note.as_ref().map(|x| x.reference),
+                inputs,
+                valid: None,
+                lineage: p.planned.lineage.clone(),
+                origin: p.planned.origin.clone(),
+                reason: p.planned.reason,
+                inputs_complete: p.planned.inputs_complete
+                    || (req.inputs_complete && p.planned.op.is_content_change()),
+            });
+            ordinal += 1;
         }
-    }
-
-    // Hot tier, inside the same critical section, then commit both.
-    {
+        let parents: Vec<ChangesetId> = head.into_iter().collect();
+        let mut parent_digests = Vec::new();
+        for p in &parents {
+            let row = Ledger::get_changeset(&tx, *p)?
+                .ok_or_else(|| WispError::integrity("parent changeset missing"))?;
+            parent_digests.push(row.changeset.digest);
+        }
+        let based_on = match (req.base, head) {
+            (Some(b), Some(h)) if b != h => Some(b),
+            (Some(b), None) => Some(b),
+            _ => None,
+        };
+        let message_ref = message.as_ref().map(|m| m.reference);
+        let digest = canonical::changeset_digest(
+            cs_id,
+            actor_id,
+            &now,
+            &parent_digests,
+            based_on,
+            message_ref.as_ref(),
+            &changes,
+        );
         let reader = Reader {
             conn: &tx,
             payloads_dir: payloads_dir.clone(),
             keystore,
             repo_id,
         };
-        let htx = hot.begin()?;
-        let offset = if new_actor.is_some() { 1 } else { 0 };
-        for (i, c) in changes.iter().enumerate() {
-            if i < offset {
-                continue;
+        let sig = crate::signing::sign_digest(&repo.wisp_dir, &reader, actor_id, &digest)?;
+        let cs = Changeset {
+            id: cs_id,
+            parents,
+            based_on,
+            actor_id,
+            at: now.clone(),
+            message: message_ref,
+            digest,
+            sig,
+        };
+
+        // Scopes, actors, payloads.
+        if let Some((row, name_payload)) = new_actor {
+            Ledger::insert_scope(&tx, row.scope, &ScopeKind::Actor { actor: row.id })?;
+            Ledger::insert_actor(&tx, row)?;
+            stage(&tx, name_payload)?;
+        }
+        for p in prepared {
+            if let Some(kind) = &p.planned.new_scope {
+                Ledger::insert_scope(&tx, p.planned.scope, kind)?;
             }
-            let p = &prepared[i - offset];
-            if c.op == Op::Restore {
-                match &c.target {
-                    Target::Concept { concept } => {
-                        crate::apply::replay_concept(&reader, &htx, *concept)?
-                    }
-                    Target::Asset { asset } => crate::apply::replay_asset(&reader, &htx, *asset)?,
-                    _ => {}
-                }
-            } else {
-                crate::apply::apply_change(&htx, &cs, c, p.plaintext.as_deref())?;
+            if let Some(pl) = &p.payload {
+                stage(&tx, pl)?;
+            }
+            if let Some(n) = &p.note {
+                stage(&tx, n)?;
             }
         }
-        Hot::advance(&htx, cs_id, seq)?;
-        // The hot tier commits first so no writer that acquires the ledger lock next can observe a
-        // head whose changes are not yet in the tier. If the process dies between the two commits the
-        // tier is ahead of the ledger; `Repository::hot` detects the unknown head and rebuilds it.
-        htx.commit()
-            .map_err(|e| WispError::internal(format!("hot commit: {e}")))?;
-        tx.commit()
-            .map_err(|e| WispError::internal(format!("ledger commit: {e}")))?;
-    }
-    let _ = (repo_scope, profile_id);
-    Ok(CommitOutcome {
-        changeset: cs_id,
-        seq,
-        head_before: head,
-        actor_id,
-        changes,
-        reports: vec![],
-    })
+        if let Some(m) = message {
+            stage(&tx, m)?;
+        }
+        let seq = Ledger::insert_changeset(&tx, &cs, &changes)?;
+        Ledger::set_head(&tx, &req.ref_name, cs_id)?;
+        // Mutable bookkeeping derived from this changeset.
+        for (p, c) in prepared
+            .iter()
+            .zip(changes.iter().skip(if new_actor.is_some() { 1 } else { 0 }))
+        {
+            match (&p.planned.op, &p.planned.target) {
+                (Op::MoveSection, Target::Section { concept, .. }) => {
+                    Ledger::set_scope_concept(&tx, p.planned.scope, *concept)?
+                }
+                (Op::GroupAdd, Target::Group { group })
+                | (Op::GroupRemove, Target::Group { group }) => {
+                    if let Some(pt) = &p.plaintext {
+                        let m = crate::payloads::decode_group_member(pt)?;
+                        let member = ulid_bytes(&m.member);
+                        if p.planned.op == Op::GroupAdd {
+                            Ledger::group_add_member(&tx, *group, &member, &m.kind)?;
+                        } else {
+                            Ledger::group_remove_member(&tx, *group, &member)?;
+                        }
+                    }
+                }
+                (Op::ActorKey, Target::Actor { actor }) => {
+                    if let Some(r) = &c.payload {
+                        Ledger::set_actor_key(&tx, *actor, r)?;
+                    }
+                }
+                _ => {}
+            }
+        }
+
+        // Hot tier, inside the same critical section, then commit both.
+        crate::timing::phase("commit.hot_apply_and_tx_commit", || -> Result<()> {
+            let reader = Reader {
+                conn: &tx,
+                payloads_dir: payloads_dir.clone(),
+                keystore,
+                repo_id,
+            };
+            let htx = hot.begin()?;
+            let offset = if new_actor.is_some() { 1 } else { 0 };
+            for (i, c) in changes.iter().enumerate() {
+                if i < offset {
+                    continue;
+                }
+                let p = &prepared[i - offset];
+                if c.op == Op::Restore {
+                    match &c.target {
+                        Target::Concept { concept } => {
+                            crate::apply::replay_concept(&reader, &htx, *concept)?
+                        }
+                        Target::Asset { asset } => {
+                            crate::apply::replay_asset(&reader, &htx, *asset)?
+                        }
+                        _ => {}
+                    }
+                } else {
+                    crate::apply::apply_change(&htx, &cs, c, p.plaintext.as_deref())?;
+                }
+            }
+            Hot::advance(&htx, cs_id, seq)?;
+            // The hot tier commits first so no writer that acquires the ledger lock next can observe a
+            // head whose changes are not yet in the tier. If the process dies between the two commits the
+            // tier is ahead of the ledger; `Repository::hot` detects the unknown head and rebuilds it.
+            htx.commit()
+                .map_err(|e| WispError::internal(format!("hot commit: {e}")))?;
+            tx.commit()
+                .map_err(|e| WispError::internal(format!("ledger commit: {e}")))?;
+            Ok(())
+        })?;
+        let _ = (repo_scope, profile_id);
+        Ok(CommitOutcome {
+            changeset: cs_id,
+            seq,
+            head_before: head,
+            actor_id,
+            changes,
+            reports: vec![],
+        })
+    })?;
+    Ok(outcome)
 }
 
 /// Group members are concept, section, or asset IDs (all ULIDs); store their raw bytes.
@@ -946,7 +975,8 @@ pub fn record_merge(
     Ledger::set_head(&tx, ref_name, cs_id)?;
     tx.commit()
         .map_err(|e| WispError::internal(e.to_string()))?;
-    repo.ledger.flush_staged()?;
+    repo.maybe_backpressure_cold_flush()?;
+    repo.notify_cold_flush();
     Ok(cs_id)
 }
 

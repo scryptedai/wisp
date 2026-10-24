@@ -1,5 +1,6 @@
 //! Repository handle: manifest, ledger, keystore, hot tiers, payload helpers.
 
+use crate::cold_flush::ColdFlushQueue;
 use crate::manifest::Manifest;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -75,6 +76,7 @@ pub struct Repository {
     pub keystore: Keystore,
     pub profile: Box<dyn Profile>,
     pub(crate) hots: HashMap<String, Hot>,
+    cold_flush: ColdFlushQueue,
 }
 
 impl Repository {
@@ -143,14 +145,16 @@ impl Repository {
                 "# gitignore syntax; paths wisp never records\n.git/\n.DS_Store\n",
             )?;
         }
+        let busy = manifest.commit.busy_timeout_ms;
         let repo = Repository {
             root: root.to_path_buf(),
-            wisp_dir,
+            wisp_dir: wisp_dir.clone(),
             manifest,
             ledger,
             keystore,
             profile,
             hots: HashMap::new(),
+            cold_flush: ColdFlushQueue::spawn(wisp_dir, busy),
         };
         Ok(repo)
     }
@@ -184,19 +188,35 @@ impl Repository {
         let master = Self::master_key(&wisp_dir, unlock, false)?;
         let keystore = Keystore::open(&wisp_dir.join("keys/keystore.db"), master)?;
         let ledger = Ledger::open(&wisp_dir, manifest.commit.busy_timeout_ms)?;
+        let busy = manifest.commit.busy_timeout_ms;
         let mut repo = Repository {
             root: root.to_path_buf(),
-            wisp_dir,
+            wisp_dir: wisp_dir.clone(),
             manifest,
             ledger,
             keystore,
             profile,
             hots: HashMap::new(),
+            cold_flush: ColdFlushQueue::spawn(wisp_dir, busy),
         };
         // Recovery, before any other operation (§10.2 step 5, §10.5 Recovery).
         repo.ledger.flush_staged()?;
         crate::erase::recover(&mut repo)?;
         Ok(repo)
+    }
+
+    /// Stage wake: drain staged payloads to disk on a background thread (§10.2 step 3).
+    pub(crate) fn notify_cold_flush(&self) {
+        self.cold_flush.wake();
+    }
+
+    pub(crate) fn maybe_backpressure_cold_flush(&self) -> Result<()> {
+        self.cold_flush.maybe_backpressure(&self.ledger)
+    }
+
+    /// Sync barrier: block until all staged payloads are on disk (push, export, graceful shutdown).
+    pub fn flush_cold_payloads(&mut self) -> Result<()> {
+        self.cold_flush.drain_blocking(&self.ledger)
     }
 
     pub fn repo_id(&self) -> RepoId {
@@ -411,6 +431,7 @@ impl Repository {
     /// [`Repository`] before using the reference again (see `wisp_sync::pack::apply_pack_bytes`).
     pub fn relinquish_for_cold_overwrite(repo: &mut Repository) -> (PathBuf, PathBuf) {
         repo.close_all_hots();
+        let _ = repo.flush_cold_payloads();
         let root = repo.root.clone();
         let wisp_dir = repo.wisp_dir.clone();
         unsafe {
@@ -436,5 +457,11 @@ impl Repository {
 
     pub fn now(&self) -> String {
         now_rfc3339()
+    }
+}
+
+impl Drop for Repository {
+    fn drop(&mut self) {
+        let _ = self.cold_flush.shutdown(&self.ledger);
     }
 }

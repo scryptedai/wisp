@@ -1,0 +1,127 @@
+# Battery error-three — section 1 behavior tree (synthetic OKF: battery-error-three / swarm-metrics).
+# Loaded by crates/wisp-invariants/tests/battery_error_three.rs
+
+[meta]
+bundle_id = "battery-error-three"
+concept_path = "notes/swarm-metrics"
+
+# --- Phase 1: five solo appends to Frontier (baseline append_ms) ---
+
+[[phase]]
+id = "S1-single-five"
+kind = "single_sequential"
+actor = "human:calibrator/1"
+section = "Frontier"
+
+[[phase.round]]
+n = 1
+message = "S1 single r1: baseline tick"
+content = "Calibration tick 1 — queue depth nominal, no writers ahead.\n"
+
+[[phase.round]]
+n = 2
+message = "S1 single r2: drift sample"
+content = "Calibration tick 1 — queue depth nominal, no writers ahead.\nDrift sample 2 — section hash stable across replay.\n"
+
+[[phase.round]]
+n = 3
+message = "S1 single r3: latency probe"
+content = "Calibration tick 1 — queue depth nominal, no writers ahead.\nDrift sample 2 — section hash stable across replay.\nLatency probe 3 — append path only, no merge.\n"
+
+[[phase.round]]
+n = 4
+message = "S1 single r4: actor stamp"
+content = "Calibration tick 1 — queue depth nominal, no writers ahead.\nDrift sample 2 — section hash stable across replay.\nLatency probe 3 — append path only, no merge.\nActor stamp 4 — human:calibrator/1 exclusive.\n"
+
+[[phase.round]]
+n = 5
+message = "S1 single r5: phase complete"
+content = "Calibration tick 1 — queue depth nominal, no writers ahead.\nDrift sample 2 — section hash stable across replay.\nLatency probe 3 — append path only, no merge.\nActor stamp 4 — human:calibrator/1 exclusive.\nPhase S1-single-five complete — five clean appends.\n"
+
+# --- Phase 2: five rounds, two actors, same Frontier section (conflict then resolve) ---
+
+[[phase]]
+id = "S1-double-five"
+kind = "dual_same_section"
+section = "Frontier"
+actor_a = "loq-explorer-1/1"
+actor_b = "loq-explorer-2/1"
+
+[[phase.round]]
+n = 1
+message_a = "S1 double r1: explorer-1 frontier"
+message_b = "S1 double r1: explorer-2 frontier (stale base)"
+content_a = "Round 1 — Explorer-1: ion trap telemetry shows 12 µs jitter.\n"
+content_b = "Round 1 — Explorer-2: photon counter spike at T+4 ms (independent claim).\n"
+
+[[phase.round]]
+n = 2
+message_a = "S1 double r2: explorer-1"
+message_b = "S1 double r2: explorer-2 stale"
+content_a = "Round 2 — Explorer-1: cryo stage reached 4.1 K setpoint.\n"
+content_b = "Round 2 — Explorer-2: RF chain harmonics within spec band.\n"
+
+[[phase.round]]
+n = 3
+message_a = "S1 double r3: explorer-1"
+message_b = "S1 double r3: explorer-2 stale"
+content_a = "Round 3 — Explorer-1: magnetic shield door sealed.\n"
+content_b = "Round 3 — Explorer-2: vacuum pressure 2.1e-9 Torr.\n"
+
+[[phase.round]]
+n = 4
+message_a = "S1 double r4: explorer-1"
+message_b = "S1 double r4: explorer-2 stale"
+content_a = "Round 4 — Explorer-1: laser interlock green.\n"
+content_b = "Round 4 — Explorer-2: beam splitter alignment offset 0.3 mrad.\n"
+
+[[phase.round]]
+n = 5
+message_a = "S1 double r5: explorer-1"
+message_b = "S1 double r5: explorer-2 stale"
+content_a = "Round 5 — Explorer-1: runbook checkpoint A passed.\n"
+content_b = "Round 5 — Explorer-2: runbook checkpoint B passed (parallel narrative).\n"
+
+# --- Phase 3: five rounds, three actors, disjoint lanes → merge to main ---
+
+[[phase]]
+id = "S1-triple-five"
+kind = "triple_independent_merge"
+actors = ["loq-explorer-1/1", "loq-explorer-2/1", "loq-explorer-3/1"]
+sections = ["Lane-Alpha", "Lane-Beta", "Lane-Gamma"]
+branch_prefix = "swarm"
+
+[[phase.round]]
+n = 1
+message = "S1 triple r1: independent lanes"
+content_alpha = "Alpha r1 — flux capacitor idle draw 0.8 W.\n"
+content_beta = "Beta r1 — coolant loop ΔT 0.4 °C.\n"
+content_gamma = "Gamma r1 — checksum lane verified.\n"
+
+[[phase.round]]
+n = 2
+message = "S1 triple r2"
+content_alpha = "Alpha r2 — harmonic dampener engaged.\n"
+content_beta = "Beta r2 — pump speed 4200 RPM.\n"
+content_gamma = "Gamma r2 — redundant path armed.\n"
+
+[[phase.round]]
+n = 3
+message = "S1 triple r3"
+content_alpha = "Alpha r3 — sensor grid calibrated.\n"
+content_beta = "Beta r3 — isolation valve tested.\n"
+content_gamma = "Gamma r3 — audit token minted.\n"
+
+[[phase.round]]
+n = 4
+message = "S1 triple r4"
+content_alpha = "Alpha r4 — field bias trimmed.\n"
+content_beta = "Beta r4 — condensate level steady.\n"
+content_gamma = "Gamma r4 — cross-link map updated.\n"
+
+[[phase.round]]
+n = 5
+message = "S1 triple r5"
+content_alpha = "Alpha r5 — lane closed clean.\n"
+content_beta = "Beta r5 — lane closed clean.\n"
+content_gamma = "Gamma r5 — lane closed clean.\n"

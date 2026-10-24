@@ -137,7 +137,8 @@ pub fn group_create(repo: &mut Repository, name: &str) -> Result<Value> {
     Ledger::insert_group(&tx, id, &label.reference)?;
     tx.commit()
         .map_err(|e| WispError::internal(e.to_string()))?;
-    repo.ledger.flush_staged()?;
+    repo.maybe_backpressure_cold_flush()?;
+    repo.notify_cold_flush();
     Ok(json!({ "group": id.to_string(), "name": name }))
 }
 

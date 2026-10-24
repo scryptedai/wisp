@@ -16,7 +16,8 @@ pub fn pack_includes_keys() -> bool {
 }
 
 /// Write `.wisp/` cold tier (ledger db, payloads; keys only when `WISP_PACK_INCLUDE_KEYS=1`).
-pub fn write_cold_pack(repo: &Repository, dest: &Path) -> Result<()> {
+pub fn write_cold_pack(repo: &mut Repository, dest: &Path) -> Result<()> {
+    repo.flush_cold_payloads()?;
     let wisp = &repo.wisp_dir;
     if let Some(parent) = dest.parent() {
         std::fs::create_dir_all(parent)?;
@@ -91,7 +92,7 @@ pub fn safe_wisp_path(wisp_dir: &Path, rel: &Path) -> Result<PathBuf> {
     Ok(out)
 }
 
-pub fn pack_bytes(repo: &Repository) -> Result<Vec<u8>> {
+pub fn pack_bytes(repo: &mut Repository) -> Result<Vec<u8>> {
     let tmp = tempfile::NamedTempFile::new()?;
     write_cold_pack(repo, tmp.path())?;
     let mut f = File::open(tmp.path())?;
@@ -188,8 +189,8 @@ mod tests {
         )
         .unwrap();
         drop(a);
-        let a = Repository::open(&a_root, &Unlock::default()).unwrap();
-        let body = pack_bytes(&a).unwrap();
+        let mut a = Repository::open(&a_root, &Unlock::default()).unwrap();
+        let body = pack_bytes(&mut a).unwrap();
         let mut c = Repository::init(&c_root, "0.2", &Unlock::default()).unwrap();
         apply_pack_bytes(&mut c, &body, &Unlock::default()).unwrap();
     }
@@ -200,10 +201,10 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path().join("bundle");
         std::fs::create_dir_all(&root).unwrap();
-        let repo = Repository::init(&root, "0.2", &Unlock::default()).unwrap();
+        let mut repo = Repository::init(&root, "0.2", &Unlock::default()).unwrap();
         std::fs::write(repo.wisp_dir.join("keys/master.key"), b"x").unwrap();
         let pack = dir.path().join("p.zst");
-        write_cold_pack(&repo, &pack).unwrap();
+        write_cold_pack(&mut repo, &pack).unwrap();
         let dec = Decoder::new(File::open(&pack).unwrap()).unwrap();
         let mut archive = Archive::new(dec);
         let names: Vec<_> = archive

@@ -80,7 +80,7 @@ fn cold_pack_pull_result(
 
 /// Server: Ack, send this repo's cold pack, Done (after `cold_pack_pull` handshake).
 pub fn serve_pull_cold_pack(
-    repo: &Repository,
+    repo: &mut Repository,
     ref_name: &str,
     output: &mut impl Write,
 ) -> Result<serde_json::Value> {
@@ -140,7 +140,7 @@ pub fn serve_push_cold_pack(
 
 /// Client: Hello → PushRef → read Ack → ColdPack → read Done.
 pub fn client_push_cold_pack(
-    local: &Repository,
+    local: &mut Repository,
     ref_name: &str,
     input: &mut impl BufRead,
     output: &mut impl Write,
@@ -255,8 +255,8 @@ mod tests {
         drop(a);
         let unlock = Unlock::default();
         let mut b = Repository::init(&b_root, "0.2", &unlock).unwrap();
-        let a = Repository::open(&a_root, &unlock).unwrap();
-        let body = pack_bytes(&a).unwrap();
+        let mut a = Repository::open(&a_root, &unlock).unwrap();
+        let body = pack_bytes(&mut a).unwrap();
         apply_pack_bytes(&mut b, &body, &unlock).unwrap();
         if Ledger::head(b.ledger.conn(), MAIN_REF).unwrap().is_some() {
             apply::rebuild_hot(&mut b, MAIN_REF).unwrap();
@@ -306,15 +306,15 @@ mod tests {
         let (client_rd, server_wr) = std::io::pipe().unwrap();
         let server_root = a_root.clone();
         let server = thread::spawn(move || {
-            let repo = Repository::open(&server_root, &Unlock::default()).unwrap();
+            let mut repo = Repository::open(&server_root, &Unlock::default()).unwrap();
             let mut input = BufReader::new(server_rd);
             let mut output = BufWriter::new(server_wr);
-            let (session, transport) = protocol::server_handshake(&repo, &mut input).unwrap();
+            let (session, transport) = protocol::server_handshake(&mut repo, &mut input).unwrap();
             assert_eq!(transport, "cold_pack_pull");
             let RefSession::Pull(ref_name) = session else {
                 panic!("expected pull");
             };
-            serve_pull_cold_pack(&repo, &ref_name, &mut output).unwrap();
+            serve_pull_cold_pack(&mut repo, &ref_name, &mut output).unwrap();
         });
 
         let mut client = init_trusted_replica(&b_root, &a_root, &unlock).unwrap();

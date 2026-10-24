@@ -21,6 +21,7 @@ Deviations from the OKF store v1 design (ledger, parse, merge, sync, profiles), 
 
 ## §6.3 Reads and writes
 
+- **Async cold payload flush.** After a successful commit, ciphertext stays in `staged_payloads` and a background thread drains to `.wisp/payloads/` (readers still use staged-first). `Repository::flush_cold_payloads`, `Repository::drop`, and `open` recovery flush before sync/export barriers. Backpressure: when staged ciphertext exceeds `WISP_MAX_STAGED_PAYLOAD_BYTES` (default 128 MiB), the commit path blocks with a synchronous drain. Power-loss immediately after commit may leave payloads staged until the next `open` (I25).
 - **Commit order inside the critical section.** The spec commits the ledger, then the hot tier. This build commits the hot tier first, then the ledger, both while holding the ledger write lock. Reason: with ledger-first, a writer acquiring the lock between the two commits sees a head whose changes are not yet in the tier and would wrongly conclude the tier is stale. If a process dies between the commits the tier is ahead of the ledger; `Repository::hot` sees an unknown head and rebuilds.
 - **Rebuild holds the ledger write lock.** A rebuild computed from a stale head could otherwise be committed over a newer tier state.
 - Built-in search indexes live in each ref’s `hot.db` under `cache/refs/` (`docs/SEARCH.md`). Token rollup DBs are not fully materialized; `pack` uses `tok:approx:chars4`.

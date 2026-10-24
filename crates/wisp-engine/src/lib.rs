@@ -3,6 +3,7 @@
 pub mod apply;
 pub mod cache;
 pub mod checkout;
+pub mod cold_flush;
 pub mod commit;
 pub mod erase;
 pub mod headless;
@@ -17,6 +18,7 @@ pub mod repo;
 pub mod search;
 pub mod signing;
 pub mod snapshot;
+pub mod timing;
 pub mod vector;
 pub mod worktree;
 

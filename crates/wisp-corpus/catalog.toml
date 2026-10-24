@@ -110,6 +110,15 @@ record = true
 lossless_strip = true
 
 [[bundle]]
+id = "battery-error-three"
+path = "bundles/battery-error-three"
+profile = "0.2"
+description = "Synthetic swarm-metrics OKF for exit-3 / merge timing battery"
+invariants = ["I3"]
+record = true
+lossless_strip = false
+
+[[bundle]]
 id = "search-battery"
 path = "bundles/search-battery"
 profile = "0.2"

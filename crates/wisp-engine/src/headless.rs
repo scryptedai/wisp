@@ -516,6 +516,14 @@ fn plan_op(repo: &mut Repository, ref_name: &str, o: &ApplyOp, le: &str) -> Resu
 
 /// `wisp apply`: one batch, one changeset. Every other headless command is shorthand for a one-op batch.
 pub fn apply(repo: &mut Repository, batch: ApplyBatch, default_ref: Option<&str>) -> Result<Value> {
+    crate::timing::phase("apply.total", || apply_inner(repo, batch, default_ref))
+}
+
+fn apply_inner(
+    repo: &mut Repository,
+    batch: ApplyBatch,
+    default_ref: Option<&str>,
+) -> Result<Value> {
     let ref_name = batch
         .r#ref
         .clone()
@@ -525,7 +533,9 @@ pub fn apply(repo: &mut Repository, batch: ApplyBatch, default_ref: Option<&str>
     let le = "\n";
     let mut ops = Vec::with_capacity(batch.ops.len());
     for o in &batch.ops {
-        ops.push(plan_op(repo, &ref_name, o, le)?);
+        ops.push(crate::timing::phase("apply.plan_op", || {
+            plan_op(repo, &ref_name, o, le)
+        })?);
     }
     // A `create` may be followed by frontmatter and content in the same batch.
     // Extra planned ops, each tagged with the index of the batch op it belongs to.
@@ -610,11 +620,15 @@ pub fn apply(repo: &mut Repository, batch: ApplyBatch, default_ref: Option<&str>
     }
     // Inputs: an op's own `inputs` replace the batch-level inputs for that op; otherwise the
     // batch-level inputs apply. They attach to content changes only.
-    let batch_inputs = resolve_inputs(repo, &ref_name, &batch.inputs)?;
+    let batch_inputs = crate::timing::phase("apply.resolve_inputs", || {
+        resolve_inputs(repo, &ref_name, &batch.inputs)
+    })?;
     let mut op_inputs: Vec<Vec<InputRef>> = Vec::with_capacity(batch.ops.len());
     for o in &batch.ops {
         op_inputs.push(match &o.inputs {
-            Some(own) => resolve_inputs(repo, &ref_name, own)?,
+            Some(own) => crate::timing::phase("apply.resolve_inputs", || {
+                resolve_inputs(repo, &ref_name, own)
+            })?,
             None => batch_inputs.clone(),
         });
     }
@@ -657,9 +671,11 @@ pub fn apply(repo: &mut Repository, batch: ApplyBatch, default_ref: Option<&str>
         }
     }
     req.ops = ops;
-    let out = commit(repo, req)?;
+    let out = crate::timing::phase("apply.commit", || commit(repo, req))?;
     // Effect on working trees: rewrite files whose on-disk content still matches their base (§11.3).
-    let rewritten = refresh_worktree_after_headless(repo, &ref_name)?;
+    let rewritten = crate::timing::phase("apply.refresh_worktree", || {
+        refresh_worktree_after_headless(repo, &ref_name)
+    })?;
     let versions: Vec<Value> = out
         .changes
         .iter()
@@ -825,60 +841,72 @@ pub fn refresh_worktree_after_headless(
         return Ok(vec![]);
     }
     let root = repo.root.clone();
-    let _lock = checkout::WorktreeLock::acquire(&repo.wisp_dir)?;
+    let _lock = crate::timing::phase("worktree.lock", || {
+        checkout::WorktreeLock::acquire(&repo.wisp_dir)
+    })?;
     let idx_path = checkout::checkout_idx_path(repo, &root);
-    let Some(old) = checkout::CheckoutIndex::load(&idx_path)? else {
+    let Some(old) = crate::timing::phase("worktree.load_index", || {
+        checkout::CheckoutIndex::load(&idx_path)
+    })?
+    else {
         return Ok(vec![]);
     };
     // Which files have unrecorded edits?
     let mut dirty: std::collections::HashSet<String> = std::collections::HashSet::new();
-    for (rel, rec) in &old.files {
-        if checkout::file_changed(&root.join(rel), rec) {
-            dirty.insert(rel.clone());
+    crate::timing::phase("worktree.scan_dirty", || {
+        for (rel, rec) in &old.files {
+            if checkout::file_changed(&root.join(rel), rec) {
+                dirty.insert(rel.clone());
+            }
         }
-    }
+    });
     // Render the new view into a temp dir, then copy over only clean files.
     let tmp = repo
         .wisp_dir
         .join("cache")
         .join(format!("headless-{}", ChangeId::new()));
     std::fs::create_dir_all(&tmp)?;
-    let fresh = checkout::write_tree(repo, ref_name, &tmp, false, false, false)?;
+    let fresh = crate::timing::phase("worktree.write_tree", || {
+        checkout::write_tree(repo, ref_name, &tmp, false, false, false)
+    })?;
     let mut new_idx = old.clone();
     new_idx.head = fresh.head;
     let mut rewritten = Vec::new();
-    for (rel, rec) in &fresh.files {
-        if dirty.contains(rel) {
-            continue;
+    crate::timing::phase("worktree.sync_files", || -> Result<()> {
+        for (rel, rec) in &fresh.files {
+            if dirty.contains(rel) {
+                continue;
+            }
+            let src = tmp.join(rel);
+            let dst = root.join(rel);
+            let bytes = std::fs::read(&src).map_err(|e| {
+                let listing: Vec<String> = std::fs::read_dir(&tmp)
+                    .map(|rd| {
+                        rd.flatten()
+                            .map(|x| x.file_name().to_string_lossy().to_string())
+                            .collect()
+                    })
+                    .unwrap_or_default();
+                WispError::internal(format!(
+                    "read {}: {e}; tmp exists={} listing={:?} files={:?}",
+                    src.display(),
+                    tmp.exists(),
+                    listing,
+                    fresh.files.keys().collect::<Vec<_>>()
+                ))
+            })?;
+            let same = std::fs::read(&dst).map(|b| b == bytes).unwrap_or(false);
+            if !same {
+                checkout::write_atomic(&dst, &bytes)?;
+                rewritten.push(rel.clone());
+            }
+            new_idx.files.insert(
+                rel.clone(),
+                checkout::file_record(&dst, &rec.kind, rec.id.clone())?,
+            );
         }
-        let src = tmp.join(rel);
-        let dst = root.join(rel);
-        let bytes = std::fs::read(&src).map_err(|e| {
-            let listing: Vec<String> = std::fs::read_dir(&tmp)
-                .map(|rd| {
-                    rd.flatten()
-                        .map(|x| x.file_name().to_string_lossy().to_string())
-                        .collect()
-                })
-                .unwrap_or_default();
-            WispError::internal(format!(
-                "read {}: {e}; tmp exists={} listing={:?} files={:?}",
-                src.display(),
-                tmp.exists(),
-                listing,
-                fresh.files.keys().collect::<Vec<_>>()
-            ))
-        })?;
-        let same = std::fs::read(&dst).map(|b| b == bytes).unwrap_or(false);
-        if !same {
-            checkout::write_atomic(&dst, &bytes)?;
-            rewritten.push(rel.clone());
-        }
-        new_idx.files.insert(
-            rel.clone(),
-            checkout::file_record(&dst, &rec.kind, rec.id.clone())?,
-        );
-    }
+        Ok(())
+    })?;
     // Base versions for clean concepts advance; dirty files keep their old base.
     for (cid, base) in &fresh.concepts {
         let rel = format!("{}.md", base.path);
@@ -887,8 +915,10 @@ pub fn refresh_worktree_after_headless(
         }
     }
     new_idx.assets = fresh.assets.clone();
-    new_idx.save(&idx_path)?;
-    let _ = std::fs::remove_dir_all(&tmp);
+    crate::timing::phase("worktree.save_index", || new_idx.save(&idx_path))?;
+    crate::timing::phase("worktree.cleanup_tmp", || {
+        let _ = std::fs::remove_dir_all(&tmp);
+    });
     Ok(rewritten)
 }
 

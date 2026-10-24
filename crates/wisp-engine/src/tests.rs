@@ -1070,6 +1070,51 @@ fn mv_rewrites_links_and_i25_staging_recovers() {
 }
 
 #[test]
+fn cold_flush_runs_async_then_barrier() {
+    let f = fixture();
+    Repository::init(&f.root, "0.2", &Unlock::default()).unwrap();
+    write(
+        &f.root,
+        "notes/x.md",
+        "---\ntype: Note\ntitle: X\n---\n\n## A\n\none\n",
+    );
+    let mut repo = open(&f.root);
+    rec(&mut repo, "human:alex");
+    let (sec, ver) = {
+        let hot = repo.hot(MAIN_REF).unwrap();
+        let c = Hot::concept_by_path(hot.conn(), "notes/x")
+            .unwrap()
+            .unwrap()
+            .concept;
+        let s = Hot::sections_of(hot.conn(), c)
+            .unwrap()
+            .into_iter()
+            .find(|s| s.heading == "A")
+            .unwrap();
+        (s.section, s.version)
+    };
+    crate::headless::single(
+        &mut repo,
+        Some(MAIN_REF),
+        Some("human:alex".into()),
+        Some("touch".into()),
+        None,
+        ApplyOp {
+            op: "update_section".into(),
+            path: "notes/x.md".into(),
+            section: Some(sec),
+            base_version: Some(ver.to_string()),
+            content: Some("two\n".into()),
+            ..Default::default()
+        },
+    )
+    .unwrap();
+    repo.flush_cold_payloads().unwrap();
+    assert_eq!(Ledger::staged_backlog_bytes(repo.ledger.conn()).unwrap(), 0);
+    assert!(crate::query::fsck(&mut repo).is_ok());
+}
+
+#[test]
 fn worktree_add_list_remove() {
     let f = fixture();
     Repository::init(&f.root, "0.2", &Unlock::default()).unwrap();

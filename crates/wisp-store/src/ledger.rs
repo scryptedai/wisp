@@ -790,6 +790,16 @@ impl Ledger {
         Ok(())
     }
 
+    /// Total bytes of ciphertext still in `staged_payloads` (backpressure for async cold flush).
+    pub fn staged_backlog_bytes(conn: &Connection) -> Result<u64> {
+        conn.query_row(
+            "SELECT COALESCE(SUM(LENGTH(ciphertext)), 0) FROM staged_payloads",
+            [],
+            |r| r.get::<_, i64>(0).map(|n| n as u64),
+        )
+        .map_err(sql_err)
+    }
+
     /// Flush staged payloads to files through a temp file, fsync, and atomic rename (§10.2 step 3). Idempotent.
     pub fn flush_staged(&self) -> Result<usize> {
         let mut st = self

@@ -14,7 +14,7 @@ pub struct StdioRemote {
 }
 
 /// Run `shell` as a subprocess; its stdin/stdout carry the JSON-lines ColdPack session.
-pub fn stdio_push(local: &Repository, ref_name: &str, remote: &StdioRemote) -> Result<Value> {
+pub fn stdio_push(local: &mut Repository, ref_name: &str, remote: &StdioRemote) -> Result<Value> {
     let push = stdio_session(remote, |input, output| {
         client_push_cold_pack(local, ref_name, input, output)
     })?;

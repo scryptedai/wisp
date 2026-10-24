@@ -112,6 +112,13 @@ impl MaterializeQueue {
     }
 }
 
+fn dirty_path_count(dirty: &DirtySet) -> usize {
+    dirty.concept_paths.len()
+        + dirty.asset_paths.len()
+        + dirty.prune_rels.len()
+        + dirty.view_dirs.len()
+}
+
 fn drain_pending_on_repo(repo: &mut Repository, shared: &Arc<Mutex<Shared>>) -> Result<()> {
     let batch: Vec<((PathBuf, String), DirtySet)> = {
         let mut s = shared.lock().expect("materialize shared");
@@ -127,10 +134,21 @@ fn drain_pending_on_repo(repo: &mut Repository, shared: &Arc<Mutex<Shared>>) -> 
         s.last_drained = Some(Instant::now());
         batch
     };
+    let mut first_err = None;
     for ((root, ref_name), dirty) in batch {
-        let _ = checkout::publish_ref_delta(repo, &ref_name, &root, &dirty)?;
+        if let Err(e) = checkout::publish_ref_delta(repo, &ref_name, &root, &dirty) {
+            let n = dirty_path_count(&dirty);
+            let mut s = shared.lock().expect("materialize shared");
+            s.pending_paths += n;
+            s.oldest.get_or_insert_with(Instant::now);
+            s.pending
+                .entry((root, ref_name))
+                .and_modify(|d| d.merge(&dirty))
+                .or_insert(dirty);
+            first_err.get_or_insert(e);
+        }
     }
-    Ok(())
+    first_err.map_or(Ok(()), Err)
 }
 
 fn worker(
@@ -142,18 +160,28 @@ fn worker(
 ) {
     let mut repo = match Repository::open_worker(&root, &unlock) {
         Ok(r) => r,
-        Err(_) => return,
+        Err(e) => {
+            eprintln!(
+                "materialize worker: failed to open repository at {}: {e}",
+                root.display()
+            );
+            return;
+        }
     };
     loop {
         match rx.recv_timeout(tick) {
             Ok(Command::Shutdown) => break,
             Ok(Command::DrainSync(done)) => {
-                let _ = drain_pending_on_repo(&mut repo, &shared);
+                if let Err(e) = drain_pending_on_repo(&mut repo, &shared) {
+                    eprintln!("materialize worker: drain failed: {e}");
+                }
                 let _ = done.send(());
             }
             Ok(Command::Wake) | Err(mpsc::RecvTimeoutError::Timeout) => {
                 if shared.lock().expect("materialize shared").pending_paths > 0 {
-                    let _ = drain_pending_on_repo(&mut repo, &shared);
+                    if let Err(e) = drain_pending_on_repo(&mut repo, &shared) {
+                        eprintln!("materialize worker: drain failed: {e}");
+                    }
                 }
             }
             Err(mpsc::RecvTimeoutError::Disconnected) => break,

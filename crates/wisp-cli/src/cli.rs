@@ -1,10 +1,17 @@
 //! Argument parsing (§16 CLI reference).
 
+use crate::help_text;
 use clap::{Args, Parser, Subcommand};
 use std::path::PathBuf;
 
 #[derive(Parser, Debug)]
-#[command(name = "wisp", version, about = "A local-first, differential knowledge store for OKF bundles", long_about = None)]
+#[command(
+    name = "wisp",
+    version,
+    about = "A local-first, differential knowledge store for OKF bundles",
+    long_about = help_text::ROOT_LONG_ABOUT,
+    after_help = help_text::ROOT_AFTER_HELP
+)]
 pub struct Cli {
     /// Repository directory (default: nearest ancestor containing .wisp/)
     #[arg(long, global = true)]
@@ -66,6 +73,19 @@ pub struct WriteFlags {
 
 #[derive(Subcommand, Debug)]
 pub enum Command {
+    /// Installed topic docs (contracts, erase, merge, search, …)
+    Doc {
+        /// Topic name (`wisp doc list` for names)
+        topic: Option<String>,
+        #[arg(long, short = 'l')]
+        list: bool,
+        /// Print the documentation directory (share/doc/wisp)
+        #[arg(long)]
+        path: bool,
+        /// Open the wisp.1 manual with man(1) (`man -l` if MANPATH is unset)
+        #[arg(long)]
+        man: bool,
+    },
     /// Create .wisp/, the repo scope, default policies, and main
     Init {
         dir: Option<PathBuf>,
@@ -112,6 +132,7 @@ before reading bundle paths from disk. See docs/WORKTREE.md."
         to: Option<String>,
     },
     /// Convert working-tree edits into one changeset
+    #[command(long_about = help_text::RECORD_LONG)]
     Record {
         #[command(flatten)]
         w: WriteFlags,
@@ -178,6 +199,7 @@ before reading bundle paths from disk. See docs/WORKTREE.md."
         r#ref: Option<String>,
     },
     /// Recorded work that depends on a source (forward of `why`; historical mode, read-only)
+    #[command(long_about = help_text::IMPACT_LONG)]
     Impact {
         /// <path>[#section], or <concept-id>[#section] for an erased or removed source
         target: String,
@@ -245,16 +267,20 @@ before reading bundle paths from disk. See docs/WORKTREE.md."
         r#ref: Option<String>,
     },
     /// Destroy the keys and payloads of a section, concept, asset, group, or actor
+    #[command(long_about = help_text::ERASE_LONG)]
     Erase {
         target: Option<String>,
         #[arg(long)]
         group: Option<String>,
         #[arg(long = "actor-id")]
         actor_target: Option<String>,
+        /// Erasure reason (withdrawn, policy, personal_data, …; see `wisp doc erase`)
         #[arg(long)]
         reason: String,
+        /// Perform erasure after preview (without this flag, only lists dependents)
         #[arg(long, short = 'y')]
         yes: bool,
+        /// Discard unrecorded working-tree edits in managed checkouts before erasing
         #[arg(long)]
         discard: bool,
         #[arg(long)]
@@ -283,10 +309,12 @@ before reading bundle paths from disk. See docs/WORKTREE.md."
         discard: bool,
     },
     /// Merge another ref (section-level three-way merge)
+    #[command(long_about = help_text::MERGE_LONG)]
     Merge {
         source: String,
         #[arg(long)]
         into: Option<String>,
+        /// JSON file: per-scope {"take":"ours"|"theirs"} (see `wisp doc merge`)
         #[arg(long)]
         resolutions: Option<PathBuf>,
         #[arg(long)]
@@ -319,6 +347,7 @@ before reading bundle paths from disk. See docs/WORKTREE.md."
         r#ref: Option<String>,
     },
     /// Serve a replica (stdio push handler or dumb HTTP pack)
+    #[command(long_about = help_text::SERVE_LONG)]
     Serve {
         #[arg(long)]
         stdio: bool,
@@ -342,6 +371,7 @@ before reading bundle paths from disk. See docs/WORKTREE.md."
         dry_run: bool,
     },
     /// Export the view: --git <dir>, --archive <file>, or --html <dir>
+    #[command(long_about = help_text::EXPORT_LONG)]
     Export {
         #[arg(long)]
         git: Option<PathBuf>,
@@ -377,8 +407,10 @@ before reading bundle paths from disk. See docs/WORKTREE.md."
         since: i64,
     },
     /// Search sections (`auto` = BM25 + fuzzy → RI → semantic when built in)
+    #[command(long_about = help_text::SEARCH_LONG)]
     Search {
         query: String,
+        /// Tier: auto, exact, fuzzy, keyword, ri, semantic (auto stops at first hit)
         #[arg(long, default_value = "auto")]
         mode: String,
         #[arg(long, short = 'k', default_value_t = 10)]
@@ -399,8 +431,10 @@ before reading bundle paths from disk. See docs/WORKTREE.md."
         r#ref: Option<String>,
     },
     /// Emit JSON for LLM consumption within a token budget
+    #[command(long_about = help_text::PACK_LONG)]
     Pack {
         paths: Vec<String>,
+        /// Token budget (default codec: ceil(chars/4); see JSON codec_note)
         #[arg(long)]
         budget: Option<usize>,
         #[arg(long)]
@@ -509,6 +543,7 @@ before reading bundle paths from disk. See docs/WORKTREE.md."
     /// Create a concept
     Create {
         path: String,
+        /// OKF concept type (e.g. note, table)
         #[arg(long)]
         r#type: String,
         #[arg(long)]
@@ -520,15 +555,8 @@ before reading bundle paths from disk. See docs/WORKTREE.md."
         #[command(flatten)]
         w: WriteFlags,
     },
-    /// Commit a JSON batch of headless ops as one changeset (see docs/APPLY.md)
-    #[command(
-        long_about = "Reads one JSON batch from --file or stdin. Ops include update_section \
-(full replace, base_version), append_section and prepend_section (log fragments, no version \
-precondition), create, set, and others. Truth is hot tier and wisp cat; disk may lag until \
-wisp materialize --wait. With --resolve, section_conflict (exit 3) refreshes base_version \
-and retries; merge working-tree cleanup uses wisp record --resolve instead. \
-See docs/AGENT-WRITERS.md for fleets."
-    )]
+    /// Commit a batch of operations from a file or stdin as one changeset
+    #[command(long_about = help_text::APPLY_LONG)]
     Apply {
         /// Batch JSON path (default: stdin)
         #[arg(long)]
@@ -656,6 +684,7 @@ pub enum HotCmd {
 impl Command {
     pub fn name(&self) -> &'static str {
         match self {
+            Command::Doc { .. } => "doc",
             Command::Init { .. } => "init",
             Command::Import { .. } => "import",
             Command::Status => "status",

@@ -143,6 +143,8 @@ pub struct CommitRequest {
     /// Shared `--inputs-complete` for the content changes that receive `inputs`.
     pub inputs_complete: bool,
     pub skip_policy: bool,
+    /// When true, async materialize overwrites disk paths that differ from `checkout.idx`.
+    pub materialize_reconcile: bool,
 }
 
 impl CommitRequest {
@@ -158,6 +160,7 @@ impl CommitRequest {
             inputs: vec![],
             inputs_complete: false,
             skip_policy: false,
+            materialize_reconcile: false,
         }
     }
 }
@@ -446,12 +449,17 @@ fn commit_inner(repo: &mut Repository, req: CommitRequest) -> Result<CommitOutco
             try_commit(repo, &req, actor_id, &new_actor, &prepared, &message)
         }) {
             Ok(out) => {
-                crate::timing::phase("commit.enqueue_cold_flush", || -> Result<()> {
-                    repo.maybe_backpressure_cold_flush()?;
+                crate::timing::phase("commit.enqueue_cold_flush", || {
+                    if let Err(e) = repo.maybe_backpressure_cold_flush() {
+                        eprintln!("cold flush backpressure failed after commit: {e}");
+                    }
                     repo.notify_cold_flush();
-                    Ok(())
-                })?;
-                repo.schedule_materialize(&req.ref_name, &out)?;
+                });
+                if let Err(e) =
+                    repo.schedule_materialize(&req.ref_name, &out, req.materialize_reconcile)
+                {
+                    eprintln!("materialize schedule failed after commit: {e}");
+                }
                 return Ok(out);
             }
             Err(e) if e.is_retryable() && attempt < retries => {

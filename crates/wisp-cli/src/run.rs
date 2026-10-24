@@ -278,8 +278,140 @@ fn status_human(s: &wisp_engine::record::Status) -> String {
     out.trim_end().to_string()
 }
 
+fn run_doc_man() -> CliResult {
+    let page = crate::doc_paths::man_page_path().ok_or_else(|| {
+        WispError::usage(
+            "no wisp.1 found; run contrib/scripts/install-man.sh (or set WISP_MAN_ROOT)",
+        )
+    })?;
+    let man_root = crate::doc_paths::man_root();
+    let mut cmd = std::process::Command::new("man");
+    if let Some(root) = &man_root {
+        cmd.arg("-M").arg(root).arg("wisp");
+    } else {
+        // Dev tree: contrib/man/wisp.1 (not under man1/); paginate the file.
+        let pager = std::env::var("PAGER").unwrap_or_else(|_| "less".to_string());
+        let status = std::process::Command::new("sh")
+            .arg("-c")
+            .arg(format!("{} {}", pager, shell_escape(&page)))
+            .status();
+        return match status {
+            Ok(s) if s.success() => Ok(Output::text(
+                json!({ "man_page": page.display().to_string() }),
+                String::new(),
+            )),
+            _ => Ok(Output::text(
+                json!({ "man_page": page.display().to_string() }),
+                format!("View: less {}", page.display()),
+            )),
+        };
+    }
+    let status = cmd.status();
+    match status {
+        Ok(s) if s.success() => Ok(Output::text(
+            json!({
+                "man_page": page.display().to_string(),
+                "man_root": man_root.map(|p| p.display().to_string()),
+            }),
+            String::new(),
+        )),
+        _ => Ok(Output::text(
+            json!({ "man_page": page.display().to_string() }),
+            format!(
+                "Could not run man(1). Try:\n  man -M {} wisp\n  less {}",
+                man_root
+                    .map(|p| p.display().to_string())
+                    .unwrap_or_default(),
+                page.display()
+            ),
+        )),
+    }
+}
+
+fn shell_escape(path: &std::path::Path) -> String {
+    let s = path.display().to_string();
+    if s.chars()
+        .all(|c| c.is_ascii_alphanumeric() || "/._-".contains(c))
+    {
+        s
+    } else {
+        format!("'{}'", s.replace('\'', "'\\''"))
+    }
+}
+
+fn run_doc(topic: &Option<String>, list: bool, path: bool, man: bool) -> CliResult {
+    if man || topic.as_deref() == Some("man") {
+        return run_doc_man();
+    }
+    let path = path || topic.as_deref() == Some("path");
+    if path {
+        let root = crate::doc_paths::doc_root().ok_or_else(|| {
+            WispError::usage(
+                "no documentation directory found; run contrib/scripts/install-docs.sh (or set WISP_DOC_ROOT)",
+            )
+        })?;
+        return Ok(Output::text(
+            json!({ "dir": root.display().to_string() }),
+            root.display().to_string(),
+        ));
+    }
+    let root = crate::doc_paths::doc_root().ok_or_else(|| {
+        WispError::usage(
+            "no documentation directory found; run contrib/scripts/install-docs.sh (or set WISP_DOC_ROOT)",
+        )
+    })?;
+    let want_list = list || topic.is_none() || topic.as_deref() == Some("list");
+    if want_list {
+        let rows: Vec<Value> = crate::doc_paths::list_topics(&root)
+            .into_iter()
+            .map(|(name, path, present)| {
+                json!({
+                    "topic": name,
+                    "path": path.display().to_string(),
+                    "present": present,
+                })
+            })
+            .collect();
+        let mut human = format!("Documentation root: {}\n\nTopics:\n", root.display());
+        for (name, p, present) in crate::doc_paths::list_topics(&root) {
+            let mark = if present { "" } else { " (missing)" };
+            human.push_str(&format!("  {:<14} {}\n", name, mark));
+            if !present {
+                human.push_str(&format!("                 expected {}\n", p.display()));
+            }
+        }
+        human.push_str("\nRead: wisp doc <topic>   Contract index: wisp doc cli\n");
+        return Ok(Output::text(
+            json!({ "dir": root.display().to_string(), "topics": rows }),
+            human,
+        ));
+    }
+    let topic = topic.as_ref().expect("checked");
+    let (file_path, file_name) = crate::doc_paths::topic_path(topic).ok_or_else(|| {
+        WispError::usage(format!(
+            "unknown topic {topic:?}; try wisp doc list (installed via install-docs.sh)"
+        ))
+    })?;
+    let body = std::fs::read_to_string(&file_path)?;
+    Ok(Output::text(
+        json!({
+            "topic": topic,
+            "file": file_name,
+            "path": file_path.display().to_string(),
+            "body": body,
+        }),
+        body,
+    ))
+}
+
 pub fn run(cli: Cli) -> CliResult {
     match &cli.command {
+        Command::Doc {
+            topic,
+            list,
+            path,
+            man,
+        } => run_doc(topic, *list, *path, *man),
         Command::Init { dir, profile } => {
             let root = dir.clone().unwrap_or(std::env::current_dir()?);
             std::fs::create_dir_all(&root)?;

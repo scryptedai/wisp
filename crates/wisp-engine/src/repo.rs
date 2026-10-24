@@ -252,21 +252,42 @@ impl Repository {
         Ok(())
     }
 
-    pub fn schedule_materialize(&mut self, ref_name: &str, outcome: &CommitOutcome) -> Result<()> {
-        if !self.manifest.materialize.enabled {
-            return Ok(());
-        }
-        let mut dirty = crate::publish::dirty_from_changes(self, ref_name, &outcome.changes)?;
+    pub fn schedule_materialize(
+        &mut self,
+        ref_name: &str,
+        outcome: &CommitOutcome,
+        reconcile: bool,
+    ) -> Result<()> {
+        let mut dirty =
+            crate::publish::dirty_from_changes(self, ref_name, &outcome.changes, reconcile)?;
         if dirty.is_empty() {
             return Ok(());
         }
-        dirty.reconcile = true;
+        dirty.reconcile = reconcile;
+        if !self.manifest.materialize.enabled {
+            if reconcile {
+                return self.publish_dirty_immediate(ref_name, &dirty);
+            }
+            return Ok(());
+        }
         let roots = crate::publish::managed_tree_roots(self, ref_name)?;
         if let Some(m) = &self.materialize {
             for root in roots {
                 m.push_job(root, ref_name, dirty.clone());
             }
             m.wake();
+        }
+        Ok(())
+    }
+
+    fn publish_dirty_immediate(
+        &mut self,
+        ref_name: &str,
+        dirty: &crate::publish::DirtySet,
+    ) -> Result<()> {
+        let roots = crate::publish::managed_tree_roots(self, ref_name)?;
+        for root in roots {
+            crate::checkout::publish_ref_delta(self, ref_name, &root, dirty)?;
         }
         Ok(())
     }

@@ -35,6 +35,7 @@ impl ApplyResolvePolicy {
         let r = commit_retries.max(1);
         Self {
             max_attempts: (r * 8).max(12),
+            conflict_sleep_ms: 5,
             ..Default::default()
         }
     }
@@ -76,7 +77,11 @@ pub fn apply_with_resolve(
                 }
                 last_err = Some(e);
                 if policy.conflict_sleep_ms > 0 {
-                    thread::sleep(Duration::from_millis(policy.conflict_sleep_ms));
+                    let jitter_ms =
+                        rand::random::<u64>() % policy.conflict_sleep_ms.saturating_add(1);
+                    thread::sleep(Duration::from_millis(
+                        policy.conflict_sleep_ms.saturating_add(jitter_ms),
+                    ));
                 }
             }
             Err(e) if e.is_retryable() => {

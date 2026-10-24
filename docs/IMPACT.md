@@ -1,6 +1,6 @@
 # Impact tracing (`wisp impact`)
 
-Read-only forward query: **which recorded changes depend on this source** (directly or transitively), scoped to a ref and depth limit. Pairs with [`wisp why`](./SEARCH.md) (backward). Proposal narrative: Andy's *wisp impact* doc; fixture walkthrough: `wisp-corpus/data/scenarios/playbook/impact-demo/README.md`.
+Read-only forward query: **which recorded changes depend on this source** (directly or transitively), scoped to a ref and depth limit. Pairs with [`wisp why`](./WHY.md) (backward). Proposal narrative: Andy's *wisp impact* doc; fixture walkthrough: `wisp-corpus/data/scenarios/playbook/impact-demo/README.md`.
 
 **v1 ships historical mode only.** `current` mode (visible heads + complete replacement) is not implemented; do not treat results as "safe to show an agent" without reading `mode` and `limitations` in JSON.
 

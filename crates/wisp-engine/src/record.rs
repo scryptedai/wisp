@@ -1199,6 +1199,7 @@ pub fn record(repo: &mut Repository, opts: &RecordOptions) -> Result<RecordResul
     }
     let actor = opts.actor.clone().unwrap_or_else(|| repo.default_actor());
     let mut req = CommitRequest::new(&ref_name, &actor);
+    req.materialize_reconcile = true;
     req.base = p.base;
     req.message = opts.message.clone();
     req.inputs = opts.inputs.clone();

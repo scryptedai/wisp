@@ -14,6 +14,9 @@ fn main() {
         );
     }
     let out_dir = PathBuf::from(env::var("OUT_DIR").expect("OUT_DIR"));
-    fs::copy(&man_src, out_dir.join("wisp.1")).expect("copy man page to OUT_DIR");
+    let man_out = out_dir.join("wisp.1");
+    fs::copy(&man_src, &man_out).expect("copy man page to OUT_DIR");
     println!("cargo:rerun-if-changed={}", man_src.display());
+    // Packagers: install as share/man/man1/wisp.1 (see package.metadata.wisp-install).
+    println!("cargo:rustc-env=WISP_MAN1_OUT={}", man_out.display());
 }

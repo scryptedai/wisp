@@ -67,6 +67,7 @@ impl DirtySet {
             dirty.asset_paths.insert(a.path.clone());
         }
         dirty.finalize_views();
+        prune_stale_concept_paths(repo, ref_name, &mut dirty, &BTreeSet::new(), true)?;
         Ok(dirty)
     }
 }
@@ -93,8 +94,10 @@ pub fn dirty_from_changes(
     repo: &mut Repository,
     ref_name: &str,
     changes: &[Change],
+    reconcile: bool,
 ) -> Result<DirtySet> {
     let mut dirty = DirtySet::default();
+    let mut touched_concepts = BTreeSet::new();
     for ch in changes {
         if matches!(
             ch.op,
@@ -103,30 +106,35 @@ pub fn dirty_from_changes(
             continue;
         }
         match &ch.target {
-            Target::Concept { concept } => match ch.op {
-                Op::CreateConcept | Op::Restore => {
-                    if let Some(p) = concept_path(repo, ref_name, *concept)? {
-                        dirty.concept_paths.insert(p);
+            Target::Concept { concept } => {
+                touched_concepts.insert(*concept);
+                match ch.op {
+                    Op::CreateConcept | Op::Restore => {
+                        if let Some(p) = concept_path(repo, ref_name, *concept)? {
+                            dirty.concept_paths.insert(p);
+                        }
+                    }
+                    Op::Move => {
+                        if let Some(p) = concept_path(repo, ref_name, *concept)? {
+                            dirty.concept_paths.insert(p);
+                        }
+                    }
+                    Op::Erase => {}
+                    _ => {
+                        if let Some(p) = concept_path(repo, ref_name, *concept)? {
+                            dirty.concept_paths.insert(p);
+                        }
                     }
                 }
-                Op::Move => {
-                    if let Some(p) = concept_path(repo, ref_name, *concept)? {
-                        dirty.concept_paths.insert(p);
-                    }
-                }
-                Op::Erase => {}
-                _ => {
-                    if let Some(p) = concept_path(repo, ref_name, *concept)? {
-                        dirty.concept_paths.insert(p);
-                    }
-                }
-            },
+            }
             Target::Section { concept, .. } => {
+                touched_concepts.insert(*concept);
                 if let Some(p) = concept_path(repo, ref_name, *concept)? {
                     dirty.concept_paths.insert(p);
                 }
             }
             Target::FrontmatterKey { concept, .. } | Target::Source { concept, .. } => {
+                touched_concepts.insert(*concept);
                 if let Some(p) = concept_path(repo, ref_name, *concept)? {
                     dirty.concept_paths.insert(p);
                 }
@@ -140,7 +148,51 @@ pub fn dirty_from_changes(
         }
     }
     dirty.finalize_views();
+    prune_stale_concept_paths(repo, ref_name, &mut dirty, &touched_concepts, reconcile)?;
     Ok(dirty)
+}
+
+fn prune_stale_concept_paths(
+    repo: &mut Repository,
+    ref_name: &str,
+    dirty: &mut DirtySet,
+    touched: &BTreeSet<ConceptId>,
+    full_index: bool,
+) -> Result<()> {
+    let idx_path = crate::checkout::checkout_idx_path(repo, &repo.root);
+    let idx = crate::checkout::CheckoutIndex::load(&idx_path)?;
+    let Some(idx) = idx.filter(|i| i.ref_name == ref_name) else {
+        return Ok(());
+    };
+    repo.hot(ref_name)?;
+    let conn = repo.hots.get(ref_name).expect("hot").conn();
+    let concepts: BTreeSet<ConceptId> = if full_index {
+        idx.concepts
+            .keys()
+            .filter_map(|k| k.parse::<ConceptId>().ok())
+            .collect()
+    } else {
+        touched.clone()
+    };
+    for concept in concepts {
+        let key = concept.to_string();
+        let Some(base) = idx.concepts.get(&key) else {
+            continue;
+        };
+        let old_rel = format!("{}.md", base.path);
+        match Hot::concept(conn, concept)? {
+            None => {
+                dirty.prune_rels.insert(old_rel);
+            }
+            Some(c) => {
+                let new_rel = format!("{}.md", c.path);
+                if old_rel != new_rel {
+                    dirty.prune_rels.insert(old_rel);
+                }
+            }
+        }
+    }
+    Ok(())
 }
 
 fn asset_path(repo: &mut Repository, ref_name: &str, asset: AssetId) -> Result<Option<String>> {
@@ -161,7 +213,7 @@ pub fn managed_tree_roots(repo: &Repository, ref_name: &str) -> Result<Vec<std::
         _ => {}
     }
     for wt in wisp_store::Ledger::list_worktrees(repo.ledger.conn())? {
-        if wt.ref_name == ref_name {
+        if wt.ref_name == ref_name && std::path::Path::new(&wt.path).is_dir() {
             roots.push(std::path::PathBuf::from(wt.path));
         }
     }

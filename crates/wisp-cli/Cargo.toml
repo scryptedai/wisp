@@ -29,3 +29,7 @@ wisp-store.workspace = true
 default = ["semantic"]
 semantic = ["wisp-engine/semantic"]
 postgres-vector = ["wisp-engine/postgres-vector"]
+
+# FHS man page destination for packagers and install scripts (source: contrib/man/wisp.1).
+[package.metadata.wisp-install]
+man = { source = "../../contrib/man/wisp.1", dest = "share/man/man1/wisp.1" }

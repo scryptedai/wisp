@@ -277,6 +277,8 @@ pub fn default_policies() -> Vec<Policy> {
                 section_heading: Some("Computation".into()),
                 ops: Some(vec![
                     "update_section".into(),
+                    "append_section".into(),
+                    "prepend_section".into(),
                     "remove_section".into(),
                     "split".into(),
                     "move_section".into(),

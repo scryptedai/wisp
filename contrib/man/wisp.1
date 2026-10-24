@@ -1,3 +1,4 @@
+.\" wisp Community Release — GPLv2. Copyright (C) 2026 Scrypted.
 .Dd October 24, 2026
 .Dt WISP 1
 .Os
@@ -6,8 +7,12 @@
 .Nd local-first differential OKF knowledge store
 .Sh SYNOPSIS
 .Nm wisp
+.Op Fl -repo Ar dir
+.Op Fl -actor Ar id
+.Op Fl -json
+.Op Fl -quiet
 .Ar command
-.Op Ar options
+.Op Ar args ...
 .Sh DESCRIPTION
 .Nm
 stores an Open Knowledge Format (OKF) bundle as an append-only, section-level
@@ -15,75 +20,60 @@ changeset log with encrypted cold payloads and a hot SQLite tier.
 The ledger is authoritative; managed markdown on disk is a cache refreshed
 asynchronously after headless commits unless a barrier runs.
 .Pp
-Every command accepts
-.Fl -json
-and prints one JSON envelope on stdout.
-Exit codes are stable: 3 conflict, 4 refused, 5 validation, 7 retryable busy,
-8 integrity, 9 key unavailable, 10 erase pending.
+This manual page is an overview.
+Behavioral contracts, exit codes, JSON envelopes, and per-command semantics live
+in installed topic documentation (see below), not in
+.Cm --help
+alone.
 .Pp
 Agent fleets: see
 .Pa docs/AGENT-WRITERS.md
 in the source tree (hot reads, exit 3, append vs update, materialize barriers).
-.Sh REPOSITORY
-Discover the nearest ancestor directory containing
-.Pa .wisp/
-or pass
-.Fl -repo .
-.Sh COMMANDS
-.Ss Repository lifecycle
+.Sh GLOBAL OPTIONS
 .Bl -tag -width 12n
-.It Cm init
-Create
-.Pa .wisp/ ,
-default policies, and ref
-.Va main .
-.It Cm import
-Adopt a directory or
-.Fl -git
-repository.
-.It Cm status
-Changed, new, missing, and non-conformant files; pending erasures;
-materialize backlog in JSON
-.Pq Fl -json .
-.It Cm materialize
-Flush the async worktree materialize queue.
-.Fl -wait
-blocks until pending publish jobs for managed checkouts finish.
-Use before tools that read bundle paths without using hot APIs.
+.It Fl -repo Ar dir
+Repository root (default: nearest ancestor containing
+.Pa .wisp/ ) .
+.It Fl -actor Ar string
+Actor:
+.Ar producer/version ,
+.Cm human:id ,
+or
+.Cm process:id
+(default:
+.Ev WISP_ACTOR ,
+then config).
+.It Fl -json
+Write exactly one JSON object to stdout
+.Pq Cm ok ,
+.Cm command ,
+.Cm data
+or
+.Cm error .
+Human text goes to stderr.
+.It Fl -quiet
+Suppress human-readable stdout.
+.It Fl -passphrase Ar string
+Unlock keystore (alternative to key file or
+.Ev WISP_MASTER_KEY ) .
+.It Fl -no-index
+Skip in-process subscribers for this invocation.
+.El
+.Sh WRITE PATHS
+.Bl -tag -width 14n
 .It Cm record
-Commit working-tree edits as one changeset; drains materialize before return.
+Working-tree edits become one changeset; OKF files are re-rendered.
+Drains the materialize queue before return.
 .Fl -resolve
 clears
 .Pa .wisp/merge.json
 after a successful record during merge resolution (not exit-3 retry).
-.It Cm checkout , Cm switch
-Render a ref to the working tree or
-.Fl -to .
-.It Cm fsck , Cm gc , Cm backup , Cm restore-backup
-Integrity, cache maintenance, and snapshots.
-.El
-.Ss Headless writes
-Commit directly to a ref without requiring disk to match hot first.
-.Bl -tag -width 14n
-.It Cm update Ar path#section
-Replace a section body; requires
-.Fl -base
-section change id unless
-.Va any .
-.It Cm add-section , Cm remove-section , Cm set , Cm unset , Cm create
-Section and frontmatter operations (see
-.Fl -help
-per command).
-.It Cm apply
-Read one JSON batch from a file or stdin and commit as one changeset.
-Batch ops include
-.Va update_section ,
-.Va append_section ,
-and
-.Va prepend_section
-(fragment stitched on hot without a section-version precondition).
-See
-.Pa docs/APPLY.md .
+.It Cm update Ns , Nm add-section Ns , Nm set Ns , Nm create Ns , Nm apply
+Headless writes (no working-tree round-trip).
+Each single-op command is shorthand for one entry in an
+.Cm apply
+batch; see topic
+.Cm apply .
 .It Cm apply Fl -resolve
 On
 .Va section_conflict
@@ -91,12 +81,14 @@ On
 refresh
 .Va base_version
 from hot and retry until success or the attempt budget is exhausted.
-JSON result includes a
-.Va resolve
-stats object.
+.It Cm materialize
+Flush the async worktree materialize queue.
+.Fl -wait
+blocks until pending publish jobs for managed checkouts finish.
+Use before tools that read bundle paths without using hot APIs.
 .El
 .Pp
-After
+After headless
 .Cm apply
 without
 .Fl -resolve ,
@@ -105,40 +97,53 @@ call
 or read via
 .Cm cat
 and search APIs.
-.Sh READ AND QUERY
-.Cm cat ,
-.Cm log ,
-.Cm show ,
-.Cm why ,
-.Cm impact ,
-.Cm diff ,
-.Cm search ,
-.Cm pack ,
-.Cm tokens .
-.Sh BRANCHES AND MERGE
-.Cm branch ,
-.Cm switch ,
-.Cm merge ,
-.Cm worktree ,
-.Cm mv .
-Ref merge conflicts use
-.Cm merge Fl -resolutions ;
-section optimistic conflicts use exit 3 or
-.Cm apply Fl -resolve .
-.Sh SYNC AND EXPORT
-.Cm remote ,
-.Cm push ,
-.Cm pull ,
-.Cm serve ,
-.Cm export ,
-.Cm import .
-.Sh ERASURE
-.Cm erase ,
-.Cm retract ,
-.Cm restore ,
-.Cm lifecycle .
-Managed checkouts rewrite after shred; unrecorded edits block erase unless
-.Fl -discard .
+.Sh DOCUMENTATION
+Installed topic files (Markdown) are the contract for agents and integrators:
+.Bl -tag -width 16n
+.It Cm wisp doc list
+List topics and file paths.
+.It Cm wisp doc path
+Print the documentation directory
+.Pq typically
+.Pa ~/.local/share/wisp/doc ) .
+.It Cm wisp doc cli
+CLI contract: exit codes, target grammar, JSON, limits of success.
+.It Cm wisp doc Ar topic
+Print a topic
+.Pq e.g. Nm erase Ns , Nm merge Ns , Nm search Ns , Nm impact Ns , Nm trust ) .
+.El
+.Pp
+Set
+.Ev WISP_DOC_ROOT
+if documentation was installed elsewhere.
+.Sh EXIT STATUS
+.Bl -tag -width 10n
+.It 0
+Success.
+.It 2
+Usage error.
+.It 3
+Conflict (stale
+.Fl -base ,
+merge conflict; see JSON
+.Cm error.code ) .
+.It 4
+Policy refusal.
+.It 5
+Validation failure.
+.It 7
+Retryable SQLite lock (back off and retry).
+.It 8
+Integrity / fsck failure.
+.It 9
+Key unavailable.
+.It 10
+Erasure recovery pending; reopen or complete recovery.
+.El
+Details:
+.Cm wisp doc cli
+and
+.Pa CONCURRENCY.md .
 .Sh CONFIGURATION
 .Cm config
 reads and writes
@@ -150,40 +155,45 @@ keys including
 and
 .Va materialize.tick_ms .
 .Sh ENVIRONMENT
-.Bl -tag -width 14n
+.Bl -tag -width 16n
 .It Ev WISP_ACTOR
 Default actor when
 .Fl -actor
 is omitted.
+.It Ev WISP_DOC_ROOT
+Override documentation directory for
+.Cm wisp doc .
 .It Ev WISP_MASTER_KEY
-64-hex keystore unlock for CI and automation.
+Master key material (see trust docs).
+.It Ev XDG_DATA_HOME
+Base for
+.Pa wisp/doc
+when
+.Ev WISP_DOC_ROOT
+is unset.
 .El
 .Sh FILES
-.Pa .wisp/manifest.toml
-.Pa .wisp/ledger.db
-.Pa .wisp/payloads/
-.Pa .wisp/keys/
-.Pa .wisp/cache/refs/
-.Pa hot.db
-(rebuildable)
-.Pa .wisp/checkout.idx
-(primary tree index)
+.Bl -tag -width 20n
+.It Pa ~/.local/share/wisp/doc/
+Default topic documentation (user install).
+.It Pa ~/.local/share/man/man1/wisp.1
+Default manual page (user install).
+.It Pa .wisp/
+Bundle metadata, ledger, keys, cache (per repository).
+.El
 .Sh SEE ALSO
+.Cm wisp doc cli ,
+.Cm wisp doc erase ,
+.Cm wisp doc merge ,
+.Cm wisp doc search ,
+.Cm wisp doc impact ,
+.Cm wisp doc apply ,
+.Cm wisp doc trust
+.Pp
 .Pa docs/WORKTREE.md
 async materialize,
 .Pa docs/APPLY.md
-batch format,
-.Pa docs/MERGE.md
-ref merge,
-.Pa docs/ERASE.md
-erasure,
-.Pa docs/CONCURRENCY.md
-writers and exit codes.
-.Sh INSTALL
-Copy this file to
-.Pa share/man/man1/wisp.1
-.Pq or
-.Pa ~/.local/share/man/man1/wisp.1
-when installing the
-.Nm
-binary.
+batch format.
+.Pp
+Project source:
+.Pa https://github.com/scryptedai/wisp

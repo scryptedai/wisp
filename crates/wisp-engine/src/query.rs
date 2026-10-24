@@ -1478,9 +1478,13 @@ pub fn config(repo: &mut Repository, key: &str, value: Option<&str>) -> Result<V
             Ok(json!({ "materialize.tick_ms": repo.manifest.materialize.tick_ms }))
         }
         ("materialize.tick_ms", Some(v)) => {
-            repo.manifest.materialize.tick_ms = v
-                .parse()
+            let ms = v
+                .parse::<u64>()
                 .map_err(|_| WispError::usage("integer expected"))?;
+            if ms == 0 {
+                return Err(WispError::usage("materialize.tick_ms must be >= 1"));
+            }
+            repo.manifest.materialize.tick_ms = ms;
             repo.manifest.save(&repo.wisp_dir.join("manifest.toml"))?;
             Ok(json!({ "materialize.tick_ms": repo.manifest.materialize.tick_ms }))
         }

@@ -39,5 +39,10 @@ OKF store **§17** defines invariant IDs **I1–I25**. This repo does not ship t
 | §11.5 merge | `merge_playbook`, `merge_rules`, `contrib/merge-rules/cases.toml` |
 | §11.6 sync | `sync_deletions`, `sync_roundtrip` |
 | Search IR | `search_battery`, `search_local_only`; semantic smoke gated on `semantic` feature |
+| Headless writers (exit 3, patches) | `section_patch.rs`; `battery_error_three` + `contrib/battery-error-three/cases.toml` (manual refresh); `battery_exit3_adversarial` + `contrib/battery-exit3-adversarial/cases.toml` (`apply_with_resolve`); CI `stress` job (`battery_exit3_adversarial_heavy`, `stress_many_disjoint_writers`) |
+| `apply_with_resolve` | `wisp-engine` `i16_i17_concurrent_headless_writers_disjoint_sections` (resolve tail); adversarial battery phases |
+| Async materialize (hot vs disk) | `wisp-invariants/materialize_barrier.rs`; engine tests use `flush_materialize` via `sync_disk`; `record` drains in `wisp-engine/src/record.rs` |
+| Erase recovery | `wisp-engine` `recover_after_*`; `erase_cause_for_pending_picks_latest_erase_changeset` in `erase.rs` |
+| Impact / inputs | `impact.rs`, `input_capture.rs`, `impact_followups.rs`; harnesses call `flush_materialize` after headless apply when disk or erase preflight matters |
 
 When adding behavior, extend **corpus fixtures first**, then **wisp-invariants**, and update this table in the same PR.

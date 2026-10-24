@@ -783,3 +783,94 @@ fn assert_erase_complete(repo: &Repository, scopes: &[ScopeId]) -> Result<()> {
     }
     Ok(())
 }
+
+#[cfg(test)]
+mod erase_cause_tests {
+    use super::erase_cause_for_pending;
+    use crate::commit::{CommitRequest, PlannedOp};
+    use crate::repo::{Repository, Unlock, MAIN_REF};
+    use wisp_model::{ChangeId, Op, Reason, ScopeId, Target};
+    use wisp_store::Ledger;
+
+    fn write(root: &std::path::Path, rel: &str, text: &str) {
+        let p = root.join(rel);
+        std::fs::create_dir_all(p.parent().unwrap()).unwrap();
+        std::fs::write(p, text).unwrap();
+    }
+
+    fn erase_change_id(repo: &mut Repository, scope: ScopeId) -> ChangeId {
+        let mut op = PlannedOp::new(
+            Op::Erase,
+            Target::Erase {
+                scopes: vec![scope],
+            },
+            repo.repo_scope(),
+        );
+        op.reason = Some(Reason::Policy);
+        let mut req = CommitRequest::new(MAIN_REF, "human:test");
+        req.ops = vec![op];
+        let out = crate::commit::commit(repo, req).unwrap();
+        out.changes
+            .iter()
+            .find(|c| c.op == Op::Erase)
+            .map(|c| c.id)
+            .expect("erase change")
+    }
+
+    #[test]
+    fn erase_cause_for_pending_picks_latest_erase_changeset() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().join("bundle");
+        write(
+            &root,
+            "doc.md",
+            "---\ntype: Doc\n---\n## A\n\none\n\n## B\n\ntwo\n",
+        );
+        Repository::init(&root, "0.2", &Unlock::default()).unwrap();
+        let mut repo = Repository::open(&root, &Unlock::default()).unwrap();
+        crate::record::record(
+            &mut repo,
+            &crate::record::RecordOptions {
+                actor: Some("human:test".into()),
+                message: Some("init".into()),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        let text = std::fs::read_to_string(root.join("doc.md")).unwrap();
+        let parsed = wisp_parse::parse_file(&text);
+        let scope_ids: Vec<ScopeId> = parsed
+            .sections()
+            .iter()
+            .skip(1)
+            .map(|s| match &s.anchor {
+                Some(wisp_parse::Anchor::Valid(id)) => {
+                    Ledger::scope_of_section(repo.ledger.conn(), *id)
+                        .unwrap()
+                        .unwrap()
+                        .id
+                }
+                _ => panic!("anchor"),
+            })
+            .collect();
+        assert_eq!(scope_ids.len(), 2);
+        let older = erase_change_id(&mut repo, scope_ids[0]);
+        let newer = erase_change_id(&mut repo, scope_ids[1]);
+        let seq = |ch: ChangeId| -> i64 {
+            let row = Ledger::get_change(repo.ledger.conn(), ch)
+                .unwrap()
+                .unwrap();
+            Ledger::get_changeset(repo.ledger.conn(), row.changeset)
+                .unwrap()
+                .unwrap()
+                .seq
+        };
+        assert!(
+            seq(newer) > seq(older),
+            "second erase must land on a later ledger seq"
+        );
+        let pending = vec![scope_ids[0], scope_ids[1]];
+        let picked = erase_cause_for_pending(repo.ledger.conn(), &pending).unwrap();
+        assert_eq!(picked, newer);
+    }
+}

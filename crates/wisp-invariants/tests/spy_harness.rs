@@ -83,7 +83,7 @@ pub fn update_section_ref(
         merged_from: None,
         ..Default::default()
     };
-    apply(
+    let out = apply(
         repo,
         ApplyBatch {
             r#ref: Some(ref_name.into()),
@@ -97,7 +97,9 @@ pub fn update_section_ref(
             inputs_complete: false,
         },
         None,
-    )
+    )?;
+    repo.flush_materialize()?;
+    Ok(out)
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -145,7 +147,7 @@ pub fn patch_section_ref(
         merged_from: None,
         ..Default::default()
     };
-    apply(
+    let out = apply(
         repo,
         ApplyBatch {
             r#ref: Some(ref_name.into()),
@@ -159,7 +161,9 @@ pub fn patch_section_ref(
             inputs_complete: false,
         },
         None,
-    )
+    )?;
+    repo.flush_materialize()?;
+    Ok(out)
 }
 
 pub fn patch_section(

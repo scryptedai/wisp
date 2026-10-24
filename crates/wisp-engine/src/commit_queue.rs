@@ -344,6 +344,7 @@ fn reply_for_job(full: &Value, batch: &ApplyBatch) -> Value {
 
 impl CommitQueue {
     /// Unix domain socket at `wisp_dir/commit.sock` (one JSON line per request).
+    #[cfg(unix)]
     pub fn bind_unix(
         wisp_dir: &Path,
         unlock: Unlock,
@@ -366,8 +367,22 @@ impl CommitQueue {
             .map_err(|e| WispError::internal(format!("accept thread: {e}")))?;
         Ok(queue)
     }
+
+    /// Commit-queue socket transport is Unix-only; use in-process [`CommitQueue::spawn`] on other OSes.
+    #[cfg(not(unix))]
+    pub fn bind_unix(
+        _wisp_dir: &Path,
+        _unlock: Unlock,
+        _config: CommitQueueSection,
+    ) -> Result<Arc<Self>, WispError> {
+        Err(WispError::usage(
+            "commit queue socket (`wisp queue --serve`) is not supported on this platform; \
+             use Unix or disable queue.enabled and commit directly",
+        ))
+    }
 }
 
+#[cfg(unix)]
 fn accept_loop(listener: std::os::unix::net::UnixListener, queue: Arc<CommitQueue>) {
     for stream in listener.incoming() {
         match stream {
@@ -380,6 +395,7 @@ fn accept_loop(listener: std::os::unix::net::UnixListener, queue: Arc<CommitQueu
     }
 }
 
+#[cfg(unix)]
 fn handle_client(stream: std::os::unix::net::UnixStream, queue: Arc<CommitQueue>) {
     use std::io::{BufRead, BufReader, Write};
     let mut reader = BufReader::new(stream.try_clone().expect("clone"));
@@ -416,6 +432,7 @@ fn handle_client(stream: std::os::unix::net::UnixStream, queue: Arc<CommitQueue>
 }
 
 /// Client: one JSON line to `.wisp/commit.sock` (see `handle_client`).
+#[cfg(unix)]
 pub fn submit_via_socket(
     wisp_dir: &Path,
     batch: ApplyBatch,
@@ -451,4 +468,16 @@ pub fn submit_via_socket(
     } else {
         Err(WispError::internal("commit.sock: malformed response"))
     }
+}
+
+#[cfg(not(unix))]
+pub fn submit_via_socket(
+    _wisp_dir: &Path,
+    _batch: ApplyBatch,
+    _default_ref: Option<&str>,
+    _queue_timeout: Duration,
+) -> Result<Value, WispError> {
+    Err(WispError::usage(
+        "commit queue socket is not supported on this platform; disable queue.enabled or use Unix",
+    ))
 }

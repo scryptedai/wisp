@@ -89,8 +89,22 @@ impl WispError {
         Self::new(ExitCode::NotFound, msg)
     }
     pub fn timeout(msg: impl Into<String>) -> Self {
-        Self::new(ExitCode::WriteTimeout, msg)
-            .with_details(serde_json::json!({ "retryable": true }))
+        Self::write_timeout(msg, WriteTimeoutDetails::default())
+    }
+
+    /// Exit 7 with structured fields for agents (`error.details` in `--json`).
+    pub fn write_timeout(msg: impl Into<String>, detail: WriteTimeoutDetails) -> Self {
+        let details = serde_json::to_value(detail).unwrap_or(Value::Null);
+        Self::new(ExitCode::WriteTimeout, msg).with_details(details)
+    }
+
+    /// Merge keys into `details` (exit 7 only); no-op for other codes.
+    pub fn merge_write_timeout_details(mut self, extra: Value) -> Self {
+        if self.code != ExitCode::WriteTimeout {
+            return self;
+        }
+        self.details = merge_json_objects(self.details, extra);
+        self
     }
     pub fn integrity(msg: impl Into<String>) -> Self {
         Self::new(ExitCode::Integrity, msg)
@@ -134,3 +148,114 @@ impl From<serde_json::Error> for WispError {
 }
 
 pub type Result<T> = std::result::Result<T, WispError>;
+
+/// Agent-facing exit-7 payload (`error.details` when `code` is `write_timeout`).
+#[derive(Debug, Clone, Serialize)]
+pub struct WriteTimeoutDetails {
+    pub retryable: bool,
+    /// `ledger`, `hot`, `worktree_flock`, or `unknown`.
+    #[serde(default)]
+    pub lock: String,
+    /// Where the wait failed, e.g. `ledger.begin_immediate`, `commit.try_commit`.
+    #[serde(default)]
+    pub phase: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub busy_timeout_ms: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub commit_attempt: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub commit_retries_max: Option<u32>,
+    #[serde(rename = "ref", skip_serializing_if = "Option::is_none")]
+    pub ref_name: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sqlite: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub hint: Option<String>,
+}
+
+impl Default for WriteTimeoutDetails {
+    fn default() -> Self {
+        Self {
+            retryable: true,
+            lock: String::new(),
+            phase: String::new(),
+            busy_timeout_ms: None,
+            commit_attempt: None,
+            commit_retries_max: None,
+            ref_name: None,
+            sqlite: None,
+            hint: None,
+        }
+    }
+}
+
+fn merge_json_objects(base: Value, extra: Value) -> Value {
+    match (base, extra) {
+        (Value::Object(mut a), Value::Object(b)) => {
+            for (k, v) in b {
+                a.insert(k, v);
+            }
+            Value::Object(a)
+        }
+        (_, extra) => extra,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn write_timeout_details_serialize() {
+        let e = WispError::write_timeout(
+            "write queue timeout",
+            WriteTimeoutDetails {
+                lock: "ledger".into(),
+                phase: "ledger.begin_immediate".into(),
+                busy_timeout_ms: Some(200),
+                hint: Some("retry".into()),
+                ..Default::default()
+            },
+        );
+        let v = serde_json::to_value(&e).unwrap();
+        let details = v.get("details").unwrap();
+        assert_eq!(
+            details.get("retryable").and_then(|x| x.as_bool()),
+            Some(true)
+        );
+        assert_eq!(details.get("lock").and_then(|x| x.as_str()), Some("ledger"));
+        assert_eq!(
+            details.get("busy_timeout_ms").and_then(|x| x.as_u64()),
+            Some(200)
+        );
+    }
+
+    #[test]
+    fn merge_write_timeout_details_preserves_lock() {
+        let base = WispError::write_timeout(
+            "write queue timeout",
+            WriteTimeoutDetails {
+                lock: "ledger".into(),
+                phase: "ledger.begin_immediate".into(),
+                busy_timeout_ms: Some(200),
+                ..Default::default()
+            },
+        );
+        let merged = base.merge_write_timeout_details(serde_json::json!({
+            "commit_attempt": 3,
+            "commit_retries_max": 3,
+            "ref": "main",
+            "phase": "commit.try_commit",
+        }));
+        let details = merged.details;
+        assert_eq!(details.get("lock").and_then(|x| x.as_str()), Some("ledger"));
+        assert_eq!(
+            details.get("phase").and_then(|x| x.as_str()),
+            Some("commit.try_commit")
+        );
+        assert_eq!(
+            details.get("commit_attempt").and_then(|x| x.as_u64()),
+            Some(3)
+        );
+    }
+}

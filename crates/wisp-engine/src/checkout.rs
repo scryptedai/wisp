@@ -845,7 +845,21 @@ impl WorktreeLock {
         conn.busy_timeout(std::time::Duration::from_millis(10_000))
             .map_err(|e| WispError::internal(e.to_string()))?;
         conn.execute_batch("CREATE TABLE IF NOT EXISTS l (x INTEGER); BEGIN IMMEDIATE;")
-            .map_err(|_| WispError::timeout("working tree is locked by another process"))?;
+            .map_err(|_| {
+                WispError::write_timeout(
+                    "working tree is locked by another process",
+                    wisp_model::WriteTimeoutDetails {
+                        lock: "worktree_flock".into(),
+                        phase: "worktree.flock_begin_immediate".into(),
+                        busy_timeout_ms: Some(10_000),
+                        hint: Some(
+                            "Another process holds .wisp/worktree.lock; retry after it finishes materialize or record."
+                                .into(),
+                        ),
+                        ..Default::default()
+                    },
+                )
+            })?;
         Ok(WorktreeLock { conn })
     }
 }

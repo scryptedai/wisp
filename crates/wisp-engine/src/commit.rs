@@ -467,6 +467,15 @@ fn commit_inner(repo: &mut Repository, req: CommitRequest) -> Result<CommitOutco
                 std::thread::sleep(std::time::Duration::from_millis(jitter));
                 continue;
             }
+            Err(e) if e.is_retryable() => {
+                return Err(e.merge_write_timeout_details(json!({
+                    "commit_attempt": attempt,
+                    "commit_retries_max": retries,
+                    "ref": req.ref_name,
+                    "phase": "commit.try_commit",
+                    "busy_timeout_ms": repo.manifest.commit.busy_timeout_ms,
+                })));
+            }
             Err(e) => return Err(e),
         }
     }
@@ -533,7 +542,16 @@ fn try_commit_inner(
         if let Some(fresh) = repo.hots.remove(&req.ref_name) {
             *hot = fresh;
         }
-        return Err(WispError::timeout("hot tier was stale; rebuilt"));
+        return Err(WispError::write_timeout(
+            "hot tier was stale; rebuilt",
+            wisp_model::WriteTimeoutDetails {
+                lock: "hot".into(),
+                phase: "commit.hot_stale_rebuild".into(),
+                ref_name: Some(req.ref_name.clone()),
+                hint: Some("Hot tier was rebuilt from the ledger; retry the commit.".into()),
+                ..Default::default()
+            },
+        ));
     }
 
     // 4. Validate.

@@ -46,7 +46,7 @@ Full replace still uses `update_section`. Mixing blind append with full replace 
 | Code | Meaning | Action |
 |------|---------|--------|
 | **3** | Optimistic conflict (section, FM, path, …) | Refresh base, retry or merge policy |
-| **7** | SQLite busy (retryable) | Backoff; manifest `commit.retries` also applies in-engine |
+| **7** | SQLite busy (retryable) | Backoff; read `error.details` (`lock`, `phase`, `busy_timeout_ms`, `commit_attempt`, `hint`) — [`docs/CLI.md`](CLI.md#exit-7-write_timeout-details); manifest `commit.retries` also applies in-engine |
 | 4 | Refused (policy / generated file) | Fix op or use `record --adopt-generated` for humans |
 | 0 | Success | — |
 

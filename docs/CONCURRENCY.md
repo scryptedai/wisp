@@ -6,7 +6,7 @@ This document matches [README.md](../README.md), [DECISIONS.md](../DECISIONS.md)
 
 - **Section-scope optimism:** headless commits carry a **base changeset** (or section commitment). If another writer advanced the same **scope** first, the commit fails with **exit 3** (conflict JSON), not silent merge.
 - **Disjoint sections:** writers editing different sections on the same ref can commit in parallel **in principle**; integration tests cover **8 concurrent headless writers** on disjoint sections (`i16_i17_concurrent_headless_writers_disjoint_sections` in `crates/wisp-engine/src/tests.rs`).
-- **Exit 7:** SQLite **busy timeout** on the ledger write lock surfaces as a **retryable** error; `commit.retries` in manifest policy re-runs the attempt (see `crates/wisp-engine/src/commit.rs`).
+- **Exit 7:** SQLite **busy timeout** on the ledger write lock surfaces as a **retryable** error; `commit.retries` in manifest policy re-runs the attempt (see `crates/wisp-engine/src/commit.rs`). On failure, `--json` includes structured `error.details` (`lock`, `phase`, `busy_timeout_ms`, …) — [`docs/CLI.md`](CLI.md#exit-7-write_timeout-details).
 
 ## What wisp does not guarantee
 

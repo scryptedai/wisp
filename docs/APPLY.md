@@ -38,11 +38,17 @@ For multi-agent **log lines** on an existing section, use delta ops instead of r
 
 Full **replace** edits remain `update_section` with `base_version` (default optimistic concurrency).
 
+## Refresh on conflict (`--resolve`)
+
+`wisp apply --resolve` (and `wisp_engine::headless::apply_with_resolve`) retries the same batch when commit returns **exit 3** for `section_conflict`: each affected op’s `base_version` is set from `theirs.version` (or refreshed from hot), then apply runs again until success or the attempt budget is exhausted. The JSON result includes a `resolve` object with `attempts`, `conflict_rounds`, and `retryable_errors`. Exit **7** after in-engine `commit.retries` is also retried at this layer.
+
+Only **section_conflict** is auto-patched; other conflict kinds (e.g. `section_removed`, `path_conflict`) fail immediately. Fleet contract: [`docs/AGENT-WRITERS.md`](AGENT-WRITERS.md).
+
 ## Inputs
 
 An input names what a change was derived from: `concept` is a path (or concept id), `section` optionally narrows it to one section, and `at` optionally pins the **snapshot that was read** (a `ChangesetId`, such as `head` from `wisp cat --json`; not a section version). A pinned input is validated before commit: the changeset must exist and the section must exist at that snapshot. Without `at` the input is recorded unversioned; wisp never infers the snapshot from the head at commit time.
 
-- **Batch-level `inputs`** apply to every content change in the batch (backward compatible).
+- **Batch-level `inputs`** apply to every content change in the batch unless an op sets its own `inputs`.
 - **Per-op `inputs`** replace the batch-level inputs for that op's content changes. An explicit empty list (`"inputs": []`) declares that op has no inputs.
 
 - **`inputs_complete`** (batch-level boolean, or per-op to override it) declares that the inputs a change receives are its **complete** dependency set. Without it, a new version of a section inherits the dependencies of the version it replaced, however different the new content is, whoever writes it, and however many inputs it lists. `"inputs_complete": true` with no inputs declares an original observation with no sources. The CLI flag is `--inputs-complete`.

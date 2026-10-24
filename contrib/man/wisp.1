@@ -1,0 +1,189 @@
+.Dd October 24, 2026
+.Dt WISP 1
+.Os
+.Sh NAME
+.Nm wisp
+.Nd local-first differential OKF knowledge store
+.Sh SYNOPSIS
+.Nm wisp
+.Ar command
+.Op Ar options
+.Sh DESCRIPTION
+.Nm
+stores an Open Knowledge Format (OKF) bundle as an append-only, section-level
+changeset log with encrypted cold payloads and a hot SQLite tier.
+The ledger is authoritative; managed markdown on disk is a cache refreshed
+asynchronously after headless commits unless a barrier runs.
+.Pp
+Every command accepts
+.Fl -json
+and prints one JSON envelope on stdout.
+Exit codes are stable: 3 conflict, 4 refused, 5 validation, 7 retryable busy,
+8 integrity, 9 key unavailable, 10 erase pending.
+.Pp
+Agent fleets: see
+.Pa docs/AGENT-WRITERS.md
+in the source tree (hot reads, exit 3, append vs update, materialize barriers).
+.Sh REPOSITORY
+Discover the nearest ancestor directory containing
+.Pa .wisp/
+or pass
+.Fl -repo .
+.Sh COMMANDS
+.Ss Repository lifecycle
+.Bl -tag -width 12n
+.It Cm init
+Create
+.Pa .wisp/ ,
+default policies, and ref
+.Va main .
+.It Cm import
+Adopt a directory or
+.Fl -git
+repository.
+.It Cm status
+Changed, new, missing, and non-conformant files; pending erasures;
+materialize backlog in JSON
+.Pq Fl -json .
+.It Cm materialize
+Flush the async worktree materialize queue.
+.Fl -wait
+blocks until pending publish jobs for managed checkouts finish.
+Use before tools that read bundle paths without using hot APIs.
+.It Cm record
+Commit working-tree edits as one changeset; drains materialize before return.
+.Fl -resolve
+clears
+.Pa .wisp/merge.json
+after a successful record during merge resolution (not exit-3 retry).
+.It Cm checkout , Cm switch
+Render a ref to the working tree or
+.Fl -to .
+.It Cm fsck , Cm gc , Cm backup , Cm restore-backup
+Integrity, cache maintenance, and snapshots.
+.El
+.Ss Headless writes
+Commit directly to a ref without requiring disk to match hot first.
+.Bl -tag -width 14n
+.It Cm update Ar path#section
+Replace a section body; requires
+.Fl -base
+section change id unless
+.Va any .
+.It Cm add-section , Cm remove-section , Cm set , Cm unset , Cm create
+Section and frontmatter operations (see
+.Fl -help
+per command).
+.It Cm apply
+Read one JSON batch from a file or stdin and commit as one changeset.
+Batch ops include
+.Va update_section ,
+.Va append_section ,
+and
+.Va prepend_section
+(fragment stitched on hot without a section-version precondition).
+See
+.Pa docs/APPLY.md .
+.It Cm apply Fl -resolve
+On
+.Va section_conflict
+.Pq exit 3 ,
+refresh
+.Va base_version
+from hot and retry until success or the attempt budget is exhausted.
+JSON result includes a
+.Va resolve
+stats object.
+.El
+.Pp
+After
+.Cm apply
+without
+.Fl -resolve ,
+call
+.Cm materialize Fl -wait
+or read via
+.Cm cat
+and search APIs.
+.Sh READ AND QUERY
+.Cm cat ,
+.Cm log ,
+.Cm show ,
+.Cm why ,
+.Cm impact ,
+.Cm diff ,
+.Cm search ,
+.Cm pack ,
+.Cm tokens .
+.Sh BRANCHES AND MERGE
+.Cm branch ,
+.Cm switch ,
+.Cm merge ,
+.Cm worktree ,
+.Cm mv .
+Ref merge conflicts use
+.Cm merge Fl -resolutions ;
+section optimistic conflicts use exit 3 or
+.Cm apply Fl -resolve .
+.Sh SYNC AND EXPORT
+.Cm remote ,
+.Cm push ,
+.Cm pull ,
+.Cm serve ,
+.Cm export ,
+.Cm import .
+.Sh ERASURE
+.Cm erase ,
+.Cm retract ,
+.Cm restore ,
+.Cm lifecycle .
+Managed checkouts rewrite after shred; unrecorded edits block erase unless
+.Fl -discard .
+.Sh CONFIGURATION
+.Cm config
+reads and writes
+.Pa .wisp/manifest.toml
+keys including
+.Va commit.busy_timeout_ms ,
+.Va commit.retries ,
+.Va materialize.enabled ,
+and
+.Va materialize.tick_ms .
+.Sh ENVIRONMENT
+.Bl -tag -width 14n
+.It Ev WISP_ACTOR
+Default actor when
+.Fl -actor
+is omitted.
+.It Ev WISP_MASTER_KEY
+64-hex keystore unlock for CI and automation.
+.El
+.Sh FILES
+.Pa .wisp/manifest.toml
+.Pa .wisp/ledger.db
+.Pa .wisp/payloads/
+.Pa .wisp/keys/
+.Pa .wisp/cache/refs/
+.Pa hot.db
+(rebuildable)
+.Pa .wisp/checkout.idx
+(primary tree index)
+.Sh SEE ALSO
+.Pa docs/WORKTREE.md
+async materialize,
+.Pa docs/APPLY.md
+batch format,
+.Pa docs/MERGE.md
+ref merge,
+.Pa docs/ERASE.md
+erasure,
+.Pa docs/CONCURRENCY.md
+writers and exit codes.
+.Sh INSTALL
+Copy this file to
+.Pa share/man/man1/wisp.1
+.Pq or
+.Pa ~/.local/share/man/man1/wisp.1
+when installing the
+.Nm
+binary.

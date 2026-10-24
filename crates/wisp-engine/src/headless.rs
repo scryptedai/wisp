@@ -554,6 +554,10 @@ fn plan_op(repo: &mut Repository, ref_name: &str, o: &ApplyOp, le: &str) -> Resu
     }
 }
 
+pub use crate::apply_resolve::{
+    apply_with_resolve, patch_batch_from_conflicts, ApplyResolvePolicy, ApplyResolveStats,
+};
+
 /// `wisp apply`: one batch, one changeset. Every other headless command is shorthand for a one-op batch.
 pub fn apply(repo: &mut Repository, batch: ApplyBatch, default_ref: Option<&str>) -> Result<Value> {
     crate::timing::phase("apply.total", || apply_inner(repo, batch, default_ref))

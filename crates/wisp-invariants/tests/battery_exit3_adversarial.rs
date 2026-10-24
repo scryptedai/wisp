@@ -7,6 +7,7 @@ use spy_harness::*;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
+use wisp_engine::headless::{apply_with_resolve, ApplyBatch, ApplyOp, ApplyResolvePolicy};
 use wisp_engine::repo::{Repository, MAIN_REF};
 use wisp_invariants::catalog;
 use wisp_model::{ChangeId, ExitCode, SectionId, WispError};
@@ -115,37 +116,56 @@ fn stale_update(
 fn resolve_update(
     repo: &mut Repository,
     path: &str,
-    heading: &str,
+    _heading: &str,
     section: SectionId,
-    mut base: ChangeId,
+    base: ChangeId,
     actor: &str,
     content: &str,
     message: &str,
     max_attempts: u32,
 ) -> Result<(serde_json::Value, usize, u32, Duration), WispError> {
-    let mut conflicts = 0usize;
-    let mut exit7 = 0u32;
     let t0 = Instant::now();
-    for attempt in 1..=max_attempts {
-        match stale_update(repo, path, section, base, actor, content, message) {
-            Ok(v) => return Ok((v, conflicts, exit7, t0.elapsed())),
-            Err(e) if e.code == ExitCode::Conflict => {
-                conflicts += 1;
-                base = section_version(repo, path, heading).1;
-                let jitter = 5 + (attempt as u64) * 3;
-                std::thread::sleep(Duration::from_millis(jitter));
-            }
-            Err(e) if e.is_retryable() => {
-                exit7 += 1;
-                base = section_version(repo, path, heading).1;
-                std::thread::sleep(Duration::from_millis(15));
-            }
-            Err(e) => return Err(e),
-        }
-    }
-    Err(WispError::internal(format!(
-        "resolve_update exceeded {max_attempts} attempts ({conflicts} conflicts)"
-    )))
+    let op = ApplyOp {
+        op: "update_section".into(),
+        path: format!("{path}.md"),
+        section: Some(section),
+        base_version: Some(base.to_string()),
+        heading: None,
+        level: None,
+        content: Some(content.to_string()),
+        after: None,
+        key: None,
+        value: None,
+        r#type: None,
+        frontmatter: None,
+        note: None,
+        split_from: None,
+        merged_from: None,
+        ..Default::default()
+    };
+    let batch = ApplyBatch {
+        r#ref: Some(MAIN_REF.into()),
+        base: None,
+        actor: Some(actor.into()),
+        message: Some(message.into()),
+        ops: vec![op],
+        inputs: vec![],
+        assert: vec![],
+        assert_head: None,
+        inputs_complete: false,
+    };
+    let policy = ApplyResolvePolicy {
+        max_attempts,
+        conflict_sleep_ms: 5,
+        retryable_sleep_ms: 15,
+    };
+    let (v, stats) = apply_with_resolve(repo, batch, None, &policy)?;
+    Ok((
+        v,
+        stats.conflict_rounds as usize,
+        stats.retryable_errors,
+        t0.elapsed(),
+    ))
 }
 
 fn arena_heading(prefix: &str, i: usize) -> String {

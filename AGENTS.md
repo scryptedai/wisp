@@ -27,6 +27,7 @@ Do not confuse:
 | `DECISIONS.md` | Spec deviations (required reading for behavior changes) |
 | `docs/SEARCH.md`, `docs/EXTENSIONS.md`, `docs/MERGE.md`, `docs/ERASE.md`, `docs/WORKTREE.md` | Search, extensions, merge, erasure, async worktree materialize |
 | `docs/AGENT-WRITERS.md` | Headless fleets: exit 3, append/prepend, materialize, batteries |
+| `docs/FEDERATION.md` | Composite KB / vendor sketch (not fully productized) |
 | `docs/CONCURRENCY.md`, `docs/TRUST-BOUNDARY.md`, `docs/INVARIANTS.md`, `docs/GIT-INTEROP.md` | Writers, erasure/sync limits, §17 test manifest, Git export/import |
 
 ## Build and test (required before PR)
@@ -67,6 +68,18 @@ Exit-3 adversarial battery: edit **`contrib/battery-exit3-adversarial/cases.toml
 - Do not add proprietary or alternate licenses in this repo.
 - Prefer `wisp-engine` APIs over duplicating ledger/hot logic in CLI.
 - Section-level concurrency: disjoint sections should not conflict; preserve optimistic commit preconditions.
+
+## Documentation, help, and man
+
+Pre-1.0: no “migration from old behavior” in user-facing text — write what the product **does** (present tense). See **`.cursor/rules/docs-cli-man.mdc`**.
+
+| Surface | Update when CLI or writer behavior changes |
+|---------|---------------------------------------------|
+| `contrib/man/wisp.1` | Required; `wisp-cli` `build.rs` fails if missing |
+| `crates/wisp-cli/src/cli.rs` | `--help` / `long_about` for non-obvious commands |
+| `docs/` + README + `contrib/claude-skill/` | Same facts as man/help |
+
+CI on Linux runs `mandoc -T lint` on `contrib/man/wisp.1`.
 
 ## CLI and JSON
 

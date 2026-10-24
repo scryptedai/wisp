@@ -89,8 +89,15 @@ pub enum Command {
     },
     /// Changed, new, missing, and non-conformant files; pending erasures
     Status,
-    /// Flush async worktree materialize queue (optional barrier before reading files on disk)
+    /// Flush async worktree materialize (disk cache behind hot after headless commits)
+    #[command(
+        long_about = "Managed checkouts are caches of the hot tier. After wisp apply or other \
+headless writes, dirty paths publish on a manifest heartbeat (materialize.tick_ms). \
+wisp record drains the queue before return. Use materialize --wait (or wisp cat / search) \
+before reading bundle paths from disk. See docs/WORKTREE.md."
+    )]
     Materialize {
+        /// Block until the publish queue for this repository is empty
         #[arg(long)]
         wait: bool,
     },
@@ -513,12 +520,25 @@ pub enum Command {
         #[command(flatten)]
         w: WriteFlags,
     },
-    /// Commit a batch of operations from a file or stdin as one changeset
+    /// Commit a JSON batch of headless ops as one changeset (see docs/APPLY.md)
+    #[command(
+        long_about = "Reads one JSON batch from --file or stdin. Ops include update_section \
+(full replace, base_version), append_section and prepend_section (log fragments, no version \
+precondition), create, set, and others. Truth is hot tier and wisp cat; disk may lag until \
+wisp materialize --wait. With --resolve, section_conflict (exit 3) refreshes base_version \
+and retries; merge working-tree cleanup uses wisp record --resolve instead. \
+See docs/AGENT-WRITERS.md for fleets."
+    )]
     Apply {
+        /// Batch JSON path (default: stdin)
         #[arg(long)]
         file: Option<PathBuf>,
+        /// Target ref (default: checked-out ref or main)
         #[arg(long)]
         r#ref: Option<String>,
+        /// On section_conflict (exit 3), refresh base_version from hot and retry (bounded)
+        #[arg(long)]
+        resolve: bool,
     },
 }
 

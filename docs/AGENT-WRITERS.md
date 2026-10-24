@@ -28,6 +28,8 @@ Do not treat the working tree as authoritative immediately after `apply` unless 
 3. Rebuild your op with that `base_version` (or abort if policy says escalate to human).
 4. Retry with backoff+jitter if many agents collide.
 
+**Built-in loop:** `wisp apply --resolve` or `wisp_engine::headless::apply_with_resolve` (policy: `ApplyResolvePolicy`, default attempt budget scales with `commit.retries`). Embeds should use the engine API instead of reimplementing the loop; custom merge logic can still call `apply` once and handle conflicts itself.
+
 Exit 3 is **per request**, not per process. A “poison” client that never refreshes only fails itself; see adversarial battery **D2-poison-neighbor**.
 
 ### 2. Logging patch — `append_section` / `prepend_section`

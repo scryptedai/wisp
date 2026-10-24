@@ -365,9 +365,45 @@ fn i16_i17_concurrent_headless_writers_disjoint_sections() {
     )
     .unwrap();
     sync_disk(&mut repo);
+    // `apply_with_resolve` performs the same refresh loop agents are expected to use.
+    let stale = ApplyOp {
+        op: "update_section".into(),
+        path: "doc.md".into(),
+        section: Some(ids[0]),
+        base_version: Some(base_versions[0].to_string()),
+        heading: None,
+        level: None,
+        content: Some("via-resolve\n".into()),
+        after: None,
+        key: None,
+        value: None,
+        r#type: None,
+        frontmatter: None,
+        note: None,
+        split_from: None,
+        merged_from: None,
+        ..Default::default()
+    };
+    let batch = ApplyBatch {
+        actor: Some("process:resolve".into()),
+        message: Some("resolve".into()),
+        ops: vec![stale],
+        inputs: vec![],
+        assert: vec![],
+        r#ref: None,
+        base: None,
+        assert_head: None,
+        inputs_complete: false,
+    };
+    let policy = crate::headless::ApplyResolvePolicy::default();
+    let (out, stats) =
+        crate::headless::apply_with_resolve(&mut repo, batch, None, &policy).unwrap();
+    assert!(stats.conflict_rounds >= 1);
+    assert_eq!(out["changes"][0]["op"], "update_section");
+    sync_disk(&mut repo);
     // I19: the working tree was refreshed (no unrecorded edits), so the file shows the headless writes.
     let text = read(&f.root, "doc.md");
-    assert!(text.contains("synthesized"), "{text}");
+    assert!(text.contains("via-resolve"), "{text}");
     assert!(text.contains("writer 3 write 4"));
 }
 

@@ -5,6 +5,7 @@ edition.workspace = true
 license.workspace = true
 authors.workspace = true
 description = "wisp: a local-first, differential knowledge store for OKF bundles"
+build = "build.rs"
 
 [[bin]]
 name = "wisp"

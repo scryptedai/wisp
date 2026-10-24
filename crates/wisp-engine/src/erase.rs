@@ -485,6 +485,29 @@ pub fn shred(
     Ok(())
 }
 
+fn erase_cause_for_pending(conn: &rusqlite::Connection, pending: &[ScopeId]) -> Result<ChangeId> {
+    let mut best: Option<(i64, ChangeId)> = None;
+    for t in Ledger::tombstones(conn)? {
+        if !t.scopes.iter().any(|s| pending.contains(s)) {
+            continue;
+        }
+        let seq = Ledger::get_change(conn, t.erase_change)?
+            .and_then(|ch| Ledger::get_changeset(conn, ch.changeset).ok().flatten())
+            .map(|row| row.seq)
+            .unwrap_or(0);
+        if best.as_ref().map(|(s, _)| seq > *s).unwrap_or(true) {
+            best = Some((seq, t.erase_change));
+        }
+    }
+    if let Some((_, id)) = best {
+        return Ok(id);
+    }
+    if let Some(ch) = Ledger::erase_changes_without_tombstones(conn)?.last() {
+        return Ok(ch.id);
+    }
+    Ok(ChangeId::new())
+}
+
 /// On open: finish any interrupted erase before anything else (§10.5 Recovery).
 pub fn recover(repo: &mut Repository) -> Result<()> {
     finish_erase_bookkeeping(repo)?;
@@ -494,11 +517,7 @@ pub fn recover(repo: &mut Repository) -> Result<()> {
         return Ok(());
     }
     if !pending.is_empty() {
-        let cause = Ledger::tombstones(repo.ledger.conn())?
-            .into_iter()
-            .find(|t| t.scopes.iter().any(|s| pending.contains(s)))
-            .map(|t| t.erase_change)
-            .unwrap_or_else(ChangeId::new);
+        let cause = erase_cause_for_pending(repo.ledger.conn(), &pending)?;
         shred(repo, &pending, cause, &[])?;
     }
     if rewrite_pending || !pending.is_empty() {

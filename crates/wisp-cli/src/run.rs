@@ -260,8 +260,7 @@ fn status_human(s: &wisp_engine::record::Status) -> String {
     if s.materialize.pending_jobs > 0 || s.materialize.pending_paths > 0 {
         out.push_str(&format!(
             "Materialize backlog: {} job(s), {} path(s)",
-            s.materialize.pending_jobs,
-            s.materialize.pending_paths
+            s.materialize.pending_jobs, s.materialize.pending_paths
         ));
         if let Some(ms) = s.materialize.lag_ms {
             out.push_str(&format!(" (lag ~{} ms)", ms));

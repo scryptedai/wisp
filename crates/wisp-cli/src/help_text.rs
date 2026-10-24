@@ -28,7 +28,7 @@ Ops include update_section (full replace, base_version), append_section and prep
 (log fragments, no version precondition), create, set, and others. Truth is hot tier and \
 `wisp cat`; disk may lag until `wisp materialize --wait`. With --resolve, section_conflict \
 (exit 3) refreshes base_version from hot and retries (bounded). Merge working-tree cleanup \
-uses `wisp record --resolve` instead. See `wisp doc apply` and docs/AGENT-WRITERS.md.";
+uses `wisp record --resolve` instead. See `wisp doc apply` and `wisp doc AGENT-WRITERS.md`.";
 
 pub const ERASE_LONG: &str = "\
 Destroy scope keys and cold payloads for a section, concept, asset, group, or actor.\n\n\

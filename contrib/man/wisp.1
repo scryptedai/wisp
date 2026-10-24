@@ -19,6 +19,8 @@ stores an Open Knowledge Format (OKF) bundle as an append-only, section-level
 changeset log with encrypted cold payloads and a hot SQLite tier.
 The ledger is authoritative; managed markdown on disk is a cache refreshed
 asynchronously after headless commits unless a barrier runs.
+It materializes conformant markdown on checkout and supports agent commits with
+optimistic concurrency.
 .Pp
 This manual page is an overview.
 Behavioral contracts, exit codes, JSON envelopes, and per-command semantics live
@@ -26,9 +28,12 @@ in installed topic documentation (see below), not in
 .Cm --help
 alone.
 .Pp
-Agent fleets: see
-.Pa docs/AGENT-WRITERS.md
-in the source tree (hot reads, exit 3, append vs update, materialize barriers).
+Agent fleets: see installed
+.Pa AGENT-WRITERS.md
+.Pq Cm wisp doc AGENT-WRITERS.md
+and
+.Pa WORKTREE.md
+.Pq Cm wisp doc WORKTREE.md ) .
 .Sh GLOBAL OPTIONS
 .Bl -tag -width 12n
 .It Fl -repo Ar dir
@@ -190,9 +195,9 @@ Bundle metadata, ledger, keys, cache (per repository).
 .Cm wisp doc apply ,
 .Cm wisp doc trust
 .Pp
-.Pa docs/WORKTREE.md
-async materialize,
-.Pa docs/APPLY.md
+.Cm wisp doc WORKTREE.md
+async materialize;
+.Cm wisp doc APPLY.md
 batch format.
 .Pp
 Project source:

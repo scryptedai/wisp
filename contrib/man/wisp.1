@@ -34,7 +34,111 @@ Agent fleets: see installed
 and
 .Pa WORKTREE.md
 .Pq Cm wisp doc WORKTREE.md ) .
-.Sh GLOBAL OPTIONS
+.Ss Write paths
+.Bl -tag -width 14n
+.It Cm record
+Working-tree edits become one changeset; OKF files are re-rendered.
+Drains the materialize queue before return.
+.Fl -resolve
+clears
+.Pa .wisp/merge.json
+after a successful record during merge resolution (not exit-3 retry).
+.It Cm update , Nm add-section , Nm set , Nm create , Nm apply
+Headless writes (no working-tree round-trip).
+Each single-op command is shorthand for one entry in an
+.Cm apply
+batch; see topic
+.Cm apply .
+.It Cm apply Fl -resolve
+On
+.Va section_conflict
+.Pq exit 3 ,
+refresh
+.Va base_version
+from hot and retry until success or the attempt budget is exhausted.
+.It Cm materialize
+Flush the async worktree materialize queue.
+.Fl -wait
+blocks until pending publish jobs for managed checkouts finish.
+Use before tools that read bundle paths without using hot APIs.
+.El
+.Pp
+After headless
+.Cm apply
+without
+.Fl -resolve ,
+call
+.Cm materialize Fl -wait
+or read via
+.Cm cat
+and search APIs.
+.Ss Installed documentation
+Installed topic files (Markdown) are the contract for agents and integrators:
+.Bl -tag -width 16n
+.It Cm wisp doc list
+List topics and file paths.
+.It Cm wisp doc path
+Print the documentation directory
+.Pq typically
+.Pa ~/.local/share/wisp/doc ) .
+.It Cm wisp doc cli
+CLI contract: exit codes, target grammar, JSON, limits of success.
+.It Cm wisp doc Ar topic
+Print a topic
+.Pq e.g. Cm erase , Cm merge , Cm search , Cm impact , Cm trust ) .
+.El
+.Pp
+Set
+.Ev WISP_DOC_ROOT
+if documentation was installed elsewhere.
+.Ss Exit status
+.Bl -tag -width 10n
+.It Dv 0
+Success.
+.It Dv 2
+Usage error.
+.It Dv 3
+Conflict (stale
+.Fl -base ,
+merge conflict; see JSON
+.Cm error.code ) .
+.It Dv 4
+Policy refusal.
+.It Dv 5
+Validation failure.
+.It Dv 7
+Retryable SQLite lock (back off and retry).
+.It Dv 8
+Integrity / fsck failure.
+.It Dv 9
+Key unavailable.
+.It Dv 10
+Erasure recovery pending; reopen or complete recovery.
+.El
+.Pp
+Details:
+.Cm wisp doc cli
+and
+.Pa CONCURRENCY.md .
+.Ss Environment
+.Bl -tag -width 16n
+.It Ev WISP_ACTOR
+Default actor when
+.Fl -actor
+is omitted.
+.It Ev WISP_DOC_ROOT
+Override documentation directory for
+.Cm wisp doc .
+.It Ev WISP_MASTER_KEY
+Master key material (see trust docs).
+.It Ev XDG_DATA_HOME
+Base for
+.Pa wisp/doc
+when
+.Ev WISP_DOC_ROOT
+is unset.
+.El
+.Sh OPTIONS
 .Bl -tag -width 12n
 .It Fl -repo Ar dir
 Repository root (default: nearest ancestor containing
@@ -64,119 +168,6 @@ Unlock keystore (alternative to key file or
 .It Fl -no-index
 Skip in-process subscribers for this invocation.
 .El
-.Sh WRITE PATHS
-.Bl -tag -width 14n
-.It Cm record
-Working-tree edits become one changeset; OKF files are re-rendered.
-Drains the materialize queue before return.
-.Fl -resolve
-clears
-.Pa .wisp/merge.json
-after a successful record during merge resolution (not exit-3 retry).
-.It Cm update Ns , Nm add-section Ns , Nm set Ns , Nm create Ns , Nm apply
-Headless writes (no working-tree round-trip).
-Each single-op command is shorthand for one entry in an
-.Cm apply
-batch; see topic
-.Cm apply .
-.It Cm apply Fl -resolve
-On
-.Va section_conflict
-.Pq exit 3 ,
-refresh
-.Va base_version
-from hot and retry until success or the attempt budget is exhausted.
-.It Cm materialize
-Flush the async worktree materialize queue.
-.Fl -wait
-blocks until pending publish jobs for managed checkouts finish.
-Use before tools that read bundle paths without using hot APIs.
-.El
-.Pp
-After headless
-.Cm apply
-without
-.Fl -resolve ,
-call
-.Cm materialize Fl -wait
-or read via
-.Cm cat
-and search APIs.
-.Sh DOCUMENTATION
-Installed topic files (Markdown) are the contract for agents and integrators:
-.Bl -tag -width 16n
-.It Cm wisp doc list
-List topics and file paths.
-.It Cm wisp doc path
-Print the documentation directory
-.Pq typically
-.Pa ~/.local/share/wisp/doc ) .
-.It Cm wisp doc cli
-CLI contract: exit codes, target grammar, JSON, limits of success.
-.It Cm wisp doc Ar topic
-Print a topic
-.Pq e.g. Nm erase Ns , Nm merge Ns , Nm search Ns , Nm impact Ns , Nm trust ) .
-.El
-.Pp
-Set
-.Ev WISP_DOC_ROOT
-if documentation was installed elsewhere.
-.Sh EXIT STATUS
-.Bl -tag -width 10n
-.It 0
-Success.
-.It 2
-Usage error.
-.It 3
-Conflict (stale
-.Fl -base ,
-merge conflict; see JSON
-.Cm error.code ) .
-.It 4
-Policy refusal.
-.It 5
-Validation failure.
-.It 7
-Retryable SQLite lock (back off and retry).
-.It 8
-Integrity / fsck failure.
-.It 9
-Key unavailable.
-.It 10
-Erasure recovery pending; reopen or complete recovery.
-.El
-Details:
-.Cm wisp doc cli
-and
-.Pa CONCURRENCY.md .
-.Sh CONFIGURATION
-.Cm config
-reads and writes
-.Pa .wisp/manifest.toml
-keys including
-.Va commit.busy_timeout_ms ,
-.Va commit.retries ,
-.Va materialize.enabled ,
-and
-.Va materialize.tick_ms .
-.Sh ENVIRONMENT
-.Bl -tag -width 16n
-.It Ev WISP_ACTOR
-Default actor when
-.Fl -actor
-is omitted.
-.It Ev WISP_DOC_ROOT
-Override documentation directory for
-.Cm wisp doc .
-.It Ev WISP_MASTER_KEY
-Master key material (see trust docs).
-.It Ev XDG_DATA_HOME
-Base for
-.Pa wisp/doc
-when
-.Ev WISP_DOC_ROOT
-is unset.
-.El
 .Sh FILES
 .Bl -tag -width 20n
 .It Pa ~/.local/share/wisp/doc/
@@ -185,6 +176,13 @@ Default topic documentation (user install).
 Default manual page (user install).
 .It Pa .wisp/
 Bundle metadata, ledger, keys, cache (per repository).
+.It Pa .wisp/manifest.toml
+Repository config
+.Pq Cm wisp config ) :
+.Va commit.busy_timeout_ms ,
+.Va commit.retries ,
+.Va materialize.enabled ,
+.Va materialize.tick_ms .
 .El
 .Sh SEE ALSO
 .Cm wisp doc cli ,

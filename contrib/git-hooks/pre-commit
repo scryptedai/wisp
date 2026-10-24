@@ -6,4 +6,12 @@ cd "$ROOT"
 # shellcheck source=../build-env.sh
 source "$ROOT/contrib/build-env.sh"
 cargo fmt --all -- --check
+if git diff --cached --name-only | grep -q '^contrib/man/wisp\.1$'; then
+  if command -v mandoc >/dev/null; then
+    mandoc -T lint -Wall contrib/man/wisp.1
+  else
+    echo "pre-commit: contrib/man/wisp.1 staged but mandoc missing (CI will fail)" >&2
+    exit 1
+  fi
+fi
 "$ROOT/contrib/coderabbit-check.sh" --staged

@@ -19,10 +19,10 @@ CLIPPY=(
   -A clippy::unnecessary_unwrap
 )
 
-if [[ "$(uname -s)" == Linux ]] && command -v mandoc >/dev/null; then
+if command -v mandoc >/dev/null; then
   mandoc -T lint -Wall contrib/man/wisp.1
-elif [[ "$(uname -s)" == Linux ]]; then
-  echo "skip: mandoc not installed (CI runs this on ubuntu-latest only)"
+else
+  echo "skip: mandoc not installed (install mandoc to match CI man lint on Linux)" >&2
 fi
 
 cargo fmt --all -- --check

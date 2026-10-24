@@ -25,7 +25,7 @@ Use `CARGO_TARGET_DIR=./target` if bindgen/sqlite fails in a sandbox (see `AGENT
 | `cargo fmt --all -- --check` | Edited Rust without running `cargo fmt --all` |
 | `cargo clippy` | `print_literal`, `uninlined_format_args`, unused imports — match CI allowlist in `ci-check.sh` |
 | `cargo test -p wisp-invariants` | Async **materialize**: headless apply updates hot before disk; call `flush_materialize()` before erase preflight or disk snapshots |
-| Linux-only in CI | `mandoc -T lint contrib/man/wisp.1` after CLI/man changes |
+| `mandoc -T lint -Wall contrib/man/wisp.1` | CI runs on **ubuntu**; `ci-check.sh` runs it on **any OS** when `mandoc` is installed (macOS has it). **pre-commit** lints staged `contrib/man/wisp.1` and fails if `mandoc` is missing. |
 | `wisp-cli` build | `contrib/man/wisp.1` must exist (`build.rs` gate) |
 
 ## Git hooks (optional, recommended)
@@ -38,7 +38,7 @@ One-time install from repo root:
 
 | Hook | Runs |
 |------|------|
-| `pre-commit` | `cargo fmt --all -- --check` |
+| `pre-commit` | `cargo fmt --all -- --check`; staged `contrib/man/wisp.1` → `mandoc -T lint -Wall`; staged paths → `coderabbit-check.sh --staged` |
 | `pre-push` | `./contrib/ci-check.sh` (full CI test job) |
 
 Bypass only when intentional: `git commit --no-verify` / `git push --no-verify`.

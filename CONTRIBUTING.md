@@ -34,6 +34,21 @@ cargo build
 cargo test --workspace
 ```
 
+### Global `wisp` on your machine
+
+From the repo root:
+
+```sh
+contrib/scripts/install-local.sh          # release build → ~/.cargo/bin/wisp
+contrib/scripts/install-local.sh --verify # fmt + clippy + wisp-invariants, then install
+```
+
+Ensure `~/.cargo/bin` is on your `PATH`. Re-run the script after pulling `main` to replace the binary and refresh `~/.local/share/wisp/doc`. For day-to-day hacking without install, use `contrib/scripts/wisp-dev.sh <args>` (same as `cargo run -p wisp-cli -- …`).
+
+**Help vs contracts:** `wisp --help` is the command catalog; behavior and limits live in installed topic docs (`wisp doc list`, `wisp doc cli`, `wisp doc erase`, …). Set `WISP_DOC_ROOT` if docs are not under the default XDG path.
+
+**Manual page:** `contrib/scripts/install-man.sh` installs `wisp.1` to `~/.local/share/man/man1`. Add `export MANPATH="$HOME/.local/share/man:$MANPATH"` then `man wisp`, or `man -M ~/.local/share/man wisp`, or `wisp doc --man`.
+
 ## Branching (GitHub Flow)
 
 We use **GitHub Flow**, similar to the [Git project](https://git-scm.com/docs/gitworkflows): one long-lived integration branch, short-lived topic branches, merge via PR.

@@ -41,13 +41,16 @@ collect_files() {
   if [[ "$STAGED" -eq 1 ]]; then
     git diff --cached --name-only --diff-filter=ACMR
   elif [[ -n "$BASE" ]]; then
-    if ! git merge-base "$BASE" HEAD >/dev/null 2>&1; then
-      echo "user-docs-lint: no merge base for ${BASE}...HEAD (fetch the base commit)" >&2
-      return 1
-    fi
     git diff --name-only --diff-filter=ACMR "${BASE}...HEAD"
   fi
 }
+
+if [[ "$STAGED" -ne 1 && -n "$BASE" ]]; then
+  if ! git merge-base "$BASE" HEAD >/dev/null 2>&1; then
+    echo "user-docs-lint: no merge base for ${BASE}...HEAD (fetch the base commit)" >&2
+    exit 1
+  fi
+fi
 
 TARGETS=()
 while IFS= read -r f; do

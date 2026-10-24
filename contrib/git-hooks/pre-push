@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+# Mirror GitHub Actions test job before anything reaches origin.
+set -euo pipefail
+ROOT="$(git rev-parse --show-toplevel)"
+cd "$ROOT"
+exec "$ROOT/contrib/ci-check.sh"

@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+# Fast gate: same first failure mode as CI (rustfmt). Full suite runs on pre-push.
+set -euo pipefail
+ROOT="$(git rev-parse --show-toplevel)"
+cd "$ROOT"
+export CARGO_TARGET_DIR="${CARGO_TARGET_DIR:-$ROOT/target}"
+cargo fmt --all -- --check

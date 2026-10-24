@@ -41,7 +41,7 @@ Run the same steps as GitHub Actions (see `.github/workflows/ci.yml`):
 Rust **1.88+** (see workspace `rust-version`). If `libsqlite3-sys` bindgen fails in a sandbox, use 
 `CARGO_TARGET_DIR=./target ./contrib/ci-check.sh`.
 
-Agents: **do not push** until `ci-check.sh` passes locally (especially `cargo fmt --all -- --check`).
+Agents: **do not push** until `ci-check.sh` passes locally (especially `cargo fmt --all -- --check`). Contributors may install `./contrib/install-git-hooks.sh` (`pre-commit` = fmt, `pre-push` = `ci-check.sh`).
 
 ## TDD contract
 

@@ -79,6 +79,12 @@ Inspired by [Git’s patch submission](https://git-scm.com/docs/SubmittingPatche
    ./contrib/ci-check.sh
    ```
 
+   Optional git hooks (fmt on commit, full CI on push):
+
+   ```sh
+   ./contrib/install-git-hooks.sh
+   ```
+
 5. **Update docs** when you change user-visible behavior (`README`, `DECISIONS.md`, `docs/`).
 6. **Contribution terms**: confirm you agree to [Contribution terms](#contribution-terms) (GPLv2 for this tree + grant to Scrypted for other editions).
 

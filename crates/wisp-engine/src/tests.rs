@@ -454,8 +454,20 @@ fn i19_headless_commit_preserves_unrecorded_edits() {
     let after = read(&f.root, "doc.md");
     assert!(after.contains("alpha edited locally"));
     assert!(!after.contains("beta by agent"));
+    // Materialize may refresh generated views (e.g. log.md) before the human records.
+    sync_disk(&mut repo);
     // The next record commits the disjoint edit cleanly, validated against the new head.
-    let r = rec(&mut repo, "human:alex");
+    let r = record(
+        &mut repo,
+        &RecordOptions {
+            actor: Some("human:alex".into()),
+            message: Some("test".into()),
+            adopt_generated: true,
+            ..Default::default()
+        },
+    )
+    .unwrap();
+    sync_disk(&mut repo);
     assert!(r.changeset.is_some());
     let final_text = read(&f.root, "doc.md");
     assert!(final_text.contains("alpha edited locally"));

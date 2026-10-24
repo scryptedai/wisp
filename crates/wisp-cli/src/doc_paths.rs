@@ -56,6 +56,7 @@ pub fn man_root() -> Option<PathBuf> {
     None
 }
 
+/// Path to `wisp.1` (install layout or repo `contrib/man` when run from a dev tree).
 pub fn man_page_path() -> Option<PathBuf> {
     if let Some(root) = man_root() {
         let p = root.join("man1/wisp.1");

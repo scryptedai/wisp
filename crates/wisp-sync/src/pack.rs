@@ -93,6 +93,7 @@ pub fn safe_wisp_path(wisp_dir: &Path, rel: &Path) -> Result<PathBuf> {
     Ok(out)
 }
 
+/// Serialize the repository cold tier into a ColdPack byte blob.
 pub fn pack_bytes(repo: &mut Repository) -> Result<Vec<u8>> {
     let tmp = tempfile::NamedTempFile::new()?;
     write_cold_pack(repo, tmp.path())?;

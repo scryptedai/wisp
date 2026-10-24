@@ -2,6 +2,11 @@
 language: en-US
 reviews:
   profile: assertive
+  path_instructions:
+    - path: "crates/wisp-engine/src/materialize.rs"
+      instructions: "Public async materialize APIs are documented in-module; do not require docstrings on every private worker helper."
+    - path: "crates/wisp-invariants/tests/**"
+      instructions: "Integration and battery tests are exempt from docstring coverage expectations."
   high_level_summary: true
   poem: false
   request_changes_workflow: false

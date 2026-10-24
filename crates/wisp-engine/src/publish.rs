@@ -20,6 +20,7 @@ pub struct DirtySet {
 }
 
 impl DirtySet {
+    /// Recompute `view_dirs` from concept and asset path prefixes.
     pub fn finalize_views(&mut self) {
         for p in &self.concept_paths {
             let mut d = dir_of(p);

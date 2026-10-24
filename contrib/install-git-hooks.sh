@@ -24,4 +24,4 @@ for name in pre-commit pre-push; do
   echo "installed $dst -> $src"
 done
 
-echo "Hooks active. pre-commit: cargo fmt --check. pre-push: ./contrib/ci-check.sh"
+echo "Hooks active. pre-commit: fmt + coderabbit-check --staged. pre-push: ./contrib/ci-check.sh"

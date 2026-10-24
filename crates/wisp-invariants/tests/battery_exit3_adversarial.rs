@@ -366,7 +366,8 @@ fn run_phases(meta: &Meta, phases: &[Phase], heavy: bool) -> (Vec<MetricRow>, Ph
                 );
             }
             "disjoint_parallel" => {
-                let n = writer_count(phase, meta, heavy);
+                const ARENA_SECTIONS: usize = 16; // S0..S15 in arena/stampede.md
+                let n = writer_count(phase, meta, heavy).min(ARENA_SECTIONS);
                 let ops = phase.ops_per_writer.unwrap_or(2);
                 let (_dir, root, mut repo) = fresh_repo(meta);
                 let prefix = meta.arena_heading_prefix.clone();

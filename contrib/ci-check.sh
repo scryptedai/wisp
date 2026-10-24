@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
 # Mirror .github/workflows/ci.yml (test job). Run from repo root before push.
+# Includes ./contrib/coderabbit-check.sh (user-docs lint + rustdoc on touched pub items).
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
-
-# Always use the repo target dir so hooks do not fill ephemeral CI/sandbox caches.
-export CARGO_TARGET_DIR="$ROOT/target"
+# shellcheck source=build-env.sh
+source "$ROOT/contrib/build-env.sh"
 
 CLIPPY=(
   -D warnings
@@ -26,11 +26,14 @@ elif [[ "$(uname -s)" == Linux ]]; then
 fi
 
 cargo fmt --all -- --check
+./contrib/coderabbit-check.sh
+# Build debug (default features) once, then lint — clippy reuses the same dep artifacts.
+cargo test --workspace --no-run
 cargo clippy --all-targets -- "${CLIPPY[@]}"
 cargo test --workspace
-FASTEMBED_CACHE_DIR="${FASTEMBED_CACHE_DIR:-${TMPDIR:-/tmp}/wisp-fastembed-cache}" \
-  cargo test -p wisp-invariants
+# Second feature graph (no semantic / onnx); cannot share with default features.
 cargo test -p wisp-invariants --no-default-features
+# Release profile is a separate cache lane from dev (expected full compile of release deps).
 cargo build --release -p wisp-cli
 cargo build --release -p wisp-cli --no-default-features
 

@@ -375,7 +375,7 @@ fn run_doc(topic: &Option<String>, list: bool, path: bool, man: bool) -> CliResu
         let mut human = format!("Documentation root: {}\n\nTopics:\n", root.display());
         for (name, p, present) in crate::doc_paths::list_topics(&root) {
             let mark = if present { "" } else { " (missing)" };
-            human.push_str(&format!("  {:<14} {}\n", name, mark));
+            human.push_str(&format!("  {name:<14} {mark}\n"));
             if !present {
                 human.push_str(&format!("                 expected {}\n", p.display()));
             }

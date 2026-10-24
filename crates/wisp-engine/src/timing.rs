@@ -3,6 +3,7 @@
 use std::cell::RefCell;
 use std::time::Instant;
 
+/// One timed span from [`with_profile`].
 #[derive(Clone, Debug)]
 pub struct PhaseSample {
     pub name: &'static str,

@@ -11,12 +11,18 @@ use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
 use wisp_model::*;
 
+/// Backlog snapshot for `wisp status --json` and `Repository::materialize_status`.
 #[derive(Clone, Debug, Default, serde::Serialize)]
 pub struct MaterializeStatus {
+    /// Coalesced `(tree_root, ref)` jobs waiting for the worker.
     pub pending_jobs: usize,
+    /// Sum of dirty paths across queued jobs (approximate work units).
     pub pending_paths: usize,
+    /// Milliseconds since the oldest queued job was enqueued.
     pub lag_ms: Option<u64>,
+    /// Milliseconds since the worker last drained the queue.
     pub last_drained_ms: Option<u64>,
+    /// Manifest `materialize.tick_ms` at queue creation.
     pub tick_ms: u64,
 }
 
@@ -34,6 +40,7 @@ enum Command {
     Shutdown,
 }
 
+/// Background hot→disk publish queue for managed worktrees (docs/WORKTREE.md).
 pub struct MaterializeQueue {
     tx: Sender<Command>,
     join: Mutex<Option<JoinHandle<()>>>,
@@ -41,6 +48,7 @@ pub struct MaterializeQueue {
 }
 
 impl MaterializeQueue {
+    /// Start the heartbeat worker for `root` (one queue per `Repository` handle).
     pub fn spawn(root: PathBuf, unlock: Unlock, tick_ms: u64) -> Self {
         let shared = Arc::new(Mutex::new(Shared {
             pending: BTreeMap::new(),
@@ -60,6 +68,7 @@ impl MaterializeQueue {
         }
     }
 
+    /// Current backlog metrics (lock-free aside from shared mutex).
     pub fn status(&self) -> MaterializeStatus {
         let s = self.shared.lock().expect("materialize shared");
         MaterializeStatus {
@@ -71,6 +80,7 @@ impl MaterializeQueue {
         }
     }
 
+    /// Enqueue or merge a publish set for `(root, ref_name)`.
     pub fn push_job(&self, root: PathBuf, ref_name: &str, dirty: DirtySet) {
         let n = dirty.concept_paths.len()
             + dirty.asset_paths.len()
@@ -90,10 +100,12 @@ impl MaterializeQueue {
         }
     }
 
+    /// Nudge the worker to drain before the next tick.
     pub fn wake(&self) {
         let _ = self.tx.send(Command::Wake);
     }
 
+    /// Barrier: wait for the worker, then publish any jobs still on the shared queue.
     pub fn drain_blocking(&self, repo: &mut Repository) -> Result<()> {
         let (done_tx, done_rx) = mpsc::channel();
         let _ = self.tx.send(Command::DrainSync(done_tx));
@@ -102,6 +114,7 @@ impl MaterializeQueue {
         Ok(())
     }
 
+    /// Shut down the worker and drain remaining jobs (repository drop).
     pub fn finish(&mut self, repo: &mut Repository) -> Result<()> {
         let _ = self.tx.send(Command::Shutdown);
         if let Some(j) = self.join.lock().expect("materialize join").take() {

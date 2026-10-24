@@ -231,12 +231,15 @@ impl Repository {
                 ))
             },
         };
-        // Recovery, before any other operation (§10.2 step 5, §10.5 Recovery).
-        repo.ledger.flush_staged()?;
-        crate::erase::recover(&mut repo)?;
+        // Recovery on the main handle only (§10.2 step 5, §10.5 Recovery).
+        if !worker {
+            repo.ledger.flush_staged()?;
+            crate::erase::recover(&mut repo)?;
+        }
         Ok(repo)
     }
 
+    /// Async materialize backlog for this handle (empty when disabled or worker-only).
     pub fn materialize_status(&self) -> MaterializeStatus {
         self.materialize
             .as_ref()
@@ -244,6 +247,7 @@ impl Repository {
             .unwrap_or_default()
     }
 
+    /// Sync barrier: drain the materialize queue on this handle (`wisp materialize --wait`).
     pub fn flush_materialize(&mut self) -> Result<()> {
         if let Some(m) = self.materialize.take() {
             m.drain_blocking(self)?;
@@ -252,6 +256,9 @@ impl Repository {
         Ok(())
     }
 
+    /// Enqueue (or sync-publish when materialize is off) a delta from `outcome`.
+    ///
+    /// `reconcile == false` for headless commits (skip disk-dirty paths); `true` after `record`.
     pub fn schedule_materialize(
         &mut self,
         ref_name: &str,
@@ -292,6 +299,7 @@ impl Repository {
         Ok(())
     }
 
+    /// Enqueue a full-ref render (checkout, merge replay, explicit barriers).
     pub fn schedule_materialize_full(&mut self, ref_name: &str) -> Result<()> {
         if !self.manifest.materialize.enabled {
             return Ok(());

@@ -25,7 +25,7 @@ my-hub/                 # your bundle (ledger is authoritative)
 
 - **Vendor** content is **read-mostly**: pull to a pinned changeset, merge into `main` when you accept upstream.
 - **Behaviors** are **yours**: declare `inputs` to vendor sections/concepts so `wisp why` / `wisp impact` stay honest.
-- **Do not** overwrite `.wisp/` or hot state from a Git-only mirror; use wisp sync (cold pack + ledger replay).
+- **Do not** overwrite `.wisp/` or hot state from a Git-only mirror; use `wisp push` / `wisp pull` (ColdPack + ledger replay).
 
 ## Hub vs leaf
 

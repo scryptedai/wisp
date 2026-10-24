@@ -149,6 +149,10 @@ fn record_commit_drains_materialize_backlog() {
     )
     .unwrap();
     assert_eq!(repo.materialize_status().pending_jobs, 0);
+    assert!(
+        disk_body(&root).contains("delta"),
+        "record must drain materialize backlog so headless delta is on disk"
+    );
     let hot = repo.hot(MAIN_REF).unwrap();
     assert!(Hot::concept_by_path(hot.conn(), "notes-extra")
         .unwrap()

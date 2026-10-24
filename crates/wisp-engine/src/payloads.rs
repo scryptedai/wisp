@@ -34,9 +34,11 @@ pub struct SectionFragment {
 }
 
 impl SectionFragment {
+    /// JSON bytes stored as a section-fragment payload.
     pub fn encode(&self) -> Vec<u8> {
         serde_json::to_vec(self).expect("serializable")
     }
+    /// Parse a section-fragment payload from cold storage.
     pub fn decode(b: &[u8]) -> Result<Self> {
         serde_json::from_slice(b)
             .map_err(|e| WispError::integrity(format!("section fragment: {e}")))

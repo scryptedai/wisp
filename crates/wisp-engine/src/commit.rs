@@ -143,7 +143,7 @@ pub struct CommitRequest {
     /// Shared `--inputs-complete` for the content changes that receive `inputs`.
     pub inputs_complete: bool,
     pub skip_policy: bool,
-    /// When true, async materialize overwrites disk paths that differ from `checkout.idx`.
+    /// When true, materialize overwrites paths with unrecorded disk edits (`record` sets this).
     pub materialize_reconcile: bool,
 }
 

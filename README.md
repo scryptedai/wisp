@@ -17,10 +17,22 @@ Fork, use **git worktrees** for parallel branches, and open PRs — see **[CONTR
 ## Build
 
 ```sh
-cargo build --release        # one static binary: target/release/wisp
+cargo build --release        # one static binary: target/release/wisp (path depends on target mode below)
 cargo test                   # unit + engine invariant tests (§17)
 cargo test -p wisp-invariants  # OKF corpus + search IR (semantic on by default; first run may fetch ~128MiB model)
 ```
+
+### Cargo target directory (shared vs worktree)
+
+By default this repo uses **one shared artifact directory** for all checkouts and Cursor sessions (`~/.cache/wisp/target` or `$XDG_CACHE_HOME/wisp/target`), configured in **`Cargo.toml`** under `[workspace.metadata.wisp-dev]`. Git hooks and `./contrib/ci-check.sh` source **`contrib/build-env.sh`**, which resolves that path automatically. CI uses `./target` in the job workspace (GitHub `rust-cache`).
+
+| Mode | Who | How |
+|------|-----|-----|
+| **Shared** (default) | Most local dev | Nothing to do, or `cp wisp-target.example.toml wisp-target.toml` |
+| **Per worktree** | Parallel branches with isolated `target/` | `contrib/configure-dev-target.sh --worktree` or `wisp-target.toml` with `mode = "worktree"` |
+| **Explicit path** | Any | `export WISP_CARGO_TARGET_DIR=/path` |
+
+Run **`./contrib/configure-dev-target.sh`** once to create `wisp-target.toml` and point **rust-analyzer** at the same directory. Override the team default in gitignored **`wisp-target.toml`**; see **`wisp-target.example.toml`**.
 
 **Air-gapped or offline CI:** build and test without neural search (no model download):
 

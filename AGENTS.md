@@ -41,7 +41,18 @@ Run the same steps as GitHub Actions (see `.github/workflows/ci.yml`):
 Rust **1.88+** (see workspace `rust-version`). If `libsqlite3-sys` bindgen fails in a sandbox, use 
 `CARGO_TARGET_DIR=./target ./contrib/ci-check.sh`.
 
-Agents: **do not push** until `ci-check.sh` passes locally (especially `cargo fmt --all -- --check`). Contributors may install `./contrib/install-git-hooks.sh` (`pre-commit` = fmt, `pre-push` = `ci-check.sh`).
+### Build caching (why it still feels like “full rebuilds”)
+
+| Lane | When | What recompiles |
+|------|------|------------------|
+| **dev + default features** | `cargo test`, `cargo build`, IDE | Incremental under shared `CARGO_TARGET_DIR` (default `~/.cache/wisp/target`) |
+| **dev + `--no-default-features`** | second `ci-check` test pass | `wisp-engine` without `semantic` — separate graph (no onnx) |
+| **release** | `ci-check` release `wisp-cli` builds | `target/release/` under the same root — full release compile |
+| **clippy** | after `cargo test --no-run` | Reuses deps; only re-checks with Clippy |
+
+**Target layout:** `[workspace.metadata.wisp-dev]` in `Cargo.toml` defaults to **`target = "shared"`**. Hooks/`ci-check` source **`contrib/build-env.sh`** → **`contrib/scripts/resolve-cargo-target-dir.py`**. Per-clone override: gitignored **`wisp-target.toml`** (`wisp-target.example.toml`). Per-worktree `target/`: `contrib/configure-dev-target.sh --worktree`. CI/`GITHUB_ACTIONS` always uses **`$REPO/target`**. IDE: run **`configure-dev-target.sh`** or set `rust-analyzer.cargo.extraEnv.CARGO_TARGET_DIR`. Optional: **`sccache`** + `RUSTC_WRAPPER=sccache`.
+
+Agents: **do not push** until `ci-check.sh` passes locally (especially `cargo fmt --all -- --check` and `./contrib/coderabbit-check.sh`). Contributors may install `./contrib/install-git-hooks.sh` (`pre-commit` = fmt + staged coderabbit checks, `pre-push` = `ci-check.sh`).
 
 ## TDD contract
 

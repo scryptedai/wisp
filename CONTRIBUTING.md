@@ -77,7 +77,7 @@ git worktree add ../wisp-feature-b -b fix/other origin/main
 
 Rules of thumb:
 
-- One worktree directory per branch; build artifacts live in each tree’s `target/` (or set `CARGO_TARGET_DIR` to a shared path if you prefer).
+- One worktree directory per branch. **Default:** all worktrees share one Cargo cache (`~/.cache/wisp/target`); see [README — Cargo target directory](README.md#cargo-target-directory-shared-vs-worktree). **Opt-in per-worktree `target/`:** `contrib/configure-dev-target.sh --worktree`.
 - Remove when done: `git worktree remove ../wisp-feature-a` (after merge or abandon).
 - **`wisp worktree`** in the product is unrelated — it manages OKF bundle checkouts, not this source repo.
 
@@ -94,7 +94,9 @@ Inspired by [Git’s patch submission](https://git-scm.com/docs/SubmittingPatche
    ./contrib/ci-check.sh
    ```
 
-   Optional git hooks (fmt on commit, full CI on push):
+   CodeRabbit-style gate (also in CI): `./contrib/coderabbit-check.sh` — present-tense user docs and `///` on new pub items in your diff (80% threshold; see `.coderabbit.yaml`).
+
+   Optional git hooks (fmt + doc lint on commit, full CI on push):
 
    ```sh
    ./contrib/install-git-hooks.sh

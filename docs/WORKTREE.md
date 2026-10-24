@@ -11,7 +11,7 @@ After any successful commit (`record`, `headless` / `apply`, merge replay), wisp
 
 `checkout::publish_ref_delta` renders **only** dirty paths from hot. For headless commits it skips files with **unrecorded edits** (hash mismatch in `checkout.idx`). After `record` or merge replay, the publish set **reconciles** those paths from hot because the commit incorporated disk state.
 
-Full-tree render remains for explicit operations: `wisp checkout`, `wisp switch`, erase recovery, and `schedule_materialize_full` after merge when the primary ref matches.
+Full-tree render runs for `wisp checkout`, `wisp switch`, erase recovery, and `schedule_materialize_full` after merge when the primary ref matches.
 
 ## Async drain (manifest `[materialize]`)
 

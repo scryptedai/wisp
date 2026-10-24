@@ -794,12 +794,30 @@ mod erase_cause_tests {
     use crate::commit::{CommitRequest, PlannedOp};
     use crate::repo::{Repository, Unlock, MAIN_REF};
     use wisp_model::{ChangeId, Op, Reason, ScopeId, Target};
-    use wisp_store::Ledger;
+    use wisp_store::{Ledger, Tombstone};
 
     fn write(root: &std::path::Path, rel: &str, text: &str) {
         let p = root.join(rel);
         std::fs::create_dir_all(p.parent().unwrap()).unwrap();
         std::fs::write(p, text).unwrap();
+    }
+
+    fn insert_erase_tombstone(repo: &mut Repository, scope: ScopeId, erase_change: ChangeId) {
+        let tx = repo.ledger.begin_immediate().unwrap();
+        Ledger::insert_tombstone(
+            &tx,
+            &Tombstone {
+                erase_change,
+                target: Target::Erase {
+                    scopes: vec![scope],
+                },
+                scopes: vec![scope],
+                reason: Reason::Policy,
+                flagged: vec![],
+            },
+        )
+        .unwrap();
+        tx.commit().unwrap();
     }
 
     fn erase_change_id(repo: &mut Repository, scope: ScopeId) -> ChangeId {
@@ -871,8 +889,42 @@ mod erase_cause_tests {
             seq(newer) > seq(older),
             "second erase must land on a later ledger seq"
         );
+        insert_erase_tombstone(&mut repo, scope_ids[0], older);
+        insert_erase_tombstone(&mut repo, scope_ids[1], newer);
         let pending = vec![scope_ids[0], scope_ids[1]];
         let picked = erase_cause_for_pending(repo.ledger.conn(), &pending).unwrap();
         assert_eq!(picked, newer);
+    }
+
+    #[test]
+    fn erase_cause_for_pending_without_tombstone_uses_erase_change() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().join("bundle");
+        write(&root, "doc.md", "---\ntype: Doc\n---\n## A\n\none\n");
+        Repository::init(&root, "0.2", &Unlock::default()).unwrap();
+        let mut repo = Repository::open(&root, &Unlock::default()).unwrap();
+        crate::record::record(
+            &mut repo,
+            &crate::record::RecordOptions {
+                actor: Some("human:test".into()),
+                message: Some("init".into()),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        let text = std::fs::read_to_string(root.join("doc.md")).unwrap();
+        let parsed = wisp_parse::parse_file(&text);
+        let scope = match &parsed.sections().get(1).and_then(|s| s.anchor.as_ref()) {
+            Some(wisp_parse::Anchor::Valid(id)) => {
+                Ledger::scope_of_section(repo.ledger.conn(), *id)
+                    .unwrap()
+                    .unwrap()
+                    .id
+            }
+            _ => panic!("anchor"),
+        };
+        let ch = erase_change_id(&mut repo, scope);
+        let picked = erase_cause_for_pending(repo.ledger.conn(), &[scope]).unwrap();
+        assert_eq!(picked, ch);
     }
 }

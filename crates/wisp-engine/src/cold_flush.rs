@@ -27,6 +27,7 @@ enum Command {
     Shutdown,
 }
 
+/// Background thread that flushes ledger `staged_payloads` to cold files.
 pub struct ColdFlushQueue {
     tx: Sender<Command>,
     join: Mutex<Option<JoinHandle<()>>>,

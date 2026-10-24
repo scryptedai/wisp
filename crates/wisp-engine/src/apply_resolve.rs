@@ -10,10 +10,11 @@ use wisp_store::Hot;
 
 /// Policy for [`apply_with_resolve`].
 #[derive(Clone, Debug)]
+/// Retry budget for [`apply_with_resolve`] (`wisp apply --resolve`).
 pub struct ApplyResolvePolicy {
     /// Total apply attempts (first try counts).
     pub max_attempts: u32,
-    /// Sleep after a conflict round (ms); 0 for tests.
+    /// Base sleep after exit 3 (ms); jittered in the loop. `from_manifest` sets a small default.
     pub conflict_sleep_ms: u64,
     /// Sleep after a retryable (exit 7) failure once commit retries are exhausted (ms).
     pub retryable_sleep_ms: u64,

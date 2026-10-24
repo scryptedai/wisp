@@ -27,9 +27,18 @@ jobs:
           sudo apt-get install -y -qq mandoc
           mandoc -T lint -Wall contrib/man/wisp.1
       - run: cargo fmt --all -- --check
+      - name: coderabbit-style checks (docs + pub rustdoc on diff)
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            git fetch origin "${{ github.base_ref }}" --depth=1
+            ./contrib/coderabbit-check.sh --base "origin/${{ github.base_ref }}"
+          else
+            git fetch origin main --depth=1 || true
+            ./contrib/coderabbit-check.sh --base origin/main
+          fi
+      - run: cargo test --workspace --no-run
       - run: cargo clippy --all-targets -- -D warnings -A clippy::type_complexity -A clippy::too_many_arguments -A clippy::manual_div_ceil -A clippy::collapsible_match -A clippy::redundant_closure -A clippy::unnecessary_get_then_check -A clippy::unnecessary_unwrap
       - run: cargo test --workspace
-      - run: cargo test -p wisp-invariants
         env:
           FASTEMBED_CACHE_DIR: ${{ runner.temp }}/fastembed-cache
       - run: cargo test -p wisp-invariants --no-default-features

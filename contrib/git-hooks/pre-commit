@@ -3,5 +3,7 @@
 set -euo pipefail
 ROOT="$(git rev-parse --show-toplevel)"
 cd "$ROOT"
-export CARGO_TARGET_DIR="$ROOT/target"
+# shellcheck source=../build-env.sh
+source "$ROOT/contrib/build-env.sh"
 cargo fmt --all -- --check
+"$ROOT/contrib/coderabbit-check.sh" --staged

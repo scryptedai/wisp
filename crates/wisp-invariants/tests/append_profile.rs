@@ -67,6 +67,7 @@ fn apply_update(
 }
 
 #[test]
+#[ignore = "manual profiling harness; not part of routine CI (async materialize — no worktree.write_tree phase)"]
 fn append_profile_battery_error_three() {
     let cat = catalog();
     let spec = cat.bundle("battery-error-three").expect("bundle");

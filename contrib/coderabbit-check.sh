@@ -3,6 +3,9 @@
 # Invoked from ci-check.sh and optionally pre-commit (--staged).
 set -euo pipefail
 
+export PYTHONUTF8=1
+export PYTHONIOENCODING=utf-8
+
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 

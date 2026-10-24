@@ -27,6 +27,18 @@ PUB_TYPE = re.compile(
 EXEMPT_BASENAMES = frozenset({"help_text.rs", "cli.rs"})
 
 
+def _git_run(cmd: list[str], *, check: bool = True) -> subprocess.CompletedProcess[str]:
+    """Run git; always decode stdout/stderr as UTF-8 (Windows defaults to cp1252)."""
+    return subprocess.run(
+        cmd,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        check=check,
+    )
+
+
 def is_doc_line(line: str) -> bool:
     s = line.strip()
     return s.startswith("///") or s.startswith("//!")
@@ -91,11 +103,12 @@ def git_diff_added_lines(base: str | None, staged: bool) -> dict[Path, set[int]]
         cmd = ["git", "diff", f"{base}...HEAD", "-U0", "--diff-filter=ACMR"]
     else:
         cmd = ["git", "diff", "HEAD", "-U0", "--diff-filter=ACMR"]
-    out = subprocess.run(cmd, capture_output=True, text=True, check=True)
+    out = _git_run(cmd)
+    stdout = out.stdout or ""
     added: dict[Path, set[int]] = {}
     current: Path | None = None
     new_line = 0
-    for raw in out.stdout.splitlines():
+    for raw in stdout.splitlines():
         if raw.startswith("+++ b/"):
             current = Path(raw[6:])
             added.setdefault(current, set())
@@ -120,11 +133,7 @@ def resolve_base(explicit: str | None) -> str | None:
     if explicit:
         return explicit
     for candidate in ("origin/main", "main"):
-        r = subprocess.run(
-            ["git", "rev-parse", "--verify", candidate],
-            capture_output=True,
-            text=True,
-        )
+        r = _git_run(["git", "rev-parse", "--verify", candidate], check=False)
         if r.returncode == 0:
             return candidate
     return None
@@ -158,10 +167,9 @@ def main() -> int:
         added_by_file = git_diff_added_lines(base, args.staged)
     except subprocess.CalledProcessError:
         if base and not args.staged:
-            subprocess.run(
+            _git_run(
                 ["git", "fetch", "origin", base.removeprefix("origin/")],
-                capture_output=True,
-                text=True,
+                check=False,
             )
             try:
                 added_by_file = git_diff_added_lines(base, args.staged)

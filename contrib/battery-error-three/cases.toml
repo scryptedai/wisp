@@ -125,3 +125,80 @@ message = "S1 triple r5"
 content_alpha = "Alpha r5 — lane closed clean.\n"
 content_beta = "Beta r5 — lane closed clean.\n"
 content_gamma = "Gamma r5 — lane closed clean.\n"
+
+# --- Phase 4: blind append_section (delta, no base_version) ---
+
+[[phase]]
+id = "S1-blind-append-five"
+kind = "blind_append_sequential"
+actor = "human:calibrator/1"
+section = "Frontier"
+
+[[phase.round]]
+n = 1
+message = "blind r1"
+fragment = "Blind append line 1.\n"
+
+[[phase.round]]
+n = 2
+message = "blind r2"
+fragment = "Blind append line 2.\n"
+
+[[phase.round]]
+n = 3
+message = "blind r3"
+fragment = "Blind append line 3.\n"
+
+[[phase.round]]
+n = 4
+message = "blind r4"
+fragment = "Blind append line 4.\n"
+
+[[phase.round]]
+n = 5
+message = "blind r5"
+fragment = "Blind append line 5.\n"
+
+# --- Phase 5: two actors blind-append same section (no exit 3) ---
+
+[[phase]]
+id = "S1-blind-append-dual"
+kind = "blind_append_dual"
+section = "Frontier"
+actor_a = "loq-explorer-1/1"
+actor_b = "loq-explorer-2/1"
+
+[[phase.round]]
+n = 1
+message_a = "dual blind a1"
+message_b = "dual blind b1"
+fragment_a = "Dual blind — Explorer-1 line.\n"
+fragment_b = "Dual blind — Explorer-2 line.\n"
+
+[[phase.round]]
+n = 2
+message_a = "dual blind a2"
+message_b = "dual blind b2"
+fragment_a = "Explorer-1 second line.\n"
+fragment_b = "Explorer-2 second line.\n"
+
+[[phase.round]]
+n = 3
+message_a = "dual blind a3"
+message_b = "dual blind b3"
+fragment_a = "Explorer-1 third line.\n"
+fragment_b = "Explorer-2 third line.\n"
+
+[[phase.round]]
+n = 4
+message_a = "dual blind a4"
+message_b = "dual blind b4"
+fragment_a = "Explorer-1 fourth line.\n"
+fragment_b = "Explorer-2 fourth line.\n"
+
+[[phase.round]]
+n = 5
+message_a = "dual blind a5"
+message_b = "dual blind b5"
+fragment_a = "Explorer-1 fifth line.\n"
+fragment_b = "Explorer-2 fifth line.\n"

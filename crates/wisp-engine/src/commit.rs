@@ -989,6 +989,12 @@ fn content_of(op: Op, pt: &[u8]) -> Value {
                 Err(_) => json!(String::from_utf8_lossy(pt)),
             }
         }
+        Op::AppendSection | Op::PrependSection => {
+            match crate::payloads::SectionFragment::decode(pt) {
+                Ok(f) => json!(f.content),
+                Err(_) => json!(String::from_utf8_lossy(pt)),
+            }
+        }
         Op::SetKey | Op::UnsetKey => match crate::payloads::decode_frontmatter(pt) {
             Ok(f) => json!(f.raw),
             Err(_) => json!(String::from_utf8_lossy(pt)),

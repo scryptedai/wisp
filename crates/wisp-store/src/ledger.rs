@@ -1589,6 +1589,7 @@ fn payload_kind_from_str(s: &str) -> PayloadKind {
         "section_order" => PayloadKind::SectionOrder,
         "status" => PayloadKind::Status,
         "group_member" => PayloadKind::GroupMember,
+        "section_fragment" => PayloadKind::SectionFragment,
         _ => PayloadKind::Message,
     }
 }

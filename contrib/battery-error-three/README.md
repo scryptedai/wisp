@@ -2,6 +2,8 @@
 
 Timing and outcome probes for **append**, **conflict detection** (exit 3), and **resolution** (successful retry or `wisp merge`), in milliseconds.
 
+Agent contract (when to use `update_section` vs `append_section`, barriers): [`docs/AGENT-WRITERS.md`](../../docs/AGENT-WRITERS.md).
+
 ## Section 1 (this battery)
 
 Synthetic bundle `battery-error-three` / `notes/swarm-metrics.md`:
@@ -11,6 +13,8 @@ Synthetic bundle `battery-error-three` / `notes/swarm-metrics.md`:
 | **S1-single-five** | 5 sequential updates, one actor, **Frontier** | Baseline append latency (no conflict) |
 | **S1-double-five** | 5 rounds: two actors, same **Frontier** section; B uses stale base after A | Exit **3** detection, then base refresh (resolution) |
 | **S1-triple-five** | 5 rounds: three actors, **Lane-Alpha / Beta / Gamma** on separate branches, merge to `main` | Independent information → **merge** (no ours/theirs) |
+| **S1-blind-append-five** | 5 sequential **`append_section`** deltas on **Frontier** | Blind append latency (no `base_version`) |
+| **S1-blind-append-dual** | 5 rounds: two actors **`append_section`** same section | No exit 3; both lines retained |
 
 Behavior tree and injected paragraph text: **`cases.toml`** (single source of truth).
 

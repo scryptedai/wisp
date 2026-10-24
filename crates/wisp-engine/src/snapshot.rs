@@ -12,13 +12,21 @@ use wisp_store::Ledger;
 pub fn is_section_version(op: Op) -> bool {
     matches!(
         op,
-        Op::AddSection | Op::UpdateSection | Op::Split | Op::MoveSection
+        Op::AddSection
+            | Op::UpdateSection
+            | Op::AppendSection
+            | Op::PrependSection
+            | Op::Split
+            | Op::MoveSection
     )
 }
 
 /// Ops that write section content (used by the missing-inputs warning).
 pub fn writes_section_content(op: Op) -> bool {
-    matches!(op, Op::AddSection | Op::UpdateSection | Op::Split)
+    matches!(
+        op,
+        Op::AddSection | Op::UpdateSection | Op::AppendSection | Op::PrependSection | Op::Split
+    )
 }
 
 /// Ops that create a new version of a concept's frontmatter, treated as one unit.

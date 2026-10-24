@@ -56,6 +56,16 @@ fn scope_change_chains(
     Ok(map)
 }
 
+fn patch_only_chain(conn: &Connection, chain: &[ChangeId]) -> bool {
+    !chain.is_empty()
+        && chain.iter().all(|id| {
+            Ledger::get_change(conn, *id)
+                .ok()
+                .flatten()
+                .is_some_and(|c| matches!(c.op, Op::AppendSection | Op::PrependSection))
+        })
+}
+
 fn tip_change(chain: &[ChangeId]) -> Option<ChangeId> {
     chain.last().copied()
 }
@@ -171,6 +181,9 @@ pub fn analyze_divergence(
                     }));
                     continue;
                 }
+                if patch_only_chain(conn, into_chain) && patch_only_chain(conn, source_chain) {
+                    continue;
+                }
                 conflicts.push(json!({
                     "type": "scope_conflict",
                     "scope": format!("{key:?}"),
@@ -249,7 +262,14 @@ fn section_edits_by_concept(
     let mut m = HashMap::new();
     for cs in ids {
         for c in Ledger::changes_of(conn, *cs)? {
-            if matches!(c.op, Op::UpdateSection | Op::AddSection | Op::Split) {
+            if matches!(
+                c.op,
+                Op::UpdateSection
+                    | Op::AppendSection
+                    | Op::PrependSection
+                    | Op::AddSection
+                    | Op::Split
+            ) {
                 if let Target::Section { concept, .. } = c.target {
                     m.insert(concept, c.id);
                 }

@@ -145,6 +145,10 @@ pub fn cat(
                 let sb = SectionBody::decode(&pt)?;
                 json!({ "heading": sb.heading, "level": sb.level, "content": sb.body })
             }
+            Op::AppendSection | Op::PrependSection => {
+                let f = crate::payloads::SectionFragment::decode(&pt)?;
+                json!({ "content": f.content })
+            }
             _ => json!({ "content": String::from_utf8_lossy(&pt) }),
         };
         return Ok(
@@ -319,6 +323,42 @@ fn plan_op(repo: &mut Repository, ref_name: &str, o: &ApplyOp, le: &str) -> Resu
                     sections: m.clone(),
                 });
             }
+            Ok(p)
+        }
+        Op::AppendSection | Op::PrependSection => {
+            let spec = match o.section {
+                Some(s) => format!("{}#{}", o.path, s),
+                None => o.path.clone(),
+            };
+            let (c, section) = resolve_target(repo, ref_name, &spec)?;
+            let s = section
+                .ok_or_else(|| WispError::usage("append/prepend requires <path>#<section>"))?;
+            let st = Hot::section(repo.hot(ref_name)?.conn(), s)?
+                .ok_or_else(|| WispError::not_found("section"))?;
+            let content = o
+                .content
+                .clone()
+                .ok_or_else(|| WispError::usage("append/prepend requires --content"))?;
+            let frag = crate::payloads::SectionFragment {
+                content: ensure_trailing_newline(content, le),
+            };
+            let mut p = PlannedOp::new(
+                op,
+                Target::Section {
+                    concept: c.concept,
+                    section: s,
+                },
+                st.scope,
+            )
+            .with_payload(PayloadKind::SectionFragment, frag.encode())
+            .with_precondition(Precondition::Any)
+            .with_path(format!("{}.md", c.path));
+            p.policy = PolicyFacts {
+                concept_type: c.type_.clone(),
+                section_heading: Some(st.heading.clone()),
+                ..Default::default()
+            };
+            p.note = o.note.clone();
             Ok(p)
         }
         Op::RemoveSection => {

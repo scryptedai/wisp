@@ -51,6 +51,9 @@ struct PhaseRound {
     content_alpha: Option<String>,
     content_beta: Option<String>,
     content_gamma: Option<String>,
+    fragment: Option<String>,
+    fragment_a: Option<String>,
+    fragment_b: Option<String>,
 }
 
 struct MetricRow {
@@ -98,6 +101,21 @@ fn timed_update(
         message,
         vec![],
     );
+    (r, t0.elapsed())
+}
+
+fn timed_patch(
+    repo: &mut Repository,
+    ref_name: &str,
+    actor: &str,
+    path: &str,
+    section: wisp_model::SectionId,
+    op: &str,
+    fragment: &str,
+    message: &str,
+) -> (Result<serde_json::Value, WispError>, Duration) {
+    let t0 = Instant::now();
+    let r = patch_section_ref(repo, ref_name, actor, path, section, op, fragment, message);
     (r, t0.elapsed())
 }
 
@@ -250,6 +268,91 @@ fn battery_error_three_section_one() {
                         conflict_detect_ms: None,
                         resolution_ms: Some(ms(t_fix)),
                         note: "fresh base retry".into(),
+                    });
+                }
+            }
+            "blind_append_sequential" => {
+                let actor = phase.actor.as_deref().expect("actor");
+                let section_name = phase.section.as_deref().expect("section");
+                let (_dir, mut repo) = fresh_battery_repo();
+                let (sec, _) = section_at(&mut repo, &concept_path, section_name);
+                for round in &phase.round {
+                    let fragment = round.fragment.as_deref().expect("fragment");
+                    let message = round.message.as_deref().expect("message");
+                    let (res, elapsed) = timed_patch(
+                        &mut repo,
+                        MAIN_REF,
+                        actor,
+                        &concept_path,
+                        sec,
+                        "append_section",
+                        fragment,
+                        message,
+                    );
+                    res.expect("blind append");
+                    rows.push(MetricRow {
+                        phase: phase.id.clone(),
+                        round: round.n,
+                        step: "append_section".into(),
+                        append_ms: Some(ms(elapsed)),
+                        conflict_detect_ms: None,
+                        resolution_ms: None,
+                        note: "blind append_section".into(),
+                    });
+                }
+            }
+            "blind_append_dual" => {
+                let section_name = phase.section.as_deref().expect("section");
+                let actor_a = phase.actor_a.as_deref().expect("actor_a");
+                let actor_b = phase.actor_b.as_deref().expect("actor_b");
+                for round in &phase.round {
+                    let (_dir, mut repo) = fresh_battery_repo();
+                    let (sec, _) = section_at(&mut repo, &concept_path, section_name);
+                    let frag_a = round.fragment_a.as_deref().expect("fragment_a");
+                    let frag_b = round.fragment_b.as_deref().expect("fragment_b");
+                    let msg_a = round.message_a.as_deref().expect("message_a");
+                    let msg_b = round.message_b.as_deref().expect("message_b");
+
+                    let (res_a, t_a) = timed_patch(
+                        &mut repo,
+                        MAIN_REF,
+                        actor_a,
+                        &concept_path,
+                        sec,
+                        "append_section",
+                        frag_a,
+                        msg_a,
+                    );
+                    res_a.expect("actor_a blind append");
+                    rows.push(MetricRow {
+                        phase: phase.id.clone(),
+                        round: round.n,
+                        step: "append_a".into(),
+                        append_ms: Some(ms(t_a)),
+                        conflict_detect_ms: None,
+                        resolution_ms: None,
+                        note: "blind append explorer-1".into(),
+                    });
+
+                    let (res_b, t_b) = timed_patch(
+                        &mut repo,
+                        MAIN_REF,
+                        actor_b,
+                        &concept_path,
+                        sec,
+                        "append_section",
+                        frag_b,
+                        msg_b,
+                    );
+                    res_b.expect("actor_b blind append (no exit 3)");
+                    rows.push(MetricRow {
+                        phase: phase.id.clone(),
+                        round: round.n,
+                        step: "append_b".into(),
+                        append_ms: Some(ms(t_b)),
+                        conflict_detect_ms: None,
+                        resolution_ms: None,
+                        note: "blind append explorer-2".into(),
                     });
                 }
             }

@@ -116,6 +116,77 @@ pub fn update_section(
     )
 }
 
+#[allow(clippy::too_many_arguments)]
+pub fn patch_section_ref(
+    repo: &mut Repository,
+    ref_name: &str,
+    actor: &str,
+    path: &str,
+    section: SectionId,
+    op: &str,
+    fragment: &str,
+    message: &str,
+) -> Result<serde_json::Value, wisp_model::WispError> {
+    let op = ApplyOp {
+        op: op.into(),
+        path: format!("{path}.md"),
+        section: Some(section),
+        base_version: None,
+        heading: None,
+        level: None,
+        content: Some(fragment.to_string()),
+        after: None,
+        key: None,
+        value: None,
+        r#type: None,
+        frontmatter: None,
+        note: None,
+        split_from: None,
+        merged_from: None,
+        ..Default::default()
+    };
+    apply(
+        repo,
+        ApplyBatch {
+            r#ref: Some(ref_name.into()),
+            base: None,
+            actor: Some(actor.into()),
+            message: Some(message.into()),
+            ops: vec![op],
+            inputs: vec![],
+            assert: vec![],
+            assert_head: None,
+            inputs_complete: false,
+        },
+        None,
+    )
+}
+
+pub fn patch_section(
+    repo: &mut Repository,
+    actor: &str,
+    path: &str,
+    section: SectionId,
+    op: &str,
+    fragment: &str,
+    message: &str,
+) -> Result<serde_json::Value, wisp_model::WispError> {
+    patch_section_ref(repo, MAIN_REF, actor, path, section, op, fragment, message)
+}
+
+pub fn section_body(repo: &mut Repository, concept_path: &str, heading: &str) -> String {
+    let hot = repo.hot(MAIN_REF).unwrap();
+    let c = Hot::concept_by_path(hot.conn(), concept_path)
+        .unwrap()
+        .unwrap();
+    let s = Hot::sections_of(hot.conn(), c.concept)
+        .unwrap()
+        .into_iter()
+        .find(|s| s.heading == heading)
+        .unwrap();
+    s.body
+}
+
 pub fn rec(repo: &mut Repository, actor: &str, message: &str) -> wisp_engine::record::RecordResult {
     record(
         repo,

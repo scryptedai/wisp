@@ -26,6 +26,7 @@ Do not confuse:
 | `crates/wisp-sync`, `wisp-git`, `wisp-feed`, `wisp-sub-*`, `wisp-index` | M5–M8 modules |
 | `DECISIONS.md` | Spec deviations (required reading for behavior changes) |
 | `docs/SEARCH.md`, `docs/EXTENSIONS.md`, `docs/MERGE.md`, `docs/ERASE.md`, `docs/WORKTREE.md` | Search, extensions, merge, erasure, async worktree materialize |
+| `docs/AGENT-WRITERS.md` | Headless fleets: exit 3, append/prepend, materialize, batteries |
 | `docs/CONCURRENCY.md`, `docs/TRUST-BOUNDARY.md`, `docs/INVARIANTS.md`, `docs/GIT-INTEROP.md` | Writers, erasure/sync limits, §17 test manifest, Git export/import |
 
 ## Build and test (required before PR)
@@ -53,6 +54,10 @@ SPY desk narrative: `wisp-invariants/tests/spy_options_*.rs`, bundle `spy-option
 Search IR battery: edit **`contrib/search-battery/cases.toml` only** (Rust `search_battery.rs` and `run_battery.py` load it). See `contrib/search-battery/README.md`.
 
 Merge rule battery: edit **`contrib/merge-rules/cases.toml` only**; tests in `wisp-invariants/tests/merge_rules.rs`. See `contrib/merge-rules/README.md` and `docs/MERGE.md`.
+
+Error-three battery (timing + merge): edit **`contrib/battery-error-three/cases.toml` only**; runner `wisp-invariants/tests/battery_error_three.rs`. See `contrib/battery-error-three/README.md` and **`docs/AGENT-WRITERS.md`**.
+
+Exit-3 adversarial battery: edit **`contrib/battery-exit3-adversarial/cases.toml` only**; runner `wisp-invariants/tests/battery_exit3_adversarial.rs`. See `contrib/battery-exit3-adversarial/README.md`.
 
 ## Coding norms
 

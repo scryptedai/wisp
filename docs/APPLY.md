@@ -23,6 +23,21 @@
 }
 ```
 
+## Logging patches (`append_section` / `prepend_section`)
+
+For multi-agent **log lines** on an existing section, use delta ops instead of replacing the whole body:
+
+```json
+{ "op": "append_section", "path": "notes/swarm-metrics.md", "section": "01J…",
+  "content": "Explorer-1: queue depth 3.\n" }
+```
+
+- No `base_version` check (no exit 3 for a stale section version).
+- Payload is a **fragment** stitched onto the current hot body (newline-normalized).
+- Ref merge replays patch-only chains on the same section without a `scope_conflict` when both sides only used append/prepend since the base.
+
+Full **replace** edits remain `update_section` with `base_version` (default optimistic concurrency).
+
 ## Inputs
 
 An input names what a change was derived from: `concept` is a path (or concept id), `section` optionally narrows it to one section, and `at` optionally pins the **snapshot that was read** (a `ChangesetId`, such as `head` from `wisp cat --json`; not a section version). A pinned input is validated before commit: the changeset must exist and the section must exist at that snapshot. Without `at` the input is recorded unversioned; wisp never infers the snapshot from the head at commit time.

@@ -50,7 +50,7 @@ Deviations from the OKF store v1 design (ledger, parse, merge, sync, profiles), 
 ## §9 Record pipeline
 
 - Change detection records a SHA-256 of the bytes wisp last wrote in `checkout.idx`, so an mtime-only touch is not an edit and a concurrent rewrite is detected by content.
-- After a commit, `record` re-renders every tracked file from the hot tier (step 10) rather than splicing anchors into the edited file. Byte-level losslessness is preserved by the lossless entry and section storage; the cost is proportional to the bundle size, which is acceptable for v1 and noted for optimization.
+- **Delta materialize (async).** After a commit, wisp enqueues a **publish set** derived from the changeset and drains it on a manifest heartbeat (`[materialize]`, default `tick_ms = 250`). Only dirty concept paths, assets, and affected directory views are rendered from hot (`publish_ref_delta`); unrecorded edits on disk are not overwritten. `record` and `headless` share this path. Full-tree render is reserved for `checkout`, `switch`, erase recovery, and explicit barriers (`wisp materialize --wait`, sync/pack, `Repository::drop`). See `docs/WORKTREE.md`.
 - A working-tree advisory lock (`.wisp/worktree.lock`, a SQLite `BEGIN IMMEDIATE`) serializes tree rewrites across processes.
 
 ## §10.1 Keys

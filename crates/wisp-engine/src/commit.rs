@@ -451,6 +451,7 @@ fn commit_inner(repo: &mut Repository, req: CommitRequest) -> Result<CommitOutco
                     repo.notify_cold_flush();
                     Ok(())
                 })?;
+                repo.schedule_materialize(&req.ref_name, &out)?;
                 return Ok(out);
             }
             Err(e) if e.is_retryable() && attempt < retries => {

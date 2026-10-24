@@ -18,6 +18,7 @@ pub fn pack_includes_keys() -> bool {
 /// Write `.wisp/` cold tier (ledger db, payloads; keys only when `WISP_PACK_INCLUDE_KEYS=1`).
 pub fn write_cold_pack(repo: &mut Repository, dest: &Path) -> Result<()> {
     repo.flush_cold_payloads()?;
+    repo.flush_materialize()?;
     let wisp = &repo.wisp_dir;
     if let Some(parent) = dest.parent() {
         std::fs::create_dir_all(parent)?;

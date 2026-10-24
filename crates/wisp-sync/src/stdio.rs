@@ -309,7 +309,7 @@ mod tests {
             let mut repo = Repository::open(&server_root, &Unlock::default()).unwrap();
             let mut input = BufReader::new(server_rd);
             let mut output = BufWriter::new(server_wr);
-            let (session, transport) = protocol::server_handshake(&mut repo, &mut input).unwrap();
+            let (session, transport) = protocol::server_handshake(&repo, &mut input).unwrap();
             assert_eq!(transport, "cold_pack_pull");
             let RefSession::Pull(ref_name) = session else {
                 panic!("expected pull");

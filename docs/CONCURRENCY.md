@@ -11,7 +11,7 @@ This document matches [README.md](../README.md), [DECISIONS.md](../DECISIONS.md)
 ## What wisp does not guarantee
 
 - **Not lock-free:** the **ledger** uses SQLite with `BEGIN IMMEDIATE` on commit (`crates/wisp-store/src/ledger.rs`). Writers **serialize** at the database layer even when their logical edits do not conflict.
-- **Managed checkout rewrites:** `.wisp/worktree.lock` (SQLite advisory lock) serializes **full-tree re-renders** across processes after record/commit (`DECISIONS.md` §9).
+- **Managed checkout rewrites:** `.wisp/worktree.lock` (SQLite advisory lock) serializes **delta materialize** drains across processes (`docs/WORKTREE.md`, `DECISIONS.md` §9).
 - **Not a swarm database:** many agents hammering the **same ref** with ledger-heavy commits will **queue** on SQLite; use **branches/worktrees**, **disjoint sections**, or **batch/apply** patterns when throughput matters.
 
 ## Commit ordering (hot vs ledger)

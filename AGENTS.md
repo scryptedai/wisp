@@ -25,7 +25,7 @@ Do not confuse:
 | `crates/wisp-invariants` | Integration tests (CI gate) |
 | `crates/wisp-sync`, `wisp-git`, `wisp-feed`, `wisp-sub-*`, `wisp-index` | M5–M8 modules |
 | `DECISIONS.md` | Spec deviations (required reading for behavior changes) |
-| `docs/SEARCH.md`, `docs/EXTENSIONS.md`, `docs/MERGE.md`, `docs/ERASE.md` | Search, extensions, merge, erasure & managed checkouts |
+| `docs/SEARCH.md`, `docs/EXTENSIONS.md`, `docs/MERGE.md`, `docs/ERASE.md`, `docs/WORKTREE.md` | Search, extensions, merge, erasure, async worktree materialize |
 | `docs/CONCURRENCY.md`, `docs/TRUST-BOUNDARY.md`, `docs/INVARIANTS.md`, `docs/GIT-INTEROP.md` | Writers, erasure/sync limits, §17 test manifest, Git export/import |
 
 ## Build and test (required before PR)

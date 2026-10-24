@@ -20,6 +20,8 @@ pub struct Manifest {
     #[serde(default)]
     pub commit: CommitSection,
     #[serde(default)]
+    pub materialize: MaterializeSection,
+    #[serde(default)]
     pub render: RenderSection,
     #[serde(default)]
     pub config: ConfigSection,
@@ -73,6 +75,24 @@ impl Default for CommitSection {
         CommitSection {
             busy_timeout_ms: 5000,
             retries: 3,
+        }
+    }
+}
+
+/// Async hot → worktree materialize heartbeat (docs/WORKTREE.md).
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct MaterializeSection {
+    /// When true, commits enqueue publish work; when false, only explicit checkout/materialize run.
+    pub enabled: bool,
+    /// Heartbeat interval for the materialize drain thread (ms).
+    pub tick_ms: u64,
+}
+
+impl Default for MaterializeSection {
+    fn default() -> Self {
+        MaterializeSection {
+            enabled: true,
+            tick_ms: 250,
         }
     }
 }
@@ -310,6 +330,7 @@ impl Manifest {
             },
             identity: IdentitySection::default(),
             commit: CommitSection::default(),
+            materialize: MaterializeSection::default(),
             render: RenderSection::default(),
             config: ConfigSection::default(),
             codecs: CodecsSection::default(),

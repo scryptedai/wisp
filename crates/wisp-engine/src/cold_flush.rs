@@ -33,6 +33,15 @@ pub struct ColdFlushQueue {
 }
 
 impl ColdFlushQueue {
+    /// No background thread (worker `Repository` handles).
+    pub fn inactive() -> Self {
+        let (tx, _) = mpsc::channel();
+        Self {
+            tx,
+            join: Mutex::new(None),
+        }
+    }
+
     pub fn spawn(wisp_dir: PathBuf, busy_timeout_ms: u64) -> Self {
         let (tx, rx) = mpsc::channel();
         let join = thread::spawn(move || worker(wisp_dir, busy_timeout_ms, rx));

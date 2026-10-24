@@ -6,7 +6,6 @@ mod replay;
 pub use detect::{analyze_divergence, changes_same_commitment, DivergenceAnalysis, ScopeKey};
 pub use replay::ordered_changeset_ids;
 
-use crate::checkout;
 use crate::commit::record_merge;
 use crate::query;
 use crate::repo::Repository;
@@ -251,9 +250,8 @@ pub fn merge_refs(
 
 fn finish_merge_checkout(repo: &mut Repository, into: &str) -> Result<()> {
     if query::current_ref(repo) == into {
-        let root = repo.root.clone();
-        let idx = checkout::write_tree(repo, into, &root, false, false, true)?;
-        idx.save(&checkout::checkout_idx_path(repo, &root))?;
+        repo.schedule_materialize_full(into)?;
+        repo.flush_materialize()?;
     }
     Ok(())
 }

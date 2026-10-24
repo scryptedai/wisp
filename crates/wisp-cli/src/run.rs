@@ -352,6 +352,16 @@ pub fn run(cli: Cli) -> CliResult {
             let human = status_human(&s);
             Ok(Output::text(serde_json::to_value(&s)?, human))
         }
+        Command::Materialize { wait } => {
+            let mut repo = open(&cli)?;
+            if *wait {
+                repo.flush_materialize()?;
+            }
+            Ok(Output::json(json!({
+                "materialize": repo.materialize_status(),
+                "wait": wait,
+            })))
+        }
         Command::Diff {
             path,
             explain,

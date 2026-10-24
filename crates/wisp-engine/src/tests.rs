@@ -38,8 +38,12 @@ fn open(root: &Path) -> Repository {
     Repository::open(root, &Unlock::default()).unwrap()
 }
 
+fn sync_disk(repo: &mut Repository) {
+    repo.flush_materialize().unwrap();
+}
+
 fn rec(repo: &mut Repository, actor: &str) -> crate::record::RecordResult {
-    record(
+    let r = record(
         repo,
         &RecordOptions {
             actor: Some(actor.into()),
@@ -47,7 +51,9 @@ fn rec(repo: &mut Repository, actor: &str) -> crate::record::RecordResult {
             ..Default::default()
         },
     )
-    .unwrap()
+    .unwrap();
+    sync_disk(repo);
+    r
 }
 
 #[test]
@@ -284,6 +290,7 @@ fn i16_i17_concurrent_headless_writers_disjoint_sections() {
     let total: i32 = handles.into_iter().map(|h| h.join().unwrap()).sum();
     assert_eq!(total, 40);
     let mut repo = open(&root);
+    sync_disk(&mut repo);
     assert_eq!(Ledger::max_seq(repo.ledger.conn()).unwrap(), 41); // 1 record + 40 headless
     {
         let hot = repo.hot(MAIN_REF).unwrap();
@@ -357,6 +364,7 @@ fn i16_i17_concurrent_headless_writers_disjoint_sections() {
         op2,
     )
     .unwrap();
+    sync_disk(&mut repo);
     // I19: the working tree was refreshed (no unrecorded edits), so the file shows the headless writes.
     let text = read(&f.root, "doc.md");
     assert!(text.contains("synthesized"), "{text}");
@@ -677,6 +685,7 @@ fn retract_restore_revert_and_policies() {
         },
     )
     .unwrap();
+    sync_disk(&mut repo);
     let t = read(&f.root, "calc/revenue.md");
     assert!(t.contains("status: draft"), "{t}");
     assert!(t.contains("verified:"), "{t}");
@@ -948,6 +957,7 @@ fn assets_and_nonconformant_and_generated_edits() {
         },
     )
     .unwrap();
+    sync_disk(&mut repo);
     assert!(r.changeset.is_some());
     assert!(!read(&f.root, "index.md").contains("hand edited"));
     // Missing asset → retract.

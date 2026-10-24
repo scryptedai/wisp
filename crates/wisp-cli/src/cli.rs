@@ -89,6 +89,11 @@ pub enum Command {
     },
     /// Changed, new, missing, and non-conformant files; pending erasures
     Status,
+    /// Flush async worktree materialize queue (optional barrier before reading files on disk)
+    Materialize {
+        #[arg(long)]
+        wait: bool,
+    },
     /// Section-level diff of the working tree against the ref
     Diff {
         path: Option<String>,
@@ -634,6 +639,7 @@ impl Command {
             Command::Init { .. } => "init",
             Command::Import { .. } => "import",
             Command::Status => "status",
+            Command::Materialize { .. } => "materialize",
             Command::Diff { .. } => "diff",
             Command::Record { .. } => "record",
             Command::Checkout { .. } => "checkout",

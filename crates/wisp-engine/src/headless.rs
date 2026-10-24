@@ -672,10 +672,6 @@ fn apply_inner(
     }
     req.ops = ops;
     let out = crate::timing::phase("apply.commit", || commit(repo, req))?;
-    // Effect on working trees: rewrite files whose on-disk content still matches their base (§11.3).
-    let rewritten = crate::timing::phase("apply.refresh_worktree", || {
-        refresh_worktree_after_headless(repo, &ref_name)
-    })?;
     let versions: Vec<Value> = out
         .changes
         .iter()
@@ -697,7 +693,6 @@ fn apply_inner(
         "seq": out.seq,
         "head": out.changeset.to_string(),
         "changes": versions,
-        "worktree_files_rewritten": rewritten,
     });
     if let Some(w) = missing_inputs_warning(&actor, &out.changes) {
         result["warnings"] = json!([w]);

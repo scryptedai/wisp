@@ -1,7 +1,9 @@
 //! Repository handle: manifest, ledger, keystore, hot tiers, payload helpers.
 
 use crate::cold_flush::ColdFlushQueue;
+use crate::commit::CommitOutcome;
 use crate::manifest::Manifest;
+use crate::materialize::{MaterializeQueue, MaterializeStatus};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use wisp_crypto::{Keystore, MasterKey, ScopeKey};
@@ -77,6 +79,7 @@ pub struct Repository {
     pub profile: Box<dyn Profile>,
     pub(crate) hots: HashMap<String, Hot>,
     cold_flush: ColdFlushQueue,
+    materialize: Option<MaterializeQueue>,
 }
 
 impl Repository {
@@ -146,6 +149,7 @@ impl Repository {
             )?;
         }
         let busy = manifest.commit.busy_timeout_ms;
+        let tick = manifest.materialize.tick_ms;
         let repo = Repository {
             root: root.to_path_buf(),
             wisp_dir: wisp_dir.clone(),
@@ -155,11 +159,25 @@ impl Repository {
             profile,
             hots: HashMap::new(),
             cold_flush: ColdFlushQueue::spawn(wisp_dir, busy),
+            materialize: Some(MaterializeQueue::spawn(
+                root.to_path_buf(),
+                unlock.clone(),
+                tick,
+            )),
         };
         Ok(repo)
     }
 
+    /// Background materialize worker: no nested drain threads.
+    pub(crate) fn open_worker(root: &Path, unlock: &Unlock) -> Result<Self> {
+        Self::open_inner(root, unlock, true)
+    }
+
     pub fn open(root: &Path, unlock: &Unlock) -> Result<Self> {
+        Self::open_inner(root, unlock, false)
+    }
+
+    fn open_inner(root: &Path, unlock: &Unlock, worker: bool) -> Result<Self> {
         let wisp_dir = root.join(WISP_DIR);
         if !wisp_dir.is_dir() {
             return Err(WispError::not_found(format!(
@@ -189,6 +207,7 @@ impl Repository {
         let keystore = Keystore::open(&wisp_dir.join("keys/keystore.db"), master)?;
         let ledger = Ledger::open(&wisp_dir, manifest.commit.busy_timeout_ms)?;
         let busy = manifest.commit.busy_timeout_ms;
+        let tick = manifest.materialize.tick_ms;
         let mut repo = Repository {
             root: root.to_path_buf(),
             wisp_dir: wisp_dir.clone(),
@@ -197,12 +216,75 @@ impl Repository {
             keystore,
             profile,
             hots: HashMap::new(),
-            cold_flush: ColdFlushQueue::spawn(wisp_dir, busy),
+            cold_flush: if worker {
+                ColdFlushQueue::inactive()
+            } else {
+                ColdFlushQueue::spawn(wisp_dir.clone(), busy)
+            },
+            materialize: if worker {
+                None
+            } else {
+                Some(MaterializeQueue::spawn(
+                    root.to_path_buf(),
+                    unlock.clone(),
+                    tick,
+                ))
+            },
         };
         // Recovery, before any other operation (§10.2 step 5, §10.5 Recovery).
         repo.ledger.flush_staged()?;
         crate::erase::recover(&mut repo)?;
         Ok(repo)
+    }
+
+    pub fn materialize_status(&self) -> MaterializeStatus {
+        self.materialize
+            .as_ref()
+            .map(MaterializeQueue::status)
+            .unwrap_or_default()
+    }
+
+    pub fn flush_materialize(&mut self) -> Result<()> {
+        if let Some(m) = self.materialize.take() {
+            m.drain_blocking(self)?;
+            self.materialize = Some(m);
+        }
+        Ok(())
+    }
+
+    pub fn schedule_materialize(&mut self, ref_name: &str, outcome: &CommitOutcome) -> Result<()> {
+        if !self.manifest.materialize.enabled {
+            return Ok(());
+        }
+        let mut dirty = crate::publish::dirty_from_changes(self, ref_name, &outcome.changes)?;
+        if dirty.is_empty() {
+            return Ok(());
+        }
+        dirty.reconcile = true;
+        let roots = crate::publish::managed_tree_roots(self, ref_name)?;
+        if let Some(m) = &self.materialize {
+            for root in roots {
+                m.push_job(root, ref_name, dirty.clone());
+            }
+            m.wake();
+        }
+        Ok(())
+    }
+
+    pub fn schedule_materialize_full(&mut self, ref_name: &str) -> Result<()> {
+        if !self.manifest.materialize.enabled {
+            return Ok(());
+        }
+        let mut dirty = crate::publish::DirtySet::all_for_ref(self, ref_name)?;
+        dirty.reconcile = true;
+        let roots = crate::publish::managed_tree_roots(self, ref_name)?;
+        if let Some(m) = &self.materialize {
+            for root in roots {
+                m.push_job(root, ref_name, dirty.clone());
+            }
+            m.wake();
+        }
+        Ok(())
     }
 
     /// Stage wake: drain staged payloads to disk on a background thread (§10.2 step 3).
@@ -432,6 +514,7 @@ impl Repository {
     pub fn relinquish_for_cold_overwrite(repo: &mut Repository) -> (PathBuf, PathBuf) {
         repo.close_all_hots();
         let _ = repo.flush_cold_payloads();
+        let _ = repo.flush_materialize();
         let root = repo.root.clone();
         let wisp_dir = repo.wisp_dir.clone();
         unsafe {
@@ -462,6 +545,9 @@ impl Repository {
 
 impl Drop for Repository {
     fn drop(&mut self) {
+        if let Some(mut m) = self.materialize.take() {
+            let _ = m.finish(self);
+        }
         let _ = self.cold_flush.shutdown(&self.ledger);
     }
 }

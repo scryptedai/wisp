@@ -3,7 +3,9 @@
 
 use crate::headless::{ApplyBatch, ApplyOp};
 use crate::manifest::CommitQueueSection;
-use crate::repo::{Repository, Unlock, MAIN_REF};
+use crate::repo::{Repository, Unlock};
+#[cfg(unix)]
+use crate::repo::MAIN_REF;
 use serde_json::{json, Value};
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};

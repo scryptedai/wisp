@@ -463,10 +463,15 @@ pub fn submit_via_socket(
         .map_err(|e| WispError::internal(format!("commit.sock read: {e}")))?;
     let v: Value = serde_json::from_str(&line)
         .map_err(|e| WispError::internal(format!("commit.sock response: {e}")))?;
+    parse_commit_socket_response(v)
+}
+
+/// Map a commit.sock line object to apply output or a typed [`WispError`].
+pub(crate) fn parse_commit_socket_response(v: Value) -> Result<Value, WispError> {
     if v.get("ok").and_then(|x| x.as_bool()) == Some(true) {
         Ok(v.get("data").cloned().unwrap_or(Value::Null))
     } else if let Some(err) = v.get("error") {
-        serde_json::from_value(err.clone()).map_err(|e| WispError::internal(format!("{e}")))
+        Err(WispError::from_json_value(err)?)
     } else {
         Err(WispError::internal("commit.sock: malformed response"))
     }
@@ -482,4 +487,35 @@ pub fn submit_via_socket(
     Err(WispError::usage(
         "commit queue socket is not supported on this platform; disable queue.enabled or use Unix",
     ))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn commit_socket_error_response_is_err_not_ok_value() {
+        let v = json!({
+            "ok": false,
+            "error": {
+                "code": "conflict",
+                "message": "precondition failed",
+                "details": { "conflicts": [{ "type": "path_conflict" }] }
+            }
+        });
+        let r = parse_commit_socket_response(v);
+        assert!(r.is_err());
+        assert_eq!(r.unwrap_err().code, ExitCode::Conflict);
+    }
+
+    #[test]
+    fn commit_socket_success_response_is_ok_data() {
+        let v = json!({
+            "ok": true,
+            "data": { "head": "01ABC", "changeset": "01ABC", "ref": "main" }
+        });
+        let data = parse_commit_socket_response(v).unwrap();
+        assert_eq!(data["head"], "01ABC");
+    }
 }

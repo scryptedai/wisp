@@ -202,6 +202,29 @@ fn resource_key(rec: &serde_json::Value) -> Option<String> {
         .map(|s| s.to_string())
 }
 
+/// Merge map key: resource-only rows share one slot; section pins are distinct.
+fn source_merge_key(rec: &serde_json::Value) -> Option<String> {
+    let resource = resource_key(rec)?;
+    let section = rec
+        .get("section")
+        .and_then(|x| x.as_str())
+        .filter(|s| !s.is_empty());
+    Some(match section {
+        Some(sec) => format!("{resource}\0{sec}"),
+        None => resource,
+    })
+}
+
+fn resource_only_key(rec: &serde_json::Value) -> Option<String> {
+    resource_key(rec)
+}
+
+fn entry_has_section(rec: &serde_json::Value) -> bool {
+    rec.get("section")
+        .and_then(|x| x.as_str())
+        .is_some_and(|s| !s.is_empty())
+}
+
 fn projected_sources_from_inputs(
     repo: &Repository,
     hot: &rusqlite::Connection,
@@ -253,34 +276,45 @@ fn merge_sources_for_checkout(
     c: &ConceptState,
     stored: Vec<wisp_store::SourceState>,
 ) -> Result<Vec<serde_json::Value>> {
-    let mut by_resource: BTreeMap<String, serde_json::Value> = BTreeMap::new();
+    let mut by_key: BTreeMap<String, serde_json::Value> = BTreeMap::new();
     let mut order: Vec<String> = Vec::new();
     for s in stored {
         let rec = s.record;
-        if let Some(key) = resource_key(&rec) {
-            if !by_resource.contains_key(&key) {
+        if let Some(key) = source_merge_key(&rec) {
+            if !by_key.contains_key(&key) {
                 order.push(key.clone());
             }
-            by_resource.insert(key, rec);
+            by_key.insert(key, rec);
         } else {
             let key = format!("id:{}", s.source_id);
             order.push(key.clone());
-            by_resource.insert(key, rec);
+            by_key.insert(key, rec);
         }
     }
     for proj in projected_sources_from_inputs(repo, hot, c)? {
-        if let Some(key) = resource_key(&proj) {
-            if let Some(existing) = by_resource.get(&key) {
-                by_resource.insert(key, merge_source_entry(existing, &proj));
-            } else {
-                order.push(key.clone());
-                by_resource.insert(key, proj);
+        let Some(key) = source_merge_key(&proj) else {
+            continue;
+        };
+        if let Some(existing) = by_key.get(&key) {
+            by_key.insert(key, merge_source_entry(existing, &proj));
+            continue;
+        }
+        if entry_has_section(&proj) {
+            if let Some(res_only) = resource_only_key(&proj) {
+                if let Some(existing) = by_key.get(&res_only) {
+                    if !entry_has_section(existing) {
+                        by_key.insert(res_only.clone(), merge_source_entry(existing, &proj));
+                        continue;
+                    }
+                }
             }
         }
+        order.push(key.clone());
+        by_key.insert(key, proj);
     }
     Ok(order
         .into_iter()
-        .filter_map(|k| by_resource.get(&k).cloned())
+        .filter_map(|k| by_key.get(&k).cloned())
         .collect())
 }
 

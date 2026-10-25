@@ -247,6 +247,58 @@ fn checkout_sources_merge_hand_author_without_clobber() {
 }
 
 #[test]
+fn checkout_sources_two_section_pins_same_resource() {
+    let (_d, _root, mut repo) = fresh(&[
+        ("tables/door.md", DOOR),
+        (
+            "observations/note.md",
+            "---\ntype: Observation\n---\n## Note\n\na\n\n## Detail\n\nb\n",
+        ),
+    ]);
+    let (note_sid, _) = section(&mut repo, MAIN_REF, "observations/note.md", "Note");
+    let (detail_sid, _) = section(&mut repo, MAIN_REF, "observations/note.md", "Detail");
+    update(
+        &mut repo,
+        MAIN_REF,
+        AGENT,
+        "tables/door.md",
+        "Behavior",
+        "opens",
+        json!([
+            {
+                "concept": "observations/note.md",
+                "section": note_sid.to_string()
+            },
+            {
+                "concept": "observations/note.md",
+                "section": detail_sid.to_string()
+            }
+        ]),
+        json!({}),
+    )
+    .unwrap();
+    repo.drop_hot(MAIN_REF);
+    let hot = open_hot_file(&repo);
+    let door = Hot::concept_by_path(hot.conn(), "tables/door")
+        .unwrap()
+        .unwrap();
+    let view = wisp_engine::checkout::concept_view(&repo, hot.conn(), &door, None, None).unwrap();
+    assert_eq!(view.sources.len(), 2, "sources: {:?}", view.sources);
+    let ids: Vec<String> = view
+        .sources
+        .iter()
+        .filter_map(|s| s.get("id").and_then(|x| x.as_str()).map(|s| s.to_string()))
+        .collect();
+    assert!(ids.contains(&note_sid.to_string()));
+    assert!(ids.contains(&detail_sid.to_string()));
+    let resource = "/observations/note.md";
+    assert!(view
+        .sources
+        .iter()
+        .all(|s| s.get("resource").and_then(|x| x.as_str()) == Some(resource)));
+}
+
+#[test]
 fn checkout_sources_record_roundtrip_persists_projection() {
     let (_d, root, mut repo) = fresh(&[("tables/door.md", DOOR), ("observations/note.md", NOTE)]);
     let (note_sid, _) = section(&mut repo, MAIN_REF, "observations/note.md", "Note");

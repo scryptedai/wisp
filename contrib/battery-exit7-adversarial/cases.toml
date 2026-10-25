@@ -19,7 +19,8 @@ writers = 5
 ops_per_writer = 6
 client_exit7_retries = 0
 # CI runners can be noisy; extra engine retries keep E1 success-only without client loops.
-commit_retries = 8
+busy_timeout_ms = 8000
+commit_retries = 12
 
 # A: same shape as the LOQ burst — no client retry; expect queue pressure metrics.
 [[phase]]

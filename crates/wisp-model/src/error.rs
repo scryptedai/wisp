@@ -42,6 +42,25 @@ impl ExitCode {
             ExitCode::QueueTimeout => "queue_timeout",
         }
     }
+
+    /// Map stable JSON/CLI `error.code` strings (see [`ExitCode::name`]) back to an exit code.
+    pub fn from_name(s: &str) -> Option<Self> {
+        Some(match s {
+            "ok" => ExitCode::Success,
+            "internal" => ExitCode::Internal,
+            "usage" => ExitCode::Usage,
+            "conflict" => ExitCode::Conflict,
+            "refused" => ExitCode::Refused,
+            "validation" => ExitCode::Validation,
+            "not_found" => ExitCode::NotFound,
+            "write_timeout" => ExitCode::WriteTimeout,
+            "integrity" => ExitCode::Integrity,
+            "key_unavailable" => ExitCode::KeyUnavailable,
+            "erase_pending" => ExitCode::ErasePending,
+            "queue_timeout" => ExitCode::QueueTimeout,
+            _ => return None,
+        })
+    }
 }
 
 /// The one error type every library crate returns. The CLI maps it to `{code, message, details}`.
@@ -130,6 +149,27 @@ impl WispError {
     /// Job waited too long in the bundle commit queue (retryable).
     pub fn queue_timeout(msg: impl Into<String>, details: Value) -> Self {
         Self::new(ExitCode::QueueTimeout, msg).with_details(details)
+    }
+
+    /// Parse `{code, message, details?}` from a commit-queue socket `error` object or CLI JSON.
+    pub fn from_json_value(v: &Value) -> std::result::Result<Self, Self> {
+        let code_str = v
+            .get("code")
+            .and_then(|x| x.as_str())
+            .ok_or_else(|| Self::internal("error envelope missing code"))?;
+        let code = ExitCode::from_name(code_str)
+            .ok_or_else(|| Self::internal(format!("error envelope unknown code: {code_str}")))?;
+        let message = v
+            .get("message")
+            .and_then(|x| x.as_str())
+            .unwrap_or("")
+            .to_string();
+        let details = v.get("details").cloned().unwrap_or(Value::Null);
+        Ok(WispError {
+            code,
+            message,
+            details,
+        })
     }
 }
 
@@ -238,6 +278,18 @@ mod tests {
             details.get("busy_timeout_ms").and_then(|x| x.as_u64()),
             Some(200)
         );
+    }
+
+    #[test]
+    fn from_json_value_roundtrip_conflict() {
+        let e = WispError::conflict(
+            "precondition failed",
+            serde_json::json!([{ "type": "path_conflict" }]),
+        );
+        let v = serde_json::to_value(&e).unwrap();
+        let back = WispError::from_json_value(&v).unwrap();
+        assert_eq!(back.code, ExitCode::Conflict);
+        assert_eq!(back.message, "precondition failed");
     }
 
     #[test]

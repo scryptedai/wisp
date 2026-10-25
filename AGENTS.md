@@ -77,6 +77,8 @@ OKF v0.2 compliance (reserved paths, checkout `sources`, validate findings): **`
 
 Commit queue battery: edit **`contrib/battery-commit-queue/cases.toml` only**; runners `battery_commit_queue.rs` and `battery_commit_queue_swarm` (`WISP_COMMIT_QUEUE_BATTERY=1`). See `contrib/battery-commit-queue/README.md` and **`docs/COMMIT-QUEUE.md`**.
 
+Queue apply JSON envelope (socket `ok:false` → client `Err`): **`crates/wisp-invariants/tests/queue_apply_envelope.rs`**.
+
 ## Coding norms
 
 - **`.wisp/cache/` and Windows:** hot SQLite files stay open until `Repository` is dropped or `close_all_hots()` runs. Never `remove_dir_all` on `cache/` (or delete `hot.db` / `merge-skip.json`) while a repo handle is open — use `wisp_engine::cache::reopen_without_cache` in tests. See `docs/MERGE.md` (cache lifecycle).

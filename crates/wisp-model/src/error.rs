@@ -43,6 +43,7 @@ impl ExitCode {
         }
     }
 
+    /// Map stable JSON/CLI `error.code` strings (see [`ExitCode::name`]) back to an exit code.
     pub fn from_name(s: &str) -> Option<Self> {
         Some(match s {
             "ok" => ExitCode::Success,

@@ -8,7 +8,7 @@ pub mod error;
 pub mod ids;
 pub mod ops;
 
-pub use error::{ExitCode, Result, WispError};
+pub use error::{ExitCode, Result, WispError, WriteTimeoutDetails};
 pub use ids::*;
 pub use ops::*;
 

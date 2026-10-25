@@ -12,6 +12,10 @@ Contract for **local or co-located agents** committing to one wisp bundle. Human
 
 Do not treat the working tree as authoritative immediately after `apply` unless you barrier (below).
 
+## Commit queue (fleets)
+
+When many agents share one bundle, set **`[queue] enabled = true`** and run **`wisp queue --serve`**. Agents then use normal `wisp apply` / `headless::apply` (submit, await JSON). **Exit 11** → retry; **exit 3** → refresh bases. Default is off (direct ledger). **[COMMIT-QUEUE.md](COMMIT-QUEUE.md)**.
+
 ## Two write modes
 
 ### 1. Canonical replace — `update_section`
@@ -46,7 +50,8 @@ Full replace still uses `update_section`. Mixing blind append with full replace 
 | Code | Meaning | Action |
 |------|---------|--------|
 | **3** | Optimistic conflict (section, FM, path, …) | Refresh base, retry or merge policy |
-| **7** | SQLite busy (retryable) | Backoff; manifest `commit.retries` also applies in-engine |
+| **7** | SQLite busy (retryable) | Backoff; read `error.details` (`lock`, `phase`, `busy_timeout_ms`, `commit_attempt`, `hint`) — [`docs/CLI.md`](CLI.md#exit-7-write_timeout-details); manifest `commit.retries` also applies in-engine |
+| **11** | Commit queue timeout (retryable) | Resubmit or increase `[queue] timeout_ms`; use the bundle commit queue so agents do not contend on `ledger.db` directly — [`docs/CONCURRENCY.md`](CONCURRENCY.md) |
 | 4 | Refused (policy / generated file) | Fix op or use `record --adopt-generated` for humans |
 | 0 | Success | — |
 
@@ -87,14 +92,17 @@ Run before changing writer behavior:
 |---------|---------|--------|
 | **error-three** | `cargo test -p wisp-invariants battery_error_three_section_one -- --nocapture` | Timing + solo / dual exit 3 / triple merge |
 | **exit3-adversarial** | `cargo test -p wisp-invariants battery_exit3_adversarial -- --nocapture` | Stampede, resolve, disjoint control, poison neighbor |
+| **exit7-adversarial** | `cargo test -p wisp-invariants battery_exit7_adversarial -- --nocapture` | Write-queue saturation, client vs engine retry, batch compare, commit profile |
 
-Edit cases only in `contrib/battery-error-three/cases.toml` and `contrib/battery-exit3-adversarial/cases.toml`.
+Edit cases only in `contrib/battery-error-three/cases.toml`, `contrib/battery-exit3-adversarial/cases.toml`, and `contrib/battery-exit7-adversarial/cases.toml`.
 
 Heavy scale (optional):
 
 ```sh
 WISP_EXIT3_BATTERY=1 WISP_EXIT3_BATTERY_WRITERS=32 \
   cargo test -p wisp-invariants battery_exit3_adversarial_heavy -- --ignored --nocapture
+WISP_EXIT7_BATTERY=1 WISP_EXIT7_BATTERY_WRITERS=16 \
+  cargo test -p wisp-invariants battery_exit7_adversarial_heavy -- --ignored --nocapture
 WISP_STRESS=1 WISP_STRESS_WRITERS=50 \
   cargo test -p wisp-invariants -- --ignored stress_many_disjoint_writers
 ```

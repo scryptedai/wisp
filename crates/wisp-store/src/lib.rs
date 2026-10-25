@@ -11,7 +11,7 @@ pub use hot::{
 pub use ledger::{ActorRow, ChangesetRow, ExportRow, Ledger, ScopeRow, Tombstone};
 pub use ri::{RI_DIM, RI_MIN_COSINE, RI_STANDALONE_MIN_COSINE};
 
-use wisp_model::WispError;
+use wisp_model::{WispError, WriteTimeoutDetails};
 
 pub type SqlResult<T> = std::result::Result<T, WispError>;
 
@@ -21,7 +21,19 @@ pub(crate) fn sql_err(e: rusqlite::Error) -> WispError {
             if f.code == rusqlite::ErrorCode::DatabaseBusy
                 || f.code == rusqlite::ErrorCode::DatabaseLocked
             {
-                WispError::timeout("write queue timeout")
+                WispError::write_timeout(
+                    "write queue timeout",
+                    WriteTimeoutDetails {
+                        lock: "ledger".into(),
+                        phase: "sqlite".into(),
+                        sqlite: Some(format!("{:?}", f.code)),
+                        hint: Some(
+                            "SQLite busy during a ledger or hot statement; treat as write queue contention."
+                                .into(),
+                        ),
+                        ..Default::default()
+                    },
+                )
             } else if msg
                 .as_deref()
                 .map(|m| m.contains("append-only"))

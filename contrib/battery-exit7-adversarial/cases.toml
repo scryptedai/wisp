@@ -1,0 +1,54 @@
+# Exit-7 (write queue / SQLite busy) battery — contrib/battery-exit7-adversarial/README.md
+# Runner: crates/wisp-invariants/tests/battery_exit7_adversarial.rs
+
+[meta]
+bundle_id = "battery-exit7-adversarial"
+arena_path = "arena/ledger-queue"
+arena_heading_prefix = "S"
+default_writers = 5
+heavy_writers = 16
+# Report-like defaults (five explorer processes, manifest as observed in the field).
+busy_timeout_ms = 5000
+commit_retries = 3
+
+# B: disjoint sections, engine commit retries only (no client exit-7 loop).
+[[phase]]
+id = "E1-disjoint-engine-retry"
+kind = "disjoint_parallel"
+writers = 5
+ops_per_writer = 6
+client_exit7_retries = 0
+# CI runners can be noisy; extra engine retries keep E1 success-only without client loops.
+commit_retries = 8
+
+# A: same shape as the LOQ burst — no client retry; expect queue pressure metrics.
+[[phase]]
+id = "E2-five-explorer-raw"
+kind = "disjoint_parallel"
+writers = 5
+ops_per_writer = 20
+client_exit7_retries = 0
+expect_some_exit7 = true
+# One ledger attempt per op; short busy window forces queue timeouts under parallel load.
+busy_timeout_ms = 200
+commit_retries = 1
+
+# C: disjoint writers with a small client retry loop (harness-style).
+[[phase]]
+id = "E3-disjoint-client-retry"
+kind = "disjoint_parallel"
+writers = 5
+ops_per_writer = 10
+client_exit7_retries = 8
+
+# D: one batched apply vs N single-op applies (lock acquisitions).
+[[phase]]
+id = "E4-batch-vs-single"
+kind = "batch_compare"
+ops = 5
+
+# E: steady-state commit phase profile (single writer, no contention).
+[[phase]]
+id = "E5-profile-sequential"
+kind = "profile_sequential"
+iterations = 25

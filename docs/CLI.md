@@ -29,12 +29,30 @@ Human text goes to stderr. Exit code matches `error.code` (numeric table below).
 | 4 | refused | Policy / actor refusal |
 | 5 | validation | Bundle or path validation |
 | 6 | not_found | Missing ref, path, or version |
-| 7 | write_timeout | Retryable SQLite lock (back off and retry) |
+| 7 | write_timeout | Retryable SQLite lock (back off and retry); see [Exit 7 details](#exit-7-write_timeout-details) |
 | 8 | integrity | Digest or fsck failure |
 | 9 | key_unavailable | Keystore locked or missing key |
 | 10 | erase_pending | Open must finish erasure recovery first |
+| 11 | queue_timeout | Commit queue deadline (retryable; job not finished in time) |
 
-See [CONCURRENCY.md](./CONCURRENCY.md) for writers and locks.
+See [CONCURRENCY.md](./CONCURRENCY.md) for writers and locks. Optional [commit queue](./COMMIT-QUEUE.md): `[queue] enabled = true` plus `wisp queue --serve`.
+
+### Exit 7 (`write_timeout`) details
+
+When `error.code` is `write_timeout`, `error.details` is an object agents can use to choose backoff vs batching vs branching (not only `retryable: true`):
+
+| Field | Meaning |
+|-------|---------|
+| `retryable` | Always `true` for exit 7 |
+| `lock` | Contended resource: `ledger`, `hot`, or `worktree_flock` |
+| `phase` | Where the wait failed, e.g. `ledger.begin_immediate`, `commit.try_commit`, `worktree.flock_begin_immediate` |
+| `busy_timeout_ms` | Manifest `commit.busy_timeout_ms` when known |
+| `commit_attempt` / `commit_retries_max` | Present when engine retries are exhausted on `commit.try_commit` |
+| `ref` | Ref name when the failure was on a commit |
+| `sqlite` | SQLite result code name when the failure came from SQLite busy/locked |
+| `hint` | Short remediation text |
+
+Engine commit retries merge these fields into any ledger-level details from the last attempt.
 
 ## Target grammar
 

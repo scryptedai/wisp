@@ -197,6 +197,7 @@ pub struct ScopeRow {
 pub struct Ledger {
     conn: Connection,
     wisp_dir: PathBuf,
+    busy_timeout_ms: u64,
 }
 
 #[derive(Debug, Clone)]
@@ -220,6 +221,7 @@ impl Ledger {
         Ok(Ledger {
             conn,
             wisp_dir: wisp_dir.to_path_buf(),
+            busy_timeout_ms,
         })
     }
 
@@ -280,7 +282,20 @@ impl Ledger {
                     if f.code == rusqlite::ErrorCode::DatabaseBusy
                         || f.code == rusqlite::ErrorCode::DatabaseLocked =>
                 {
-                    WispError::timeout("write queue timeout")
+                    WispError::write_timeout(
+                        "write queue timeout",
+                        wisp_model::WriteTimeoutDetails {
+                            lock: "ledger".into(),
+                            phase: "ledger.begin_immediate".into(),
+                            busy_timeout_ms: Some(self.busy_timeout_ms),
+                            sqlite: Some(format!("{:?}", f.code)),
+                            hint: Some(
+                                "SQLite could not acquire the ledger write lock within busy_timeout_ms; another commit may be in progress."
+                                    .into(),
+                            ),
+                            ..Default::default()
+                        },
+                    )
                 }
                 e => sql_err(e),
             })

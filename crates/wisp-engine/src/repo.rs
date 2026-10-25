@@ -168,8 +168,8 @@ impl Repository {
         Ok(repo)
     }
 
-    /// Background materialize worker: no nested drain threads.
-    pub(crate) fn open_worker(root: &Path, unlock: &Unlock) -> Result<Self> {
+    /// Background materialize worker: no nested drain threads (commit queue writer).
+    pub fn open_worker(root: &Path, unlock: &Unlock) -> Result<Self> {
         Self::open_inner(root, unlock, true)
     }
 

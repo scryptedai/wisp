@@ -128,6 +128,15 @@ record = true
 lossless_strip = false
 
 [[bundle]]
+id = "battery-exit7-adversarial"
+path = "bundles/battery-exit7-adversarial"
+profile = "0.2"
+description = "Adversarial exit-7 write-queue saturation, batching, and commit profiling"
+invariants = ["I3"]
+record = true
+lossless_strip = false
+
+[[bundle]]
 id = "search-battery"
 path = "bundles/search-battery"
 profile = "0.2"

@@ -161,8 +161,24 @@ fn render_fm_common(
     out
 }
 
+fn concept_checkout_file(path: &str) -> String {
+    format!("{path}.md")
+}
+
 fn common_validate(c: &ConceptView, require_sources_match: bool) -> Vec<Finding> {
     let mut f = Vec::new();
+    if is_reserved_file(&concept_checkout_file(&c.path)) {
+        f.push(Finding {
+            level: Level::Must,
+            code: "reserved_concept".into(),
+            message: format!(
+                "concept path {:?} maps to reserved file {} (OKF §3.1)",
+                c.path,
+                concept_checkout_file(&c.path)
+            ),
+            path: c.path.clone(),
+        });
+    }
     match &c.type_ {
         Some(t) if !t.trim().is_empty() => {}
         _ => f.push(Finding {
@@ -230,6 +246,106 @@ fn common_validate(c: &ConceptView, require_sources_match: bool) -> Vec<Finding>
     f
 }
 
+fn push_timestamp_finding(f: &mut Vec<Finding>, path: &str, key: &str, value: &str) {
+    if parse_rfc3339(value).is_none() {
+        f.push(Finding {
+            level: Level::Should,
+            code: "timestamp_format".into(),
+            message: format!(
+                "key `{key}` should be RFC 3339 with an explicit offset (got {value:?})"
+            ),
+            path: path.to_string(),
+        });
+    }
+}
+
+fn okf02_validate(c: &ConceptView) -> Vec<Finding> {
+    let mut f = Vec::new();
+    for (k, raw) in &c.entries {
+        if k == "stale_after" {
+            if let Some(v) = wisp_parse::frontmatter::entry_string(raw) {
+                push_timestamp_finding(&mut f, &c.path, "stale_after", &v);
+                if let Some(t) = parse_rfc3339(&v) {
+                    let now = time::OffsetDateTime::now_utc();
+                    if now >= t {
+                        f.push(Finding {
+                            level: Level::Should,
+                            code: "stale".into(),
+                            message: format!("stale_after {v} is in the past"),
+                            path: c.path.clone(),
+                        });
+                    }
+                }
+            }
+        }
+    }
+    if let Some((_, at)) = &c.generated {
+        push_timestamp_finding(&mut f, &c.path, "generated.at", at);
+    }
+    for (by, at) in &c.verified {
+        let _ = by;
+        push_timestamp_finding(&mut f, &c.path, "verified[].at", at);
+    }
+    for src in &c.sources {
+        if let Some(lm) = src.get("last_modified").and_then(|x| x.as_str()) {
+            push_timestamp_finding(&mut f, &c.path, "sources[].last_modified", lm);
+        }
+    }
+    if let Some((_, _, body)) = c.sections.iter().find(|(_, heading, _)| heading.is_empty()) {
+        let fm_scalars = frontmatter_scalars(c);
+        for (key, body_val) in preamble_scalars(body) {
+            if let Some(fm_val) = fm_scalars.get(&key) {
+                if fm_val != &body_val {
+                    f.push(Finding {
+                        level: Level::Should,
+                        code: "frontmatter_shadow".into(),
+                        message: format!(
+                            "preamble repeats `{key}` with a different value than frontmatter ({fm_val:?} vs {body_val:?})"
+                        ),
+                        path: c.path.clone(),
+                    });
+                }
+            }
+        }
+    }
+    f
+}
+
+fn frontmatter_scalars(c: &ConceptView) -> std::collections::BTreeMap<String, String> {
+    let mut m = std::collections::BTreeMap::new();
+    if let Some(t) = &c.type_ {
+        m.insert("type".into(), t.clone());
+    }
+    if let Some(s) = &c.status {
+        m.insert("status".into(), s.as_str().into());
+    }
+    for (k, raw) in &c.entries {
+        if let Some(v) = wisp_parse::frontmatter::entry_string(raw) {
+            m.insert(k.clone(), v);
+        }
+    }
+    m
+}
+
+/// Scalar `key: value` lines from the preamble body until a heading or `---`.
+fn preamble_scalars(body: &str) -> std::collections::BTreeMap<String, String> {
+    let mut m = std::collections::BTreeMap::new();
+    for line in body.lines() {
+        let t = line.trim();
+        if t == "---" || t.starts_with('#') {
+            break;
+        }
+        if let Some((k, v)) = t.split_once(':') {
+            let key = k.trim();
+            let val = v.trim();
+            if !key.is_empty() && !val.is_empty() && !val.contains('\n') {
+                m.insert(key.to_string(), val.to_string());
+            }
+        }
+    }
+    m
+}
+
 fn render_index_common(dir: &DirView, version: Option<&str>) -> String {
     let mut out = String::new();
     if dir.dir.is_empty() {
@@ -289,11 +405,11 @@ fn render_log_common(dir: &DirView, log: &[LogEntry]) -> String {
                 let rel = p.strip_prefix(&format!("{}/", dir.dir)).unwrap_or(p);
                 let title = t.clone().unwrap_or_else(|| rel.to_string());
                 out.push_str(&format!(
-                    "- {}: [{}]({}.md) by {}\n",
+                    "- **{}**: [{}]({}.md) by {}\n",
                     e.word, title, rel, e.actor
                 ));
             }
-            (None, _) => out.push_str(&format!("- {}: an erasure occurred\n", e.word)),
+            (None, _) => out.push_str(&format!("- **{}**: an erasure occurred\n", e.word)),
         }
     }
     out
@@ -310,7 +426,9 @@ impl Profile for Okf02 {
         MANAGED_02
     }
     fn validate(&self, c: &ConceptView) -> Vec<Finding> {
-        common_validate(c, true)
+        let mut f = common_validate(c, true);
+        f.extend(okf02_validate(c));
+        f
     }
     fn render_frontmatter(&self, c: &ConceptView, identity_key: &str) -> String {
         render_fm_common(c, identity_key, |le| {
@@ -471,6 +589,7 @@ pub fn plan_migration_01_to_02(concepts: &[ConceptView]) -> Vec<MigrationStep> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serde_json::json;
 
     #[test]
     fn frontmatter_render_places_managed_keys() {
@@ -517,6 +636,109 @@ mod tests {
         assert!(f
             .iter()
             .any(|f| f.level == Level::Must && f.code == "type_required"));
+    }
+
+    #[test]
+    fn reserved_concept_must() {
+        let c = ConceptView {
+            path: "topics/log".into(),
+            type_: Some("topic".into()),
+            ..Default::default()
+        };
+        let f = Okf02.validate(&c);
+        assert!(f
+            .iter()
+            .any(|x| x.code == "reserved_concept" && x.level == Level::Must));
+    }
+
+    #[test]
+    fn stale_after_and_shadow() {
+        let c = ConceptView {
+            path: "a/b".into(),
+            type_: Some("topic".into()),
+            entries: vec![("stale_after".into(), "stale_after: 2026-09-23\n".into())],
+            sections: vec![(0, String::new(), "kind: branch\n\n# Title\n".into())],
+            ..Default::default()
+        };
+        let f = Okf02.validate(&c);
+        assert!(f.iter().any(|x| x.code == "timestamp_format"));
+        let c2 = ConceptView {
+            path: "a/b".into(),
+            type_: Some("topic".into()),
+            entries: vec![
+                ("kind".into(), "kind: unwritten\n".into()),
+                (
+                    "stale_after".into(),
+                    "stale_after: 2026-09-23T00:00:00Z\n".into(),
+                ),
+            ],
+            sections: vec![(0, String::new(), "kind: branch\n".into())],
+            ..Default::default()
+        };
+        let f2 = Okf02.validate(&c2);
+        assert!(f2.iter().any(|x| x.code == "stale"));
+        assert!(f2
+            .iter()
+            .any(|x| x.code == "frontmatter_shadow" && x.message.contains("kind")));
+    }
+
+    #[test]
+    fn timestamp_matrix_on_concept_view() {
+        let c = ConceptView {
+            path: "x".into(),
+            type_: Some("t".into()),
+            generated: Some(("human:a".into(), "2026-10-25T13:00:00Z".into())),
+            verified: vec![("human:b".into(), "bad-date".into())],
+            sources: vec![json!({ "last_modified": "2026-01-01" })],
+            ..Default::default()
+        };
+        let f = Okf02.validate(&c);
+        assert!(!f
+            .iter()
+            .any(|x| x.code == "timestamp_format" && x.message.contains("generated.at")));
+        assert!(f
+            .iter()
+            .any(|x| x.code == "timestamp_format" && x.message.contains("verified")));
+        assert!(f
+            .iter()
+            .any(|x| x.code == "timestamp_format" && x.message.contains("last_modified")));
+    }
+
+    #[test]
+    fn shadow_skips_body_only_keys_and_stops_at_heading() {
+        let c = ConceptView {
+            path: "x".into(),
+            type_: Some("topic".into()),
+            entries: vec![("title".into(), "title: Same\n".into())],
+            sections: vec![(
+                0,
+                String::new(),
+                "streak: 5\n# Real heading\nkind: ghost\n".into(),
+            )],
+            ..Default::default()
+        };
+        let f = Okf02.validate(&c);
+        assert!(!f.iter().any(|x| x.code == "frontmatter_shadow"));
+    }
+
+    #[test]
+    fn log_bolds_action() {
+        let dir = DirView {
+            dir: "tables".into(),
+            concepts: vec![],
+            subdirs: vec![],
+        };
+        let log = vec![LogEntry {
+            date: "2026-10-25".into(),
+            at: "2026-10-25T12:00:00Z".into(),
+            word: "Creation",
+            path: Some("tables/orders".into()),
+            title: Some("Orders".into()),
+            actor: "human:alex".into(),
+        }];
+        let s = Okf02.render_log(&dir, &log);
+        assert!(s.contains("**Creation**"));
+        assert!(s.contains("by human:alex"));
     }
 
     #[test]

@@ -175,6 +175,149 @@ pub fn export_profile_for(
     )))
 }
 
+fn bundle_resource(path: &str) -> String {
+    format!("/{}.md", path.trim_start_matches('/'))
+}
+
+fn merge_source_entry(base: &serde_json::Value, fill: &serde_json::Value) -> serde_json::Value {
+    let mut out = base.clone();
+    if let Some(obj) = fill.as_object() {
+        if let Some(base_map) = out.as_object_mut() {
+            for (k, v) in obj {
+                let empty = base_map
+                    .get(k)
+                    .is_none_or(|x| x.is_null() || (x.is_string() && x.as_str() == Some("")));
+                if empty {
+                    base_map.insert(k.clone(), v.clone());
+                }
+            }
+        }
+    }
+    out
+}
+
+fn resource_key(rec: &serde_json::Value) -> Option<String> {
+    rec.get("resource")
+        .and_then(|x| x.as_str())
+        .map(|s| s.to_string())
+}
+
+/// Merge map key: resource-only rows share one slot; section pins are distinct.
+fn source_merge_key(rec: &serde_json::Value) -> Option<String> {
+    let resource = resource_key(rec)?;
+    let section = rec
+        .get("section")
+        .and_then(|x| x.as_str())
+        .filter(|s| !s.is_empty());
+    Some(match section {
+        Some(sec) => format!("{resource}\0{sec}"),
+        None => resource,
+    })
+}
+
+fn resource_only_key(rec: &serde_json::Value) -> Option<String> {
+    resource_key(rec)
+}
+
+fn entry_has_section(rec: &serde_json::Value) -> bool {
+    rec.get("section")
+        .and_then(|x| x.as_str())
+        .is_some_and(|s| !s.is_empty())
+}
+
+fn projected_sources_from_inputs(
+    repo: &Repository,
+    hot: &rusqlite::Connection,
+    c: &ConceptState,
+) -> Result<Vec<serde_json::Value>> {
+    let cv = match c.content_version {
+        Some(v) => v,
+        None => return Ok(vec![]),
+    };
+    let change = Ledger::get_change(repo.ledger.conn(), cv)?;
+    let Some(change) = change else {
+        return Ok(vec![]);
+    };
+    let mut out = Vec::new();
+    for inp in &change.inputs {
+        if let InputRef::Concept {
+            concept: ic,
+            section,
+            ..
+        } = inp
+        {
+            let Some(src_concept) = Hot::concept(hot, *ic)? else {
+                continue;
+            };
+            let resource = bundle_resource(&src_concept.path);
+            let mut entry = serde_json::json!({ "resource": resource });
+            if let Some(sec) = section {
+                let Some(sec_row) = Hot::section(hot, *sec)? else {
+                    continue;
+                };
+                if sec_row.concept != *ic {
+                    continue;
+                }
+                entry["id"] = serde_json::Value::String(sec.to_string());
+                entry["section"] = serde_json::Value::String(sec.to_string());
+                if !sec_row.heading.is_empty() {
+                    entry["title"] = serde_json::Value::String(sec_row.heading.clone());
+                }
+            }
+            out.push(entry);
+        }
+    }
+    Ok(out)
+}
+
+fn merge_sources_for_checkout(
+    repo: &Repository,
+    hot: &rusqlite::Connection,
+    c: &ConceptState,
+    stored: Vec<wisp_store::SourceState>,
+) -> Result<Vec<serde_json::Value>> {
+    let mut by_key: BTreeMap<String, serde_json::Value> = BTreeMap::new();
+    let mut order: Vec<String> = Vec::new();
+    for s in stored {
+        let rec = s.record;
+        if let Some(key) = source_merge_key(&rec) {
+            if !by_key.contains_key(&key) {
+                order.push(key.clone());
+            }
+            by_key.insert(key, rec);
+        } else {
+            let key = format!("id:{}", s.source_id);
+            order.push(key.clone());
+            by_key.insert(key, rec);
+        }
+    }
+    for proj in projected_sources_from_inputs(repo, hot, c)? {
+        let Some(key) = source_merge_key(&proj) else {
+            continue;
+        };
+        if let Some(existing) = by_key.get(&key) {
+            by_key.insert(key, merge_source_entry(existing, &proj));
+            continue;
+        }
+        if entry_has_section(&proj) {
+            if let Some(res_only) = resource_only_key(&proj) {
+                if let Some(existing) = by_key.get(&res_only) {
+                    if !entry_has_section(existing) {
+                        by_key.insert(res_only.clone(), merge_source_entry(existing, &proj));
+                        continue;
+                    }
+                }
+            }
+        }
+        order.push(key.clone());
+        by_key.insert(key, proj);
+    }
+    Ok(order
+        .into_iter()
+        .filter_map(|k| by_key.get(&k).cloned())
+        .collect())
+}
+
 /// Build the profile's view of a concept from the hot tier.
 pub fn concept_view(
     repo: &Repository,
@@ -193,7 +336,7 @@ pub fn concept_view(
         .into_iter()
         .map(|s| (s.level, s.heading, s.body))
         .collect();
-    let sources = Hot::sources_of(hot, c.concept)?;
+    let sources = merge_sources_for_checkout(repo, hot, c, Hot::sources_of(hot, c.concept)?)?;
     let generated = match (&c.gen_actor, &c.gen_at) {
         (Some(a), Some(at)) => Some((repo.actor_display(*a), at.clone())),
         _ => None,
@@ -222,8 +365,11 @@ pub fn concept_view(
         entries,
         sections,
         footnotes,
-        source_ids: sources.iter().map(|s| s.source_id.clone()).collect(),
-        sources: sources.iter().map(|s| s.record.clone()).collect(),
+        source_ids: sources
+            .iter()
+            .filter_map(|s| s.get("id").and_then(|x| x.as_str()).map(String::from))
+            .collect(),
+        sources,
         status: c.status,
         generated,
         verified,

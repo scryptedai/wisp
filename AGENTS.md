@@ -73,6 +73,8 @@ Exit-3 adversarial battery: edit **`contrib/battery-exit3-adversarial/cases.toml
 
 Exit-7 adversarial battery: edit **`contrib/battery-exit7-adversarial/cases.toml` only**; runner `wisp-invariants/tests/battery_exit7_adversarial.rs`. See `contrib/battery-exit7-adversarial/README.md`.
 
+OKF v0.2 compliance (reserved paths, checkout `sources`, validate findings): **`crates/wisp-invariants/tests/okf_02_compliance.rs`**.
+
 Commit queue battery: edit **`contrib/battery-commit-queue/cases.toml` only**; runners `battery_commit_queue.rs` and `battery_commit_queue_swarm` (`WISP_COMMIT_QUEUE_BATTERY=1`). See `contrib/battery-commit-queue/README.md` and **`docs/COMMIT-QUEUE.md`**.
 
 ## Coding norms

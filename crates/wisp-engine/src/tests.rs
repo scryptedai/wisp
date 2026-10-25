@@ -627,7 +627,7 @@ fn erase_whole_concept_and_group_and_actor() {
     assert!(crate::query::fsck(&mut repo).is_ok());
     // Log shows an erasure without naming a path.
     let log = read(&f.root, "log.md");
-    assert!(log.contains("Erasure: an erasure occurred"));
+    assert!(log.contains("**Erasure**: an erasure occurred"));
     assert!(!log.contains("alice"));
     // I24: erase the actor; name disappears, kind-based policy still applies, fsck passes.
     assert!(!scan_for(&f.root, "human:dpo").is_empty());
@@ -1466,4 +1466,82 @@ fn passphrase_and_env_master_keys() {
     };
     assert_eq!(err.code, ExitCode::KeyUnavailable);
     assert!(Repository::open(&f.root, &unlock).is_ok());
+}
+
+#[test]
+fn create_concept_refuses_reserved_checkout_paths() {
+    let f = fixture();
+    Repository::init(&f.root, "0.2", &Unlock::default()).unwrap();
+    let mut repo = open(&f.root);
+    rec(&mut repo, "human:alex");
+    for path in ["index.md", "topics/log.md"] {
+        let batch: ApplyBatch = serde_json::from_value(json!({
+            "actor": "human:alex",
+            "ops": [ { "op": "create_concept", "path": path, "type": "topic" } ]
+        }))
+        .unwrap();
+        let err = crate::headless::apply(&mut repo, batch, None).unwrap_err();
+        assert_eq!(err.code, ExitCode::Refused, "{path}");
+    }
+    let ok: ApplyBatch = serde_json::from_value(json!({
+        "actor": "human:alex",
+        "ops": [ { "op": "create_concept", "path": "meta/index-notes.md", "type": "topic" } ]
+    }))
+    .unwrap();
+    crate::headless::apply(&mut repo, ok, None).unwrap();
+}
+
+#[test]
+fn checkout_projects_declared_inputs_into_sources() {
+    let f = fixture();
+    Repository::init(&f.root, "0.2", &Unlock::default()).unwrap();
+    write(
+        &f.root,
+        "tables/door.md",
+        "---\ntype: Table\n---\n## Behavior\n\nopens\n",
+    );
+    write(
+        &f.root,
+        "observations/2026-10-17.md",
+        "---\ntype: Observation\n---\n## Note\n\nsqueak\n",
+    );
+    let mut repo = open(&f.root);
+    rec(&mut repo, "human:alex");
+    let door = read(&f.root, "tables/door.md");
+    let door_sid = match &wisp_parse::parse_file(&door).sections()[1].anchor {
+        Some(wisp_parse::Anchor::Valid(id)) => *id,
+        _ => panic!(),
+    };
+    let obs = read(&f.root, "observations/2026-10-17.md");
+    let obs_sid = match &wisp_parse::parse_file(&obs).sections()[1].anchor {
+        Some(wisp_parse::Anchor::Valid(id)) => *id,
+        _ => panic!(),
+    };
+    let batch: ApplyBatch = serde_json::from_value(json!({
+        "actor": "sl-bot/0.3",
+        "ops": [ {
+            "op": "update_section",
+            "path": "tables/door.md",
+            "section": door_sid.to_string(),
+            "content": "opens loudly"
+        } ],
+        "inputs": [ {
+            "concept": "observations/2026-10-17.md",
+            "section": obs_sid.to_string()
+        } ]
+    }))
+    .unwrap();
+    crate::headless::apply(&mut repo, batch, None).unwrap();
+    repo.hot(MAIN_REF).unwrap();
+    let hot = repo.hots.remove(MAIN_REF).expect("hot");
+    let door_c = Hot::concept_by_path(hot.conn(), "tables/door")
+        .unwrap()
+        .unwrap();
+    let view = crate::checkout::concept_view(&repo, hot.conn(), &door_c, None, None).unwrap();
+    repo.hots.insert(MAIN_REF.to_string(), hot);
+    assert_eq!(view.sources.len(), 1);
+    let src = &view.sources[0];
+    assert_eq!(src["resource"], "/observations/2026-10-17.md");
+    assert_eq!(src["id"], obs_sid.to_string());
+    assert_eq!(src["title"], "Note");
 }

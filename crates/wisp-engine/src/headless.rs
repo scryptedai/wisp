@@ -207,6 +207,13 @@ fn plan_op(repo: &mut Repository, ref_name: &str, o: &ApplyOp, le: &str) -> Resu
     match op {
         Op::CreateConcept => {
             let path = concept_path_of(&o.path);
+            let checkout_file = format!("{path}.md");
+            if is_reserved_file(&checkout_file) {
+                return Err(WispError::refused(format!(
+                    "cannot create concept at {:?}: {checkout_file} is reserved (OKF §3.1: index.md and log.md are generated views, not concept documents)",
+                    o.path
+                )));
+            }
             let cid = ConceptId::new();
             let cscope = ScopeId::new();
             repo.new_scope_key(cscope)?;

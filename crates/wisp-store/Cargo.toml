@@ -8,6 +8,7 @@ description = "Ledger database, hot-tier database with FTS5, payload files, refs
 
 [dependencies]
 wisp-model.workspace = true
+wisp-match.workspace = true
 rusqlite.workspace = true
 serde.workspace = true
 serde_json.workspace = true

@@ -86,6 +86,44 @@ call
 or read via
 .Cm cat
 and search APIs.
+.Ss Query and reconcile
+.Bl -tag -width 14n
+.It Cm search Fl -field Ar name
+Match one column:
+.Cm heading ,
+.Cm body ,
+.Cm title
+.Pq frontmatter key ,
+or
+.Cm path .
+Hits include
+.Cm field ,
+.Cm snippet ,
+and section
+.Cm version
+.Pq pin for the next write ) .
+See
+.Cm wisp doc search .
+.It Cm diff Ar path#section Fl -from Ar change Fl -to Ar change
+Line diff between two section versions
+.Pq change ids, not changesets ) :
+lines in
+.Fl -from
+absent from
+.Fl -to .
+For changeset-scoped history use
+.Cm diff Fl -from Ar cs Fl -to Ar cs
+without
+.Ar #section .
+.It Cm apply
+result may include
+.Cm same_heading_siblings
+on
+.Cm add-section
+and
+.Cm update_section
+changes.
+.El
 .Ss Installed documentation
 Installed topic files (Markdown) are the contract for agents and integrators:
 .Bl -tag -width 16n

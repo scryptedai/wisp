@@ -32,6 +32,8 @@ When many agents share one bundle, set **`[queue] enabled = true`** and run **`w
 3. Rebuild your op with that `base_version` (or abort if policy says escalate to human).
 4. Retry with backoff+jitter if many agents collide.
 
+**Reconcile without guessing:** `wisp diff <path>#<section> --from <your-base-change> --to <theirs.version> --json` → `diff` lists lines you had that the winner lacks (merge into a new `update_section` body). Prefer learning duplicate headings from the apply result (`same_heading_siblings` on `add_section` / `update_section`) over a heading search you may not have run. Scoped lookup: `wisp search "<phrase>" --field heading|body|title|path --json`.
+
 **Built-in loop:** `wisp apply --resolve` or `wisp_engine::headless::apply_with_resolve` (policy: `ApplyResolvePolicy`, default attempt budget scales with `commit.retries`). Embeds should use the engine API instead of reimplementing the loop; custom merge logic can still call `apply` once and handle conflicts itself.
 
 Exit 3 is **per request**, not per process. A “poison” client that never refreshes only fails itself; see adversarial battery **D2-poison-neighbor**.

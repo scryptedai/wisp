@@ -58,3 +58,11 @@ Inputs attach to content changes only (`create`, sections, frontmatter, sources)
 ## Warnings
 
 When an actor that is not `human:*` writes section content with no declared inputs, the result carries `warnings: [{ "code": "no_declared_inputs", ... }]`. It is advisory and never blocks the write.
+
+## Same-heading siblings
+
+`add-section` and `update_section` (when it sets a heading) include `same_heading_siblings` on the matching change in the apply result: other section ids on that concept whose heading matches after the same normalization as search. The write still commits; duplicate headings are legal.
+
+## Section version diff
+
+`wisp diff <path>#<section> --from <change> --to <change> --json` returns a line-oriented diff of section bodies at two section versions (`ChangeId` values). The diff lists lines present in `--from` but absent from `--to` (draft vs winner for exit-3 reconciliation). Changeset-scoped diff still uses `wisp diff --from <changeset> --to <changeset>` without a `#section` pin.

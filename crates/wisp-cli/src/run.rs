@@ -537,11 +537,26 @@ pub fn run(cli: Cli) -> CliResult {
                     WispError::usage("diff --from and --to are required together")
                 })?;
                 use std::str::FromStr;
+                let ref_name = ref_of(&repo, &None);
+                if path.as_deref().is_some_and(|p| p.contains('#')) {
+                    let from_id = ChangeId::from_str(from)
+                        .map_err(|e| WispError::usage(format!("invalid --from change: {e}")))?;
+                    let to_id = ChangeId::from_str(to)
+                        .map_err(|e| WispError::usage(format!("invalid --to change: {e}")))?;
+                    let d = wisp_engine::record::diff_section_versions(
+                        &mut repo,
+                        &ref_name,
+                        path.as_deref().expect("path with #"),
+                        from_id,
+                        to_id,
+                    )?;
+                    let _ = explain;
+                    return Ok(Output::json(d));
+                }
                 let from_id = ChangesetId::from_str(from)
                     .map_err(|e| WispError::usage(format!("invalid --from changeset: {e}")))?;
                 let to_id = ChangesetId::from_str(to)
                     .map_err(|e| WispError::usage(format!("invalid --to changeset: {e}")))?;
-                let ref_name = ref_of(&repo, &None);
                 let d = wisp_engine::record::diff_between_changesets(
                     &mut repo,
                     &ref_name,
@@ -1186,6 +1201,7 @@ pub fn run(cli: Cli) -> CliResult {
             k,
             threshold,
             local_only,
+            field,
             codec,
             r#ref,
         } => {
@@ -1195,6 +1211,7 @@ pub fn run(cli: Cli) -> CliResult {
             let params = wisp_engine::search::SearchParams {
                 threshold: *threshold,
                 local_only: *local_only,
+                field: field.clone(),
             };
             let v = query::search_with_params(&mut repo, &ref_name, q, mode, *k, &params)?;
             let human = v["results"]
@@ -1202,12 +1219,19 @@ pub fn run(cli: Cli) -> CliResult {
                 .map(|rs| {
                     rs.iter()
                         .map(|r| {
+                            let snip = r
+                                .get("snippet")
+                                .and_then(|s| s.as_str())
+                                .filter(|s| !s.is_empty())
+                                .map(|s| format!("  {s}"))
+                                .unwrap_or_default();
                             format!(
-                                "{:>8.3}  {}#{}  {}",
+                                "{:>8.3}  {}#{}  {}{}",
                                 r["score"].as_f64().unwrap_or(0.0),
                                 r["path"].as_str().unwrap_or(""),
                                 r["section"].as_str().unwrap_or(""),
-                                r["heading"].as_str().unwrap_or("")
+                                r["heading"].as_str().unwrap_or(""),
+                                snip
                             )
                         })
                         .collect::<Vec<_>>()

@@ -80,7 +80,9 @@ Unpinned `--input path#section` is stored **without** a version; wisp does not b
 |---------|-----------|----------------|
 | `erase` | [ERASE.md](./ERASE.md) | Preview vs `--yes`, `--discard`, recovery, dependents |
 | `merge` | [MERGE.md](./MERGE.md) | FF, replay, conflict exit 3, `--resolutions` |
-| `search`, `pack`, `tokens`, `codec` | [SEARCH.md](./SEARCH.md), [EXTENSIONS.md](./EXTENSIONS.md) | Tier order, `--local-only`, token codec |
+| `search`, `pack`, `tokens`, `codec` | [SEARCH.md](./SEARCH.md), [EXTENSIONS.md](./EXTENSIONS.md) | Tier order, `--field`, `--local-only`, token codec |
+| `diff` | [APPLY.md](./APPLY.md) | Working tree; changeset scope; `path#section` + change ids |
+| `apply`, headless writes | [APPLY.md](./APPLY.md), [AGENT-WRITERS.md](./AGENT-WRITERS.md) | Batch ops, `same_heading_siblings`, exit 3 |
 | `why` | [WHY.md](./WHY.md) | Backward graph, ref scope |
 | `impact` | [IMPACT.md](./IMPACT.md) | Forward trace, historical-only `data.mode` |
 | `export --html` | [EXPORT-HTML.md](./EXPORT-HTML.md) | Plaintext copy, publish semantics |

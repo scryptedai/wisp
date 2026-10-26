@@ -320,6 +320,7 @@ fn search_battery_modes() {
         let params = SearchParams {
             threshold: None,
             local_only: true,
+            field: None,
         };
         for c in cases.iter().filter(|c| c.expect == Expect::AbsentTopK) {
             let v = search_with_params(&mut repo, MAIN_REF, &c.query, "auto", k, &params)

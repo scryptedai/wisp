@@ -15,6 +15,7 @@ fn local_only_rejects_semantic_mode() {
     let params = SearchParams {
         threshold: None,
         local_only: true,
+        field: None,
     };
     let err = search_with_params(&mut repo, MAIN_REF, "RAM depleted", "semantic", 5, &params)
         .unwrap_err()

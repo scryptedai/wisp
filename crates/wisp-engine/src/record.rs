@@ -1406,3 +1406,61 @@ pub fn diff_between_changesets(
         "changes": by_path,
     }))
 }
+
+fn section_body_at_change(repo: &Repository, ch: &Change) -> Result<String> {
+    if Ledger::scope(repo.ledger.conn(), ch.scope)?
+        .map(|s| s.erased)
+        .unwrap_or(false)
+    {
+        return Err(WispError::key_unavailable("erased"));
+    }
+    let pr = ch
+        .payload
+        .as_ref()
+        .ok_or_else(|| WispError::not_found("no payload"))?;
+    let pt = repo
+        .read_payload(ch.scope, pr)?
+        .ok_or_else(|| WispError::key_unavailable("erased"))?;
+    let sb = SectionBody::decode(&pt)?;
+    Ok(sb.body)
+}
+
+/// `wisp diff <path>#<section> --from <change> --to <change>`: lines in `from` absent from `to`.
+pub fn diff_section_versions(
+    repo: &mut Repository,
+    ref_name: &str,
+    spec: &str,
+    from: ChangeId,
+    to: ChangeId,
+) -> Result<Value> {
+    let (_concept, section) = crate::erase::resolve_target(repo, ref_name, spec)?;
+    let section = section.ok_or_else(|| {
+        WispError::usage("section diff requires <path>#<section> with --from and --to change ids")
+    })?;
+    let conn = repo.ledger.conn();
+    let from_ch = Ledger::get_change(conn, from)?
+        .ok_or_else(|| WispError::not_found(format!("no change {from}")))?;
+    let to_ch = Ledger::get_change(conn, to)?
+        .ok_or_else(|| WispError::not_found(format!("no change {to}")))?;
+    for (label, ch) in [("from", &from_ch), ("to", &to_ch)] {
+        let sid = ch.target.section().ok_or_else(|| {
+            WispError::usage(format!("--{label} {} is not a section version", ch.id))
+        })?;
+        if sid != section {
+            return Err(WispError::usage(format!(
+                "--{label} targets section {sid}, not {section}"
+            )));
+        }
+    }
+    repo.hot(ref_name)?;
+    let from_body = section_body_at_change(repo, &from_ch)?;
+    let to_body = section_body_at_change(repo, &to_ch)?;
+    let diff = wisp_html::line_diff(&to_body, &from_body);
+    Ok(json!({
+        "path": spec,
+        "section": section.to_string(),
+        "from": from.to_string(),
+        "to": to.to_string(),
+        "diff": diff,
+    }))
+}

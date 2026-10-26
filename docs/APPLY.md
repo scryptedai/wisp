@@ -61,7 +61,7 @@ When an actor that is not `human:*` writes section content with no declared inpu
 
 ## Same-heading siblings
 
-`add-section` and `update_section` (when it sets a heading) include `same_heading_siblings` on the matching change in the apply result: other section ids on that concept whose heading matches after the same normalization as search. The write still commits; duplicate headings are legal.
+`add-section` and `update_section` include `same_heading_siblings` on the matching change when other sections on that concept have a heading that matches after the same normalization as search. The write still commits; duplicate headings are legal.
 
 ## Section version diff
 

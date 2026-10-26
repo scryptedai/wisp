@@ -28,8 +28,8 @@ pub fn execute(
     k: usize,
     params: &SearchParams,
 ) -> Result<Value> {
-    if let Some(field_name) = &params.field {
-        return field_search(repo, ref_name, query, mode, k, field_name);
+    if params.field.is_some() {
+        return field_search(repo, ref_name, query, mode, k, params);
     }
     let (mode_used, results) = match mode {
         "auto" => auto_search(repo, ref_name, query, k, params)?,
@@ -95,8 +95,12 @@ fn field_search(
     query: &str,
     mode: &str,
     k: usize,
-    field_name: &str,
+    params: &SearchParams,
 ) -> Result<Value> {
+    let field_name = params
+        .field
+        .as_deref()
+        .ok_or_else(|| WispError::usage("field search requires --field"))?;
     let field = SearchField::parse(field_name).ok_or_else(|| {
         WispError::usage(format!(
             "unknown --field {field_name:?}; use heading, body, title, or path"
@@ -104,10 +108,6 @@ fn field_search(
     })?;
     let hot = repo.hot(ref_name)?;
     let conn = hot.conn();
-    let params = SearchParams {
-        field: Some(field_name.to_string()),
-        ..Default::default()
-    };
     let (mode_used, hits) = match mode {
         "auto" => {
             let exact = Hot::search_field(conn, field, query, "exact", k)?;
@@ -129,7 +129,7 @@ fn field_search(
         }
     };
     let results = hits.into_iter().map(hit_json).collect();
-    Ok(search_envelope(mode_used, mode, query, &params, results))
+    Ok(search_envelope(mode_used, mode, query, params, results))
 }
 
 fn auto_search(

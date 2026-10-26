@@ -150,6 +150,10 @@ fn field_search_and_section_diff_on_blue_node() {
     let title = search_field(&mut repo, "title", "blue", "exact");
     assert_eq!(title.len(), 1);
     assert_eq!(title[0]["path"].as_str(), Some("blue/node"));
+    assert!(
+        search_field(&mut repo, "title", "title", "exact").is_empty(),
+        "title field must match value, not the key name"
+    );
 
     // Fourth add reports the other three as same-heading siblings.
     let out = apply_direct(

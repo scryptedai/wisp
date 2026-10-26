@@ -1407,6 +1407,27 @@ pub fn diff_between_changesets(
     }))
 }
 
+fn section_body_after_op(repo: &Repository, c: &Change, prev: Option<&str>) -> Result<String> {
+    let pr = c
+        .payload
+        .as_ref()
+        .ok_or_else(|| WispError::not_found("no payload"))?;
+    let pt = repo
+        .read_payload(c.scope, pr)?
+        .ok_or_else(|| WispError::key_unavailable("erased"))?;
+    match c.op {
+        Op::AppendSection | Op::PrependSection => {
+            let frag = SectionFragment::decode(&pt)?;
+            Ok(crate::payloads::stitch_section_body(
+                prev.unwrap_or(""),
+                &frag.content,
+                c.op == Op::PrependSection,
+            ))
+        }
+        _ => Ok(SectionBody::decode(&pt)?.body),
+    }
+}
+
 fn section_body_at_change(repo: &Repository, ch: &Change) -> Result<String> {
     if Ledger::scope(repo.ledger.conn(), ch.scope)?
         .map(|s| s.erased)
@@ -1414,15 +1435,32 @@ fn section_body_at_change(repo: &Repository, ch: &Change) -> Result<String> {
     {
         return Err(WispError::key_unavailable("erased"));
     }
-    let pr = ch
-        .payload
-        .as_ref()
-        .ok_or_else(|| WispError::not_found("no payload"))?;
-    let pt = repo
-        .read_payload(ch.scope, pr)?
-        .ok_or_else(|| WispError::key_unavailable("erased"))?;
-    let sb = SectionBody::decode(&pt)?;
-    Ok(sb.body)
+    let section = ch
+        .target
+        .section()
+        .ok_or_else(|| WispError::not_found("not a section version"))?;
+    let rows = Ledger::changes_for_section(repo.ledger.conn(), section)?;
+    let mut body: Option<String> = None;
+    for (_, c) in rows {
+        if c.op == Op::RemoveSection {
+            if c.id == ch.id {
+                return Err(WispError::not_found("section removed at this version"));
+            }
+            body = None;
+            continue;
+        }
+        if !crate::snapshot::writes_section_content(c.op) {
+            continue;
+        }
+        body = Some(section_body_after_op(repo, &c, body.as_deref())?);
+        if c.id == ch.id {
+            return body.ok_or_else(|| WispError::not_found("empty section body"));
+        }
+    }
+    Err(WispError::not_found(format!(
+        "change {0} not in section history",
+        ch.id
+    )))
 }
 
 /// `wisp diff <path>#<section> --from <change> --to <change>`: lines in `from` absent from `to`.

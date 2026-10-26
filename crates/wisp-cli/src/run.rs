@@ -1222,6 +1222,7 @@ pub fn run(cli: Cli) -> CliResult {
                             let snip = r
                                 .get("snippet")
                                 .and_then(|s| s.as_str())
+                                .map(|s| s.split_whitespace().collect::<Vec<_>>().join(" "))
                                 .filter(|s| !s.is_empty())
                                 .map(|s| format!("  {s}"))
                                 .unwrap_or_default();

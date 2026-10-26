@@ -301,10 +301,16 @@ fn snippet_excerpt(text: &str, needle: &str, max: usize) -> String {
         return t.chars().take(max).collect();
     }
     if let Some(pos) = lower.find(&n) {
-        let start = pos.saturating_sub(max / 4);
+        let pos_chars = lower[..pos].chars().count();
+        let start = pos_chars.saturating_sub(max / 4);
         let slice: String = t.chars().skip(start).take(max).collect();
         let prefix = if start > 0 { "…" } else { "" };
-        let suffix = if slice.len() < t.len() { "…" } else { "" };
+        let end_chars = start + slice.chars().count();
+        let suffix = if end_chars < t.chars().count() {
+            "…"
+        } else {
+            ""
+        };
         return format!("{prefix}{slice}{suffix}");
     }
     t.chars().take(max).collect()
@@ -1294,11 +1300,13 @@ impl Hot {
             SearchField::Title => {
                 let mut st = conn
                     .prepare(
-                        "SELECT s.concept, s.section, c.path, s.heading, s.body, s.version, f.raw
+                        "SELECT s.concept, s.section, c.path, s.heading, s.body, s.version,
+                                trim(substr(f.raw, instr(f.raw, ':') + 1)) AS title_val
                          FROM state_frontmatter f
                          JOIN state_concepts c ON c.concept = f.concept
                          JOIN state_sections s ON s.concept = c.concept AND s.level = 0
-                         WHERE f.key = 'title' AND f.raw LIKE ?1 ESCAPE '\\'
+                         WHERE f.key = 'title'
+                           AND trim(substr(f.raw, instr(f.raw, ':') + 1)) LIKE ?1 ESCAPE '\\'
                          ORDER BY c.path LIMIT ?2",
                     )
                     .map_err(sql_err)?;

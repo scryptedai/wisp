@@ -83,6 +83,9 @@ pub fn search_semantic(
             heading,
             score,
             body,
+            version: None,
+            matched_field: None,
+            snippet: None,
         });
     }
     hits.sort_by(|a, b| {

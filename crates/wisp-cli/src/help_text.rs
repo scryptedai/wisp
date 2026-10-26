@@ -28,7 +28,9 @@ Ops include update_section (full replace, base_version), append_section and prep
 (log fragments, no version precondition), create, set, and others. Truth is hot tier and \
 `wisp cat`; disk may lag until `wisp materialize --wait`. With --resolve, section_conflict \
 (exit 3) refreshes base_version from hot and retries (bounded). Merge working-tree cleanup \
-uses `wisp record --resolve` instead. See `wisp doc apply` and `wisp doc AGENT-WRITERS.md`.";
+uses `wisp record --resolve` instead. `add_section` / `update_section` may return \
+`same_heading_siblings` on each change (other section ids with the same normalized heading). \
+See `wisp doc apply` and `wisp doc AGENT-WRITERS.md`.";
 
 pub const ERASE_LONG: &str = "\
 Destroy scope keys and cold payloads for a section, concept, asset, group, or actor.\n\n\
@@ -44,7 +46,14 @@ Details: `wisp doc merge`.";
 
 pub const SEARCH_LONG: &str = "\
 Retrieve sections on the ref. Modes: **auto**, **exact**, **fuzzy** (BM25+trigram RRF), **keyword** (BM25 only), **ri**, **semantic**. **auto** stops at the first tier with hits: exact → fuzzy → ri → semantic (only if built with semantic and not --local-only).\n\n\
+`--field heading|body|title|path` searches one column (title = frontmatter `title`, path = concept path). Hits include `field`, `snippet`, and hot `version` for the next write pin.\n\n\
 Manifest embedding backends are not used by built-in search. See `wisp doc search` and `wisp doc extensions`.";
+
+pub const DIFF_LONG: &str = "\
+Without --from/--to: working-tree section diff vs the ref head.\n\n\
+With --from and --to together:\n\
+• **Changeset** ids — scope-level ops between two snapshots (`wisp diff --from <cs> --to <cs>`).\n\
+• **Section** ids — when the path is `<concept>#<section>`, ids are section **change** ids; JSON `diff` lists lines in --from absent from --to (draft vs winner on exit 3). See `wisp doc apply`.";
 
 pub const PACK_LONG: &str = "\
 Build JSON for LLM context within --budget tokens. Default codec is tok:approx:chars4 (ceil(chars/4)); pack spends ~90% of budget (see JSON codec_note).\n\n\

@@ -12,7 +12,7 @@ This repository keeps its knowledge in an OKF bundle managed by `wisp` (one bina
 ## Before you write code
 
 1. Find what is already known:
-   `wisp search "<topic>" --json` → sections with token counts.
+   `wisp search "<topic>" --json` → sections with token counts; add `--field heading|body|title|path` to match one column (hits include `snippet` and `version`).
 2. Load exactly what you need, within budget:
    `wisp pack <path>… --budget 4000 --json` → `concepts[].sections[]` with `text`; `omitted` lists what did not fit.
 3. If a decision looks surprising, ask why before changing it:

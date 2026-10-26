@@ -124,7 +124,8 @@ pub fn normalize(s: &str) -> String {
     }
 }
 
-fn normalize_heading(h: &str) -> String {
+/// Collapse whitespace and lowercase for heading equality (search + record match).
+pub fn normalize_heading(h: &str) -> String {
     h.split_whitespace()
         .collect::<Vec<_>>()
         .join(" ")

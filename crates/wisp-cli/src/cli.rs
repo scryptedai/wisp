@@ -133,13 +133,16 @@ before reading bundle paths from disk. See docs/WORKTREE.md."
         #[arg(long)]
         wait: bool,
     },
-    /// Section-level diff of the working tree against the ref
+    /// Working-tree diff, changeset scope diff, or section line diff (`path#section` with change ids)
+    #[command(long_about = help_text::DIFF_LONG)]
     Diff {
         path: Option<String>,
         #[arg(long)]
         explain: bool,
+        /// Start snapshot: changeset id, or section change id when path contains `#section`
         #[arg(long)]
         from: Option<String>,
+        /// End snapshot: changeset id, or section change id when path contains `#section`
         #[arg(long)]
         to: Option<String>,
     },
@@ -437,6 +440,9 @@ before reading bundle paths from disk. See docs/WORKTREE.md."
             help = "Skip neural tier only (no model load/download); RI still runs in auto"
         )]
         local_only: bool,
+        /// Match one index column: heading, body, title (frontmatter), or path
+        #[arg(long, value_name = "FIELD")]
+        field: Option<String>,
         #[arg(long)]
         codec: Option<String>,
         #[arg(long)]

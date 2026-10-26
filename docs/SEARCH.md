@@ -26,6 +26,25 @@ Unknown modes are rejected. There are no alternate names.
 
 `--threshold` adjusts fuzzy and RI/neural score floors where applicable.
 
+## Field search (`--field`)
+
+`wisp search --field heading|body|title|path` matches one index surface:
+
+| Field | Source |
+|-------|--------|
+| `heading` | `state_sections.heading` (`level > 0` only) |
+| `body` | Section body, including the preamble (`level = 0`) |
+| `title` | Frontmatter entry with key `title` |
+| `path` | Concept path (`state_concepts.path`) |
+
+With `--field`, modes are `auto` (exact then keyword), `exact` (substring), or `keyword` (FTS on `heading`/`body` columns only; `title`/`path` use substring). Each hit names `field`, a short `snippet`, and the section `version` at query time.
+
+## JSON (`wisp search --json`)
+
+Top-level: `mode`, `requested_mode`, `query`, `local_only`, `results` (array). With `--field`, `field` repeats the flag value.
+
+Each result object always includes `concept`, `path`, `section`, `heading`, `score`, `tokens`. With `--field`, hits also include `field`, `snippet`, and `version` (hot section change id at query time — use as `base_version` on the next write).
+
 ## Neural tier
 
 - **Model:** `bge-small-en-v1.5` (tag stored in `section_dense_embeddings.model_tag`).

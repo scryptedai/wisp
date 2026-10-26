@@ -32,6 +32,8 @@ When many agents share one bundle, set **`[queue] enabled = true`** and run **`w
 3. Rebuild your op with that `base_version` (or abort if policy says escalate to human).
 4. Retry with backoff+jitter if many agents collide.
 
+**Reconcile without guessing:** Keep the `update_section` body you intended, refresh `base_version` from `theirs.version`, and merge against the winner text (from conflict JSON or `wisp cat --json`). `wisp diff <path>#<section> --from <draft-change> --to <theirs.version> --json` lists lines in the committed draft change that the winner lacks — use it when your draft actually committed (a separate attempt), not when exit 3 rejected an uncommitted write; comparing `--from` to your stale base omits edits only in the rejected draft. Prefer learning duplicate headings from `same_heading_siblings` on the apply result over a heading search you may not have run. Scoped lookup: `wisp search "<phrase>" --field heading|body|title|path --json`.
+
 **Built-in loop:** `wisp apply --resolve` or `wisp_engine::headless::apply_with_resolve` (policy: `ApplyResolvePolicy`, default attempt budget scales with `commit.retries`). Embeds should use the engine API instead of reimplementing the loop; custom merge logic can still call `apply` once and handle conflicts itself.
 
 Exit 3 is **per request**, not per process. A “poison” client that never refreshes only fails itself; see adversarial battery **D2-poison-neighbor**.

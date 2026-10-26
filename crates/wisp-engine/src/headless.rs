@@ -746,6 +746,8 @@ fn apply_inner(
     }
     req.ops = ops;
     let out = crate::timing::phase("apply.commit", || commit(repo, req))?;
+    let hot = repo.hot(&ref_name)?;
+    let hot_conn = hot.conn();
     let versions: Vec<Value> = out
         .changes
         .iter()
@@ -757,6 +759,23 @@ fn apply_inner(
             }
             if let Some(cp) = c.target.concept() {
                 v["concept"] = json!(cp.to_string());
+            }
+            if matches!(c.op, Op::AddSection | Op::UpdateSection) {
+                if let (Some(sid), Some(cid)) = (c.target.section(), c.target.concept()) {
+                    if let Ok(Some(st)) = wisp_store::Hot::section(hot_conn, sid) {
+                        if let Ok(sibs) = wisp_store::Hot::same_heading_sibling_ids(
+                            hot_conn,
+                            cid,
+                            sid,
+                            &st.heading,
+                        ) {
+                            if !sibs.is_empty() {
+                                v["same_heading_siblings"] =
+                                    json!(sibs.iter().map(|s| s.to_string()).collect::<Vec<_>>());
+                            }
+                        }
+                    }
+                }
             }
             v
         })

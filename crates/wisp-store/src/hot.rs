@@ -189,6 +189,131 @@ pub struct SearchHit {
     pub heading: String,
     pub score: f64,
     pub body: String,
+    /// Hot `state_sections.version` at query time (pin for the next write).
+    pub version: Option<ChangeId>,
+    /// Which indexed column or table matched (`heading`, `body`, `title`, `path`).
+    pub matched_field: Option<String>,
+    pub snippet: Option<String>,
+}
+
+fn search_hit_plain(
+    concept: ConceptId,
+    section: SectionId,
+    path: String,
+    heading: String,
+    score: f64,
+    body: String,
+) -> SearchHit {
+    SearchHit {
+        concept,
+        section,
+        path,
+        heading,
+        score,
+        body,
+        version: None,
+        matched_field: None,
+        snippet: None,
+    }
+}
+
+/// Scoped search column (`wisp search --field`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SearchField {
+    Heading,
+    Body,
+    Title,
+    Path,
+}
+
+impl SearchField {
+    /// Parse CLI flag values (`heading`, `body`, `title`, `path`).
+    pub fn parse(s: &str) -> Option<Self> {
+        match s {
+            "heading" => Some(Self::Heading),
+            "body" => Some(Self::Body),
+            "title" => Some(Self::Title),
+            "path" => Some(Self::Path),
+            _ => None,
+        }
+    }
+
+    /// Stable column name for JSON hits and FTS column filters.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Heading => "heading",
+            Self::Body => "body",
+            Self::Title => "title",
+            Self::Path => "path",
+        }
+    }
+}
+
+fn like_escape(s: &str) -> String {
+    s.replace('\\', "\\\\")
+        .replace('%', "\\%")
+        .replace('_', "\\_")
+}
+
+fn hit_from_row(
+    concept: ConceptId,
+    section: SectionId,
+    path: String,
+    heading: String,
+    body: String,
+    score: f64,
+    version: Option<Vec<u8>>,
+    field: SearchField,
+    needle: &str,
+    snippet_from: Option<&str>,
+) -> SearchHit {
+    let snippet = if let Some(s) = snippet_from {
+        snippet_excerpt(s, needle, 160)
+    } else {
+        let snippet_source = match field {
+            SearchField::Heading => heading.as_str(),
+            SearchField::Body => body.as_str(),
+            SearchField::Title | SearchField::Path => path.as_str(),
+        };
+        snippet_excerpt(snippet_source, needle, 160)
+    };
+    SearchHit {
+        concept,
+        section,
+        path,
+        heading,
+        score,
+        body,
+        version: version.map(|b| ChangeId::from_bytes(blob16(b))),
+        matched_field: Some(field.as_str().to_string()),
+        snippet: Some(snippet),
+    }
+}
+
+fn snippet_excerpt(text: &str, needle: &str, max: usize) -> String {
+    let t = text.trim();
+    if t.is_empty() {
+        return String::new();
+    }
+    let lower = t.to_lowercase();
+    let n = needle.trim().to_lowercase();
+    if n.is_empty() {
+        return t.chars().take(max).collect();
+    }
+    if let Some(pos) = lower.find(&n) {
+        let pos_chars = lower[..pos].chars().count();
+        let start = pos_chars.saturating_sub(max / 4);
+        let slice: String = t.chars().skip(start).take(max).collect();
+        let prefix = if start > 0 { "…" } else { "" };
+        let end_chars = start + slice.chars().count();
+        let suffix = if end_chars < t.chars().count() {
+            "…"
+        } else {
+            ""
+        };
+        return format!("{prefix}{slice}{suffix}");
+    }
+    t.chars().take(max).collect()
 }
 
 pub struct Hot {
@@ -1090,6 +1215,244 @@ impl Hot {
         Self::collect_search_rows(&mut st, params![pat, k as i64])
     }
 
+    /// Strip surrounding `"..."` like unscoped exact search (field modes are not anchor syntax).
+    fn field_search_term(query: &str) -> Option<String> {
+        let q = query.trim();
+        if q.is_empty() {
+            return None;
+        }
+        let inner = if q.len() >= 2 && q.starts_with('"') && q.ends_with('"') {
+            q[1..q.len() - 1].to_string()
+        } else {
+            q.to_string()
+        };
+        if inner.is_empty() {
+            None
+        } else {
+            Some(inner)
+        }
+    }
+
+    /// Field-scoped search (`wisp search --field`). `mode` is `exact` or `keyword`.
+    pub fn search_field(
+        conn: &Connection,
+        field: SearchField,
+        query: &str,
+        mode: &str,
+        k: usize,
+    ) -> Result<Vec<SearchHit>> {
+        let Some(term) = Self::field_search_term(query) else {
+            return Ok(Vec::new());
+        };
+        match mode {
+            "exact" => Self::search_field_exact(conn, field, &term, k),
+            "keyword" => Self::search_field_keyword(conn, field, &term, k),
+            other => Err(wisp_model::WispError::usage(format!(
+                "unknown field search mode {other:?}; use exact or keyword"
+            ))),
+        }
+    }
+
+    fn search_field_exact(
+        conn: &Connection,
+        field: SearchField,
+        needle: &str,
+        k: usize,
+    ) -> Result<Vec<SearchHit>> {
+        let pat = format!("%{}%", like_escape(needle));
+        match field {
+            SearchField::Heading => {
+                let mut st = conn
+                    .prepare(
+                        "SELECT s.concept, s.section, c.path, s.heading, s.body, s.version
+                         FROM state_sections s
+                         JOIN state_concepts c ON c.concept = s.concept
+                         WHERE s.level > 0 AND s.heading LIKE ?1 ESCAPE '\\'
+                         ORDER BY s.idx LIMIT ?2",
+                    )
+                    .map_err(sql_err)?;
+                Self::collect_field_rows(&mut st, params![pat, k as i64], field, needle)
+            }
+            SearchField::Body => {
+                let mut st = conn
+                    .prepare(
+                        "SELECT s.concept, s.section, c.path, s.heading, s.body, s.version
+                         FROM state_sections s
+                         JOIN state_concepts c ON c.concept = s.concept
+                         WHERE s.body LIKE ?1 ESCAPE '\\'
+                         ORDER BY s.idx LIMIT ?2",
+                    )
+                    .map_err(sql_err)?;
+                Self::collect_field_rows(&mut st, params![pat, k as i64], field, needle)
+            }
+            SearchField::Path => {
+                let mut st = conn
+                    .prepare(
+                        "SELECT s.concept, s.section, c.path, s.heading, s.body, s.version
+                         FROM state_sections s
+                         JOIN state_concepts c ON c.concept = s.concept
+                         WHERE c.path LIKE ?1 ESCAPE '\\' AND s.level = 0
+                         ORDER BY s.idx LIMIT ?2",
+                    )
+                    .map_err(sql_err)?;
+                Self::collect_field_rows(&mut st, params![pat, k as i64], field, needle)
+            }
+            SearchField::Title => {
+                let mut st = conn
+                    .prepare(
+                        "SELECT s.concept, s.section, c.path, s.heading, s.body, s.version,
+                                trim(substr(f.raw, instr(f.raw, ':') + 1)) AS title_val
+                         FROM state_frontmatter f
+                         JOIN state_concepts c ON c.concept = f.concept
+                         JOIN state_sections s ON s.concept = c.concept AND s.level = 0
+                         WHERE f.key = 'title'
+                           AND trim(substr(f.raw, instr(f.raw, ':') + 1)) LIKE ?1 ESCAPE '\\'
+                         ORDER BY c.path LIMIT ?2",
+                    )
+                    .map_err(sql_err)?;
+                let rows = st
+                    .query_map(params![pat, k as i64], |r| {
+                        let title_raw: String = r.get(6)?;
+                        Ok(hit_from_row(
+                            ConceptId::from_bytes(blob16(r.get::<_, Vec<u8>>(0)?)),
+                            SectionId::from_bytes(blob16(r.get::<_, Vec<u8>>(1)?)),
+                            r.get(2)?,
+                            r.get(3)?,
+                            r.get(4)?,
+                            1.0,
+                            Some(r.get::<_, Vec<u8>>(5)?),
+                            field,
+                            needle,
+                            Some(title_raw.as_str()),
+                        ))
+                    })
+                    .map_err(sql_err)?;
+                Ok(rows.filter_map(|r| r.ok()).collect())
+            }
+        }
+    }
+
+    fn search_field_keyword(
+        conn: &Connection,
+        field: SearchField,
+        query: &str,
+        k: usize,
+    ) -> Result<Vec<SearchHit>> {
+        match field {
+            SearchField::Heading | SearchField::Body => {
+                let col = field.as_str();
+                let q = fts_column_query(col, query);
+                if q.is_empty() {
+                    return Ok(Vec::new());
+                }
+                let mut st = conn
+                    .prepare(
+                        "SELECT s.concept, s.section, c.path, s.heading, bm25(state_search_fts) AS score, s.body, s.version
+                         FROM state_search_fts f
+                         JOIN state_sections s ON s.rowid = f.rowid
+                         JOIN state_concepts c ON c.concept = s.concept
+                         WHERE state_search_fts MATCH ?1
+                         ORDER BY score LIMIT ?2",
+                    )
+                    .map_err(sql_err)?;
+                Self::collect_field_rows_scored(&mut st, params![q, k as i64], field, query)
+            }
+            SearchField::Path | SearchField::Title => {
+                // Not indexed in FTS; substring match is the keyword tier.
+                Self::search_field_exact(conn, field, query, k)
+            }
+        }
+    }
+
+    /// Other section ids on `concept` with the same normalized heading (excludes `section`).
+    pub fn same_heading_sibling_ids(
+        conn: &Connection,
+        concept: ConceptId,
+        section: SectionId,
+        heading: &str,
+    ) -> Result<Vec<SectionId>> {
+        let norm = wisp_match::normalize_heading(heading);
+        if norm.is_empty() {
+            return Ok(Vec::new());
+        }
+        let mut st = conn
+            .prepare(
+                "SELECT section, heading FROM state_sections
+                 WHERE concept = ?1 AND level > 0",
+            )
+            .map_err(sql_err)?;
+        let rows = st
+            .query_map(params![concept.bytes().to_vec()], |r| {
+                Ok((
+                    SectionId::from_bytes(blob16(r.get::<_, Vec<u8>>(0)?)),
+                    r.get::<_, String>(1)?,
+                ))
+            })
+            .map_err(sql_err)?;
+        let mut out = Vec::new();
+        for row in rows.filter_map(|r| r.ok()) {
+            let (sid, h) = row;
+            if sid == section {
+                continue;
+            }
+            if wisp_match::normalize_heading(&h) == norm {
+                out.push(sid);
+            }
+        }
+        out.sort_by_key(|s| s.to_string());
+        Ok(out)
+    }
+
+    fn collect_field_rows(
+        st: &mut rusqlite::Statement,
+        bind: impl rusqlite::Params,
+        field: SearchField,
+        needle: &str,
+    ) -> Result<Vec<SearchHit>> {
+        let rows = st
+            .query_map(bind, |r| {
+                Ok(hit_from_row(
+                    ConceptId::from_bytes(blob16(r.get::<_, Vec<u8>>(0)?)),
+                    SectionId::from_bytes(blob16(r.get::<_, Vec<u8>>(1)?)),
+                    r.get(2)?,
+                    r.get(3)?,
+                    r.get(4)?,
+                    1.0,
+                    Some(r.get::<_, Vec<u8>>(5)?),
+                    field,
+                    needle,
+                    None,
+                ))
+            })
+            .map_err(sql_err)?;
+        Ok(rows.filter_map(|r| r.ok()).collect())
+    }
+
+    fn collect_field_rows_scored(
+        st: &mut rusqlite::Statement,
+        bind: impl rusqlite::Params,
+        field: SearchField,
+        needle: &str,
+    ) -> Result<Vec<SearchHit>> {
+        let rows = st
+            .query_map(bind, |r| {
+                Ok(hit_from_row(
+                    ConceptId::from_bytes(blob16(r.get::<_, Vec<u8>>(0)?)),
+                    SectionId::from_bytes(blob16(r.get::<_, Vec<u8>>(1)?)),
+                    r.get(2)?,
+                    r.get(3)?,
+                    r.get(5)?,
+                    -r.get::<_, f64>(4)?,
+                    Some(r.get::<_, Vec<u8>>(6)?),
+                    field,
+                    needle,
+                    None,
+                ))
+            })
+            .map_err(sql_err)?;
+        Ok(rows.filter_map(|r| r.ok()).collect())
+    }
+
     /// FTS5 trigram tokenizer (substring / hyphenation).
     pub fn search_substring_fts(
         conn: &Connection,
@@ -1159,14 +1522,14 @@ impl Hot {
             .map_err(sql_err)?;
         let rows = st
             .query_map([], |r| {
-                Ok(SearchHit {
-                    concept: ConceptId::from_bytes(blob16(r.get::<_, Vec<u8>>(0)?)),
-                    section: SectionId::from_bytes(blob16(r.get::<_, Vec<u8>>(1)?)),
-                    path: r.get(2)?,
-                    heading: r.get(3)?,
-                    score: 0.0,
-                    body: r.get(4)?,
-                })
+                Ok(search_hit_plain(
+                    ConceptId::from_bytes(blob16(r.get::<_, Vec<u8>>(0)?)),
+                    SectionId::from_bytes(blob16(r.get::<_, Vec<u8>>(1)?)),
+                    r.get(2)?,
+                    r.get(3)?,
+                    0.0,
+                    r.get(4)?,
+                ))
             })
             .map_err(sql_err)?;
         Ok(rows.filter_map(|r| r.ok()).collect())
@@ -1178,14 +1541,14 @@ impl Hot {
     ) -> Result<Vec<SearchHit>> {
         let rows = st
             .query_map(bind, |r| {
-                Ok(SearchHit {
-                    concept: ConceptId::from_bytes(blob16(r.get::<_, Vec<u8>>(0)?)),
-                    section: SectionId::from_bytes(blob16(r.get::<_, Vec<u8>>(1)?)),
-                    path: r.get(2)?,
-                    heading: r.get(3)?,
-                    score: 1.0,
-                    body: r.get(4)?,
-                })
+                Ok(search_hit_plain(
+                    ConceptId::from_bytes(blob16(r.get::<_, Vec<u8>>(0)?)),
+                    SectionId::from_bytes(blob16(r.get::<_, Vec<u8>>(1)?)),
+                    r.get(2)?,
+                    r.get(3)?,
+                    1.0,
+                    r.get(4)?,
+                ))
             })
             .map_err(sql_err)?;
         Ok(rows.filter_map(|r| r.ok()).collect())
@@ -1197,14 +1560,14 @@ impl Hot {
     ) -> Result<Vec<SearchHit>> {
         let rows = st
             .query_map(bind, |r| {
-                Ok(SearchHit {
-                    concept: ConceptId::from_bytes(blob16(r.get::<_, Vec<u8>>(0)?)),
-                    section: SectionId::from_bytes(blob16(r.get::<_, Vec<u8>>(1)?)),
-                    path: r.get(2)?,
-                    heading: r.get(3)?,
-                    score: -r.get::<_, f64>(4)?,
-                    body: r.get(5)?,
-                })
+                Ok(search_hit_plain(
+                    ConceptId::from_bytes(blob16(r.get::<_, Vec<u8>>(0)?)),
+                    SectionId::from_bytes(blob16(r.get::<_, Vec<u8>>(1)?)),
+                    r.get(2)?,
+                    r.get(3)?,
+                    -r.get::<_, f64>(4)?,
+                    r.get(5)?,
+                ))
             })
             .map_err(sql_err)?;
         Ok(rows.filter_map(|r| r.ok()).collect())
@@ -1255,14 +1618,14 @@ impl Hot {
             .map_err(sql_err)?;
         let rows = st
             .query_map(params![q, k as i64], |r| {
-                Ok(SearchHit {
-                    concept: ConceptId::from_bytes(blob16(r.get::<_, Vec<u8>>(0)?)),
-                    section: SectionId::from_bytes(blob16(r.get::<_, Vec<u8>>(1)?)),
-                    path: r.get(2)?,
-                    heading: r.get(3)?,
-                    score: -r.get::<_, f64>(4)?,
-                    body: r.get(5)?,
-                })
+                Ok(search_hit_plain(
+                    ConceptId::from_bytes(blob16(r.get::<_, Vec<u8>>(0)?)),
+                    SectionId::from_bytes(blob16(r.get::<_, Vec<u8>>(1)?)),
+                    r.get(2)?,
+                    r.get(3)?,
+                    -r.get::<_, f64>(4)?,
+                    r.get(5)?,
+                ))
             })
             .map_err(sql_err)?
             .filter_map(|r| r.ok())
@@ -1342,4 +1705,13 @@ pub fn fts_query(q: &str) -> String {
     } else {
         toks.join(" ")
     }
+}
+
+/// FTS5 column filter for `state_search_fts` (`heading` or `body` only).
+pub fn fts_column_query(column: &str, q: &str) -> String {
+    let inner = fts_query(q);
+    if inner.is_empty() || inner == "\"\"" {
+        return String::new();
+    }
+    format!("{column} : ({inner})")
 }

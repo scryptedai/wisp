@@ -133,6 +133,13 @@ fn field_search_and_section_diff_on_blue_node() {
 
     let film_body = search_field(&mut repo, "body", "Film", "exact");
     assert_eq!(film_body.len(), 1);
+    let quoted_film = search_field(&mut repo, "body", "\"Film\"", "exact");
+    assert_eq!(quoted_film.len(), 1, "quoted exact should strip quotes");
+
+    let peb_kw = search_field(&mut repo, "heading", "Psychological", "keyword");
+    assert_eq!(peb_kw.len(), 3, "heading keyword: {peb_kw:?}");
+    let film_kw = search_field(&mut repo, "body", "Film", "keyword");
+    assert_eq!(film_kw.len(), 1, "body keyword: {film_kw:?}");
     assert_eq!(
         film_body[0]["section"].as_str().unwrap(),
         _preamble.to_string()

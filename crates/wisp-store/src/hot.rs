@@ -1209,6 +1209,24 @@ impl Hot {
         Self::collect_search_rows(&mut st, params![pat, k as i64])
     }
 
+    /// Strip surrounding `"..."` like unscoped exact search (field modes are not anchor syntax).
+    fn field_search_term(query: &str) -> Option<String> {
+        let q = query.trim();
+        if q.is_empty() {
+            return None;
+        }
+        let inner = if q.len() >= 2 && q.starts_with('"') && q.ends_with('"') {
+            q[1..q.len() - 1].to_string()
+        } else {
+            q.to_string()
+        };
+        if inner.is_empty() {
+            None
+        } else {
+            Some(inner)
+        }
+    }
+
     /// Field-scoped search (`wisp search --field`). `mode` is `exact` or `keyword`.
     pub fn search_field(
         conn: &Connection,
@@ -1217,13 +1235,12 @@ impl Hot {
         mode: &str,
         k: usize,
     ) -> Result<Vec<SearchHit>> {
-        let q = query.trim();
-        if q.is_empty() {
+        let Some(term) = Self::field_search_term(query) else {
             return Ok(Vec::new());
-        }
+        };
         match mode {
-            "exact" => Self::search_field_exact(conn, field, q, k),
-            "keyword" => Self::search_field_keyword(conn, field, q, k),
+            "exact" => Self::search_field_exact(conn, field, &term, k),
+            "keyword" => Self::search_field_keyword(conn, field, &term, k),
             other => Err(wisp_model::WispError::usage(format!(
                 "unknown field search mode {other:?}; use exact or keyword"
             ))),
@@ -1416,8 +1433,8 @@ impl Hot {
                     SectionId::from_bytes(blob16(r.get::<_, Vec<u8>>(1)?)),
                     r.get(2)?,
                     r.get(3)?,
-                    r.get(4)?,
-                    -r.get::<_, f64>(5)?,
+                    r.get(5)?,
+                    -r.get::<_, f64>(4)?,
                     Some(r.get::<_, Vec<u8>>(6)?),
                     field,
                     needle,

@@ -227,6 +227,7 @@ pub enum SearchField {
 }
 
 impl SearchField {
+    /// Parse CLI flag values (`heading`, `body`, `title`, `path`).
     pub fn parse(s: &str) -> Option<Self> {
         match s {
             "heading" => Some(Self::Heading),
@@ -237,6 +238,7 @@ impl SearchField {
         }
     }
 
+    /// Stable column name for JSON hits and FTS column filters.
     pub fn as_str(self) -> &'static str {
         match self {
             Self::Heading => "heading",

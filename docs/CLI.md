@@ -78,6 +78,7 @@ Unpinned `--input path#section` is stored **without** a version; wisp does not b
 
 | Command | Topic doc | Read this for |
 |---------|-----------|----------------|
+| `init` | this page, [DECISIONS.md](../DECISIONS.md) §10.1 | Plain default; `--encrypt` for master key + ciphertext |
 | `erase` | [ERASE.md](./ERASE.md) | Preview vs `--yes`, `--discard`, recovery, dependents |
 | `merge` | [MERGE.md](./MERGE.md) | FF, replay, conflict exit 3, `--resolutions` |
 | `search`, `pack`, `tokens`, `codec` | [SEARCH.md](./SEARCH.md), [EXTENSIONS.md](./EXTENSIONS.md) | Tier order, `--local-only`, token codec |
@@ -95,3 +96,11 @@ Unpinned `--input path#section` is stored **without** a version; wisp does not b
 - **`retract` / `remove-section` ≠ erase.** Retraction hides from the current view; erase is cryptographic destruction.
 
 Repository agent guide: [AGENTS.md](./AGENTS.md) (copied beside topic docs on install).
+
+## `wisp init` and cold storage
+
+Default **`wisp init`** creates a **plain** repository: `manifest.toml` records `repo.storage = "plain"`, cold payload files store section text without AEAD (WSP1 version 2), scope keys sit in `keystore.db` as raw rows, and **no** `.wisp/keys/master.key` is created. `--passphrase` and `WISP_MASTER_KEY` are rejected at plain init (exit 2).
+
+**`wisp init --encrypt`** selects encrypted cold storage for GDPR-style crypto-shred attestation: ChaCha20-Poly1305 payloads, a master key file (mode 0600), and wrapped scope keys. Encrypted repos unlock from, in order: `WISP_MASTER_KEY` (64 hex chars), `--passphrase` (Argon2id), or `.wisp/keys/master.key`.
+
+Manifests **without** `repo.storage` are treated as **encrypted** so older repositories keep working. Trusted sync requires the same storage mode on both sides.

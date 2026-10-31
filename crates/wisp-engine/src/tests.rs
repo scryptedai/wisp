@@ -1452,7 +1452,13 @@ fn passphrase_and_env_master_keys() {
     let unlock = Unlock {
         passphrase: Some("correct horse".into()),
     };
-    Repository::init(&f.root, "0.2", &unlock).unwrap();
+    Repository::init_with(
+        &f.root,
+        "0.2",
+        &unlock,
+        crate::InitOptions { encrypt: true },
+    )
+    .unwrap();
     write(&f.root, "a.md", "---\ntype: T\n---\nx\n");
     let mut repo = Repository::open(&f.root, &unlock).unwrap();
     rec(&mut repo, "human:alex");

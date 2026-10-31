@@ -19,6 +19,8 @@ pub use keystore::{Keystore, MasterKey};
 
 pub const PAYLOAD_MAGIC: &[u8; 4] = b"WSP1";
 pub const PAYLOAD_VERSION: u8 = 1;
+/// Plaintext cold payload: `magic | version | kind | bytes…` (no nonce or AEAD).
+pub const PAYLOAD_VERSION_PLAIN: u8 = 2;
 const INFO_ENC: &[u8] = b"wisp/v1/enc";
 const INFO_COMMIT: &[u8] = b"wisp/v1/commit";
 const INFO_ACTOR_INDEX: &[u8] = b"wisp/v1/actor-index";
@@ -118,18 +120,93 @@ pub fn encrypt_payload(
     out
 }
 
-/// Read the kind tag from a payload file without decrypting.
+/// Store a plaintext cold payload (no encryption).
+pub fn store_payload_plain(kind: PayloadKind, plaintext: &[u8]) -> Vec<u8> {
+    let mut out = Vec::with_capacity(4 + 1 + 1 + plaintext.len());
+    out.extend_from_slice(PAYLOAD_MAGIC);
+    out.push(PAYLOAD_VERSION_PLAIN);
+    out.push(kind as u8);
+    out.extend_from_slice(plaintext);
+    out
+}
+
+/// Read the kind tag from a payload file without decrypting (encrypted v1 only).
 pub fn payload_kind(bytes: &[u8]) -> Result<PayloadKind, WispError> {
-    if bytes.len() < 30 || &bytes[..4] != PAYLOAD_MAGIC {
+    if bytes.len() < 6 || &bytes[..4] != PAYLOAD_MAGIC {
         return Err(WispError::integrity("payload: bad magic"));
     }
-    if bytes[4] != PAYLOAD_VERSION {
+    match bytes[4] {
+        PAYLOAD_VERSION => {
+            if bytes.len() < 30 {
+                return Err(WispError::integrity("payload: truncated"));
+            }
+            PayloadKind::from_u8(bytes[5])
+                .ok_or_else(|| WispError::integrity("payload: unknown kind"))
+        }
+        PAYLOAD_VERSION_PLAIN => PayloadKind::from_u8(bytes[5])
+            .ok_or_else(|| WispError::integrity("payload: unknown kind")),
+        v => Err(WispError::integrity(format!(
+            "payload: unsupported version {v}"
+        ))),
+    }
+}
+
+fn read_payload_plain(bytes: &[u8]) -> Result<(PayloadKind, Vec<u8>), WispError> {
+    if bytes.len() < 6 || &bytes[..4] != PAYLOAD_MAGIC {
+        return Err(WispError::integrity("payload: bad magic"));
+    }
+    if bytes[4] != PAYLOAD_VERSION_PLAIN {
         return Err(WispError::integrity(format!(
-            "payload: unsupported version {}",
-            bytes[4]
+            "payload: expected plain version {PAYLOAD_VERSION_PLAIN}"
         )));
     }
-    PayloadKind::from_u8(bytes[5]).ok_or_else(|| WispError::integrity("payload: unknown kind"))
+    let kind = PayloadKind::from_u8(bytes[5])
+        .ok_or_else(|| WispError::integrity("payload: unknown kind"))?;
+    Ok((kind, bytes[6..].to_vec()))
+}
+
+/// Decode a cold payload file for the repository's storage mode.
+pub fn read_payload_file(
+    encrypted: bool,
+    k_enc: Option<&[u8; 32]>,
+    payload: PayloadId,
+    scope: ScopeId,
+    bytes: &[u8],
+) -> Result<(PayloadKind, Vec<u8>), WispError> {
+    if bytes.len() < 6 || &bytes[..4] != PAYLOAD_MAGIC {
+        return Err(WispError::integrity("payload: bad magic"));
+    }
+    match bytes[4] {
+        PAYLOAD_VERSION_PLAIN => read_payload_plain(bytes),
+        PAYLOAD_VERSION => {
+            if !encrypted {
+                return Err(WispError::integrity(
+                    "payload: encrypted file in a plain repository",
+                ));
+            }
+            let k = k_enc.ok_or_else(|| WispError::integrity("payload: missing scope key"))?;
+            decrypt_payload(k, payload, scope, bytes)
+        }
+        v => Err(WispError::integrity(format!(
+            "payload: unsupported version {v}"
+        ))),
+    }
+}
+
+/// Encode a cold payload for the repository's storage mode.
+pub fn store_payload_file(
+    encrypted: bool,
+    k_enc: &[u8; 32],
+    payload: PayloadId,
+    scope: ScopeId,
+    kind: PayloadKind,
+    plaintext: &[u8],
+) -> Vec<u8> {
+    if encrypted {
+        encrypt_payload(k_enc, payload, scope, kind, plaintext)
+    } else {
+        store_payload_plain(kind, plaintext)
+    }
 }
 
 /// Decrypt a payload file. Returns (kind, plaintext).
@@ -186,6 +263,17 @@ pub mod sig {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn plain_payload_roundtrip() {
+        let bytes = store_payload_plain(PayloadKind::Section, b"hello");
+        assert_eq!(&bytes[..4], b"WSP1");
+        assert_eq!(bytes[4], PAYLOAD_VERSION_PLAIN);
+        let (kind, pt) =
+            read_payload_file(false, None, PayloadId::new(), ScopeId::new(), &bytes).unwrap();
+        assert_eq!(kind, PayloadKind::Section);
+        assert_eq!(pt, b"hello");
+    }
 
     #[test]
     fn payload_roundtrip_and_aad_binding() {

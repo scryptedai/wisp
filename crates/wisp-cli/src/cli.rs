@@ -91,6 +91,9 @@ pub enum Command {
         dir: Option<PathBuf>,
         #[arg(long, default_value = "0.2")]
         profile: String,
+        /// Encrypt cold payloads and wrap scope keys with a master key (GDPR crypto-shred attestation)
+        #[arg(long)]
+        encrypt: bool,
     },
     /// Adopt an existing bundle: a plain directory, or --git <repo>
     Import {

@@ -499,6 +499,7 @@ fn rebuild_hot_inner(
     let profile_id = repo.profile.id().to_string();
     let payloads_dir = repo.ledger.payloads_dir();
     let repo_id = repo.repo_id();
+    let encrypted = repo.payloads_encrypted();
     let mut hot = repo
         .hots
         .remove(ref_name)
@@ -516,6 +517,7 @@ fn rebuild_hot_inner(
             payloads_dir: payloads_dir.clone(),
             keystore,
             repo_id,
+            encrypted,
         };
         let skip = skip_owned.as_ref();
         let tx = hot.begin()?;

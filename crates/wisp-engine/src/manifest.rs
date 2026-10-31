@@ -45,6 +45,29 @@ pub struct VectorIndexSection {
     pub backends: std::collections::BTreeMap<String, wisp_index::VectorBackendConfig>,
 }
 
+/// How cold-tier payload files are stored on disk.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum PayloadStorage {
+    /// Plaintext payload files (default for `wisp init`).
+    Plain,
+    /// ChaCha20-Poly1305 ciphertext (GDPR attestation / crypto-shred); use `wisp init --encrypt`.
+    Encrypted,
+}
+
+impl PayloadStorage {
+    /// Repositories created before this field existed used encrypted payloads.
+    pub fn from_manifest_field(v: Option<PayloadStorage>) -> Self {
+        v.unwrap_or(PayloadStorage::Encrypted)
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default)]
+pub struct InitOptions {
+    /// When true, create an encrypted repository (master key + ciphertext payloads).
+    pub encrypt: bool,
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct RepoSection {
     pub id: RepoId,
@@ -53,6 +76,9 @@ pub struct RepoSection {
     /// The repository scope (§10.4), by ID only.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub scope: Option<ScopeId>,
+    /// Absent on repositories created before plaintext-default init; treat as `encrypted`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub storage: Option<PayloadStorage>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -355,6 +381,7 @@ impl Manifest {
                 format: 1,
                 profile: profile.to_string(),
                 scope: None,
+                storage: Some(PayloadStorage::Plain),
             },
             identity: IdentitySection::default(),
             commit: CommitSection::default(),

@@ -27,6 +27,7 @@ pub mod vector;
 pub mod worktree;
 
 pub use commit_queue::CommitQueue;
+pub use manifest::{InitOptions, PayloadStorage};
 pub use repo::{Repository, Unlock, MAIN_REF};
 
 /// Parse a YAML document into JSON (for `--frontmatter-file`).

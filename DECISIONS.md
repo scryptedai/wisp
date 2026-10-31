@@ -57,7 +57,8 @@ Deviations from the OKF store v1 design (ledger, parse, merge, sync, profiles), 
 
 ## §10.1 Keys
 
-- The default master-key source is a key file at `.wisp/keys/master.key` (mode 0600) instead of the OS keychain. `WISP_MASTER_KEY` and `--passphrase` (Argon2id with the specified parameters) work as specified. A keystore check value detects a wrong master key early (exit 9).
+- **`repo.storage` (plain vs encrypted).** `wisp init` creates a **plain** repository: cold payload files store section text without AEAD, and scope keys sit in the keystore SQLite file as raw 32-byte rows (no `master.key`). Plain repos refuse `--passphrase` and `WISP_MASTER_KEY` on open. **`wisp init --encrypt`** selects the OKF-style model: ChaCha20-Poly1305 payloads, wrapped scope keys, and a master key file. Manifests without `repo.storage` are treated as **encrypted** so existing repositories keep working. Erasure on plain repos still deletes payload files and scope keys; it does not produce GDPR-style ciphertext attestation.
+- The default master-key source for **encrypted** repositories is a key file at `.wisp/keys/master.key` (mode 0600) instead of the OS keychain. `WISP_MASTER_KEY` and `--passphrase` (Argon2id with the specified parameters) work as specified. A keystore check value detects a wrong master key early (exit 9).
 - Ed25519 signing: `wisp actor gen-key` generates a keypair, stores the seed at `.wisp/keys/signing/<actor>.seed` (or use `WISP_SIGNING_SEED` in CI), and registers the public key; `wisp actor key` still registers an external public key only. Commits sign the changeset digest when a matching local seed exists. `fsck` verifies signatures when the actor’s public key payload is present.
 
 ## §10.4 Erasure groups

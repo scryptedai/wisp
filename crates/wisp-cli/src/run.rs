@@ -412,16 +412,35 @@ pub fn run(cli: Cli) -> CliResult {
             path,
             man,
         } => run_doc(topic, *list, *path, *man),
-        Command::Init { dir, profile } => {
+        Command::Init {
+            dir,
+            profile,
+            encrypt,
+        } => {
             let root = dir.clone().unwrap_or(std::env::current_dir()?);
             std::fs::create_dir_all(&root)?;
-            let repo = Repository::init(&root, profile, &unlock(&cli))?;
+            let repo = Repository::init_with(
+                &root,
+                profile,
+                &unlock(&cli),
+                wisp_engine::InitOptions { encrypt: *encrypt },
+            )?;
             Ok(Output::text(
-                json!({ "root": root.display().to_string(), "repo": repo.repo_id().to_string(), "profile": repo.profile.id() }),
+                json!({
+                    "root": root.display().to_string(),
+                    "repo": repo.repo_id().to_string(),
+                    "profile": repo.profile.id(),
+                    "storage": if repo.payloads_encrypted() { "encrypted" } else { "plain" },
+                }),
                 format!(
-                    "Initialized wisp repository in {} ({})",
+                    "Initialized wisp repository in {} ({}, {} storage)",
                     root.join(".wisp").display(),
-                    repo.profile.id()
+                    repo.profile.id(),
+                    if repo.payloads_encrypted() {
+                        "encrypted"
+                    } else {
+                        "plain"
+                    }
                 ),
             ))
         }

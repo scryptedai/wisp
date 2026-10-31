@@ -4258,6 +4258,7 @@ dependencies = [
  "toml",
  "walkdir",
  "wisp-corpus",
+ "wisp-crypto",
  "wisp-engine",
  "wisp-html",
  "wisp-match",

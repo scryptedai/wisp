@@ -16,7 +16,9 @@
 .Sh DESCRIPTION
 .Nm
 stores an Open Knowledge Format (OKF) bundle as an append-only, section-level
-changeset log with encrypted cold payloads and a hot SQLite tier.
+changeset log with a hot SQLite tier and cold payload files
+.Pq plain by default at Cm init ,
+encrypted when initialized with Cm init Fl -encrypt ) .
 The ledger is authoritative; managed markdown on disk is a cache refreshed
 asynchronously after headless commits unless a barrier runs.
 It materializes conformant markdown on checkout and supports agent commits with
@@ -177,8 +179,13 @@ Human text goes to stderr.
 .It Fl -quiet
 Suppress human-readable stdout.
 .It Fl -passphrase Ar string
-Unlock keystore (alternative to key file or
+Unlock keystore for encrypted repositories (alternative to key file or
 .Ev WISP_MASTER_KEY ) .
+.It Fl -encrypt
+With
+.Cm init ,
+store cold payloads encrypted and create
+.Pa .wisp/keys/master.key .
 .It Fl -no-index
 Skip in-process subscribers for this invocation.
 .El
@@ -193,6 +200,10 @@ Bundle metadata, ledger, keys, cache (per repository).
 .It Pa .wisp/manifest.toml
 Repository config
 .Pq Cm wisp config ) :
+.Va repo.storage
+.Pq Cm plain
+or
+.Cm encrypted ,
 .Va commit.busy_timeout_ms ,
 .Va commit.retries ,
 .Va queue.enabled ,

@@ -2,7 +2,7 @@
 
 use crate::cold_flush::ColdFlushQueue;
 use crate::commit::CommitOutcome;
-use crate::manifest::Manifest;
+use crate::manifest::{InitOptions, Manifest, PayloadStorage};
 use crate::materialize::{MaterializeQueue, MaterializeStatus};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -37,6 +37,7 @@ pub struct Reader<'a> {
     pub payloads_dir: PathBuf,
     pub keystore: &'a Keystore,
     pub repo_id: RepoId,
+    pub encrypted: bool,
 }
 
 impl<'a> Reader<'a> {
@@ -47,8 +48,13 @@ impl<'a> Reader<'a> {
         let Some(bytes) = Ledger::read_payload_at(self.conn, &self.payloads_dir, r.id)? else {
             return Ok(None);
         };
+        let enc = if self.encrypted {
+            Some(key.enc_key(self.repo_id))
+        } else {
+            None
+        };
         let (kind, pt) =
-            wisp_crypto::decrypt_payload(&key.enc_key(self.repo_id), r.id, scope, &bytes)?;
+            wisp_crypto::read_payload_file(self.encrypted, enc.as_ref(), r.id, scope, &bytes)?;
         let c = wisp_crypto::commitment(&key.commit_key(self.repo_id), kind, &pt);
         if c != r.commit {
             return Err(WispError::integrity(format!(
@@ -108,6 +114,16 @@ impl Repository {
 
     /// `wisp init` (§16): create `.wisp/`, the repo scope, default policies, and `main`.
     pub fn init(root: &Path, profile_version: &str, unlock: &Unlock) -> Result<Self> {
+        Self::init_with(root, profile_version, unlock, InitOptions::default())
+    }
+
+    /// `wisp init` with explicit cold-storage options (`--encrypt` sets `encrypt: true`).
+    pub fn init_with(
+        root: &Path,
+        profile_version: &str,
+        unlock: &Unlock,
+        options: InitOptions,
+    ) -> Result<Self> {
         let wisp_dir = root.join(WISP_DIR);
         if wisp_dir.exists() {
             return Err(WispError::usage(format!(
@@ -118,6 +134,18 @@ impl Repository {
         let profile = wisp_profile::by_version(profile_version).ok_or_else(|| {
             WispError::usage(format!("unknown OKF profile version {profile_version}"))
         })?;
+        if !options.encrypt {
+            if unlock.passphrase.is_some() {
+                return Err(WispError::usage(
+                    "passphrase unlock requires `wisp init --encrypt`",
+                ));
+            }
+            if MasterKey::from_env()?.is_some() {
+                return Err(WispError::usage(
+                    "WISP_MASTER_KEY is only for encrypted repositories; use `wisp init --encrypt`",
+                ));
+            }
+        }
         std::fs::create_dir_all(wisp_dir.join("keys"))?;
         std::fs::create_dir_all(wisp_dir.join("payloads"))?;
         std::fs::create_dir_all(wisp_dir.join("cache"))?;
@@ -128,12 +156,22 @@ impl Repository {
             "Signature: 8a477f597d28d172789f06886806bc55\n",
         )?;
         let repo_id = RepoId::new();
-        let master = Self::master_key(&wisp_dir, unlock, true)?;
-        let keystore = Keystore::open(&wisp_dir.join("keys/keystore.db"), master)?;
+        let storage = if options.encrypt {
+            PayloadStorage::Encrypted
+        } else {
+            PayloadStorage::Plain
+        };
+        let keystore = if storage == PayloadStorage::Encrypted {
+            let master = Self::master_key(&wisp_dir, unlock, true)?;
+            Keystore::open(&wisp_dir.join("keys/keystore.db"), master)?
+        } else {
+            Keystore::open_plain(&wisp_dir.join("keys/keystore.db"))?
+        };
         let repo_scope = ScopeId::new();
         keystore.put(repo_scope, &ScopeKey::generate())?;
         let mut manifest = Manifest::new(repo_id, profile.id());
         manifest.repo.scope = Some(repo_scope);
+        manifest.repo.storage = Some(storage);
         manifest.save(&wisp_dir.join("manifest.toml"))?;
         let mut ledger = Ledger::open(&wisp_dir, manifest.commit.busy_timeout_ms)?;
         {
@@ -203,8 +241,18 @@ impl Repository {
                 manifest.repo.profile
             ))
         })?;
-        let master = Self::master_key(&wisp_dir, unlock, false)?;
-        let keystore = Keystore::open(&wisp_dir.join("keys/keystore.db"), master)?;
+        let storage = PayloadStorage::from_manifest_field(manifest.repo.storage);
+        let keystore = if storage == PayloadStorage::Encrypted {
+            let master = Self::master_key(&wisp_dir, unlock, false)?;
+            Keystore::open(&wisp_dir.join("keys/keystore.db"), master)?
+        } else {
+            if unlock.passphrase.is_some() || MasterKey::from_env()?.is_some() {
+                return Err(WispError::usage(
+                    "this repository uses plain cold storage; do not pass --passphrase or WISP_MASTER_KEY",
+                ));
+            }
+            Keystore::open_plain(&wisp_dir.join("keys/keystore.db"))?
+        };
         let ledger = Ledger::open(&wisp_dir, manifest.commit.busy_timeout_ms)?;
         let busy = manifest.commit.busy_timeout_ms;
         let tick = manifest.materialize.tick_ms;
@@ -333,6 +381,14 @@ impl Repository {
     pub fn repo_id(&self) -> RepoId {
         self.manifest.repo.id
     }
+    /// Cold storage mode from `manifest.toml` (`repo.storage`).
+    pub fn payload_storage(&self) -> PayloadStorage {
+        PayloadStorage::from_manifest_field(self.manifest.repo.storage)
+    }
+    /// Shorthand for `payload_storage() == Encrypted`.
+    pub fn payloads_encrypted(&self) -> bool {
+        self.payload_storage() == PayloadStorage::Encrypted
+    }
     pub fn repo_scope(&self) -> ScopeId {
         self.manifest
             .repo
@@ -380,13 +436,20 @@ impl Repository {
             });
         }
         let id = PayloadId::new();
-        let ct = wisp_crypto::encrypt_payload(&key.enc_key(repo), id, scope, kind, plaintext);
+        let on_disk = wisp_crypto::store_payload_file(
+            self.payloads_encrypted(),
+            &key.enc_key(repo),
+            id,
+            scope,
+            kind,
+            plaintext,
+        );
         Ok(PreparedPayload {
             reference: PayloadRef { id, commit },
             scope,
             kind,
             size: plaintext.len(),
-            ciphertext: Some(ct),
+            ciphertext: Some(on_disk),
         })
     }
 
@@ -397,6 +460,7 @@ impl Repository {
             payloads_dir: self.ledger.payloads_dir(),
             keystore: &self.keystore,
             repo_id: self.repo_id(),
+            encrypted: self.payloads_encrypted(),
         }
     }
 

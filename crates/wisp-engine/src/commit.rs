@@ -508,6 +508,7 @@ fn try_commit_inner(
 ) -> Result<CommitOutcome> {
     let payloads_dir = repo.ledger.payloads_dir();
     let repo_id = repo.repo_id();
+    let encrypted = repo.payloads_encrypted();
     let repo_scope = repo.repo_scope();
     let profile_id = repo.profile.id().to_string();
     let keystore = &repo.keystore;
@@ -629,6 +630,7 @@ fn try_commit_inner(
             payloads_dir: payloads_dir.clone(),
             keystore,
             repo_id,
+            encrypted,
         };
         let objs = crate::timing::phase("commit.enrich_conflicts", || {
             enrich_conflicts(&reader, hot.conn(), &conflicts, prepared)
@@ -720,6 +722,7 @@ fn try_commit_inner(
             payloads_dir: payloads_dir.clone(),
             keystore,
             repo_id,
+            encrypted,
         };
         let sig = crate::signing::sign_digest(&repo.wisp_dir, &reader, actor_id, &digest)?;
         let cs = Changeset {
@@ -792,6 +795,7 @@ fn try_commit_inner(
                 payloads_dir: payloads_dir.clone(),
                 keystore,
                 repo_id,
+                encrypted,
             };
             let htx = hot.begin()?;
             let offset = if new_actor.is_some() { 1 } else { 0 };
@@ -959,6 +963,7 @@ pub fn record_merge(
     let mut parent_digests = Vec::new();
     let payloads_dir = repo.ledger.payloads_dir();
     let repo_id = repo.repo_id();
+    let encrypted = repo.payloads_encrypted();
     let keystore = &repo.keystore;
     let wisp_dir = repo.wisp_dir.clone();
     let tx = repo.ledger.begin_immediate()?;
@@ -981,6 +986,7 @@ pub fn record_merge(
         payloads_dir,
         keystore,
         repo_id,
+        encrypted,
     };
     let sig = crate::signing::sign_digest(&wisp_dir, &reader, actor_id, &digest)?;
     let cs = Changeset {

@@ -6,7 +6,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use wisp_engine::apply;
 use wisp_engine::erase;
-use wisp_engine::repo::{Repository, Unlock};
+use wisp_engine::{InitOptions, PayloadStorage, Repository, Unlock};
 use wisp_model::*;
 use wisp_store::{Ledger, Tombstone};
 
@@ -40,10 +40,18 @@ pub fn init_trusted_replica(
     let profile_ver = template.profile.okf_version();
     let repo_id = template.manifest.repo.id;
     let repo_scope = template.manifest.repo.scope;
+    let storage = template.payload_storage();
     let keys_src = template.wisp_dir.join("keys");
     drop(template);
 
-    let mut dst = Repository::init(dst_root, profile_ver, unlock)?;
+    let mut dst = Repository::init_with(
+        dst_root,
+        profile_ver,
+        unlock,
+        InitOptions {
+            encrypt: storage == PayloadStorage::Encrypted,
+        },
+    )?;
     dst.manifest.repo.id = repo_id;
     dst.manifest.repo.scope = repo_scope;
     dst.manifest.save(&dst.wisp_dir.join("manifest.toml"))?;
@@ -134,7 +142,21 @@ fn ensure_same_repo(a: &Repository, b: &Repository) -> Result<()> {
             b.repo_id()
         )));
     }
+    if a.payload_storage() != b.payload_storage() {
+        return Err(WispError::usage(format!(
+            "storage mode mismatch (local {}, remote {}); sync requires the same cold storage mode",
+            storage_label(a.payload_storage()),
+            storage_label(b.payload_storage())
+        )));
+    }
     Ok(())
+}
+
+fn storage_label(s: PayloadStorage) -> &'static str {
+    match s {
+        PayloadStorage::Plain => "plain",
+        PayloadStorage::Encrypted => "encrypted",
+    }
 }
 
 struct TransferStats {

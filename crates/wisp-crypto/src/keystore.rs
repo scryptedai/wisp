@@ -86,6 +86,7 @@ pub struct Keystore {
     conn: Connection,
     master: MasterKey,
     path: PathBuf,
+    plain: bool,
 }
 
 const SCHEMA: &str = "
@@ -108,13 +109,66 @@ impl Keystore {
         )
         .map_err(sql_err)?;
         conn.execute_batch(SCHEMA).map_err(sql_err)?;
+        let marked_plain: Option<Vec<u8>> = conn
+            .query_row("SELECT value FROM meta WHERE key = 'storage'", [], |r| {
+                r.get(0)
+            })
+            .optional()
+            .map_err(sql_err)?;
+        if marked_plain.as_deref() == Some(b"plain".as_slice()) {
+            return Err(WispError::integrity(
+                "keystore is plain; manifest repo.storage says encrypted",
+            ));
+        }
         let ks = Keystore {
             conn,
             master,
             path: path.to_path_buf(),
+            plain: false,
         };
         ks.verify_master()?;
         Ok(ks)
+    }
+
+    /// Plain repositories: scope keys stored without a master-key wrap (local swarms).
+    pub fn open_plain(path: &Path) -> Result<Self, WispError> {
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+        let conn = Connection::open(path).map_err(sql_err)?;
+        conn.execute_batch(
+            "PRAGMA journal_mode = WAL; PRAGMA secure_delete = ON; PRAGMA auto_vacuum = INCREMENTAL;",
+        )
+        .map_err(sql_err)?;
+        conn.execute_batch(SCHEMA).map_err(sql_err)?;
+        let has_check: bool = conn
+            .query_row(
+                "SELECT EXISTS(SELECT 1 FROM meta WHERE key = 'check')",
+                [],
+                |r| r.get(0),
+            )
+            .map_err(sql_err)?;
+        if has_check {
+            return Err(WispError::integrity(
+                "keystore is wrapped; manifest repo.storage says plain",
+            ));
+        }
+        conn.execute(
+            "INSERT OR IGNORE INTO meta (key, value) VALUES ('storage', 'plain')",
+            [],
+        )
+        .map_err(sql_err)?;
+        Ok(Keystore {
+            conn,
+            master: MasterKey([0u8; 32]),
+            path: path.to_path_buf(),
+            plain: true,
+        })
+    }
+
+    /// True when scope keys are stored without a master-key wrap (`Keystore::open_plain`).
+    pub fn is_plain(&self) -> bool {
+        self.plain
     }
 
     /// Store a check value so a wrong passphrase is detected early (exit 9).
@@ -216,12 +270,27 @@ impl Keystore {
 
     /// Write a scope key in its own transaction (§10.2 step 1). Idempotent for the same key.
     pub fn put(&self, scope: ScopeId, key: &ScopeKey) -> Result<(), WispError> {
+        if self.plain {
+            return self.put_wrapped(scope, &key.0);
+        }
         let wrapped = self.wrap_raw(&scope.bytes(), &key.0);
         self.put_wrapped(scope, &wrapped)
     }
 
-    /// Copy a wrapped scope key from a trusted peer (same master key).
+    /// Copy a wrapped scope key from a trusted peer (same master key), or a raw key in plain mode.
     pub fn put_wrapped(&self, scope: ScopeId, wrapped: &[u8]) -> Result<(), WispError> {
+        if self.plain {
+            let key_bytes: [u8; 32] = wrapped.try_into().map_err(|_| {
+                WispError::integrity("plain keystore: scope key must be 32 raw bytes")
+            })?;
+            self.conn
+                .execute(
+                    "INSERT OR IGNORE INTO scope_keys (scope, wrapped) VALUES (?1, ?2)",
+                    params![scope.bytes().to_vec(), key_bytes.to_vec()],
+                )
+                .map_err(sql_err)?;
+            return Ok(());
+        }
         let pt = self.unwrap_raw(&scope.bytes(), wrapped)?;
         if pt.len() != 32 {
             return Err(WispError::integrity("scope key wrong length"));
@@ -261,10 +330,14 @@ impl Keystore {
         match blob {
             None => Ok(None),
             Some(b) => {
-                let pt = self.unwrap_raw(&scope.bytes(), &b)?;
-                let k: [u8; 32] = pt
-                    .try_into()
-                    .map_err(|_| WispError::integrity("scope key wrong length"))?;
+                let k: [u8; 32] = if self.plain {
+                    b.try_into()
+                        .map_err(|_| WispError::integrity("scope key wrong length"))?
+                } else {
+                    let pt = self.unwrap_raw(&scope.bytes(), &b)?;
+                    pt.try_into()
+                        .map_err(|_| WispError::integrity("scope key wrong length"))?
+                };
                 Ok(Some(ScopeKey(k)))
             }
         }
@@ -329,6 +402,24 @@ mod tests {
     use super::*;
 
     #[test]
+    fn open_plain_rejects_wrapped_keystore() {
+        let dir = tempfile::tempdir().unwrap();
+        let master = MasterKey::from_file(&dir.path().join("master.key"), true).unwrap();
+        let path = dir.path().join("keystore.db");
+        Keystore::open(&path, master).unwrap();
+        assert!(Keystore::open_plain(&path).is_err());
+    }
+
+    #[test]
+    fn open_rejects_plain_marker() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("keystore.db");
+        Keystore::open_plain(&path).unwrap();
+        let master = MasterKey::from_file(&dir.path().join("master.key"), true).unwrap();
+        assert!(Keystore::open(&path, master).is_err());
+    }
+
+    #[test]
     fn put_wrapped_roundtrip() {
         let dir = tempfile::tempdir().unwrap();
         let master = MasterKey::from_file(&dir.path().join("master.key"), true).unwrap();
@@ -349,6 +440,19 @@ mod tests {
         let ks = Keystore::open(&dir.path().join("keystore.db"), master).unwrap();
         let s = ScopeId::new();
         assert!(ks.put_wrapped(s, b"too-short").is_err());
+    }
+
+    #[test]
+    fn plain_put_get_delete() {
+        let dir = tempfile::tempdir().unwrap();
+        let p = dir.path().join("keystore.db");
+        let ks = Keystore::open_plain(&p).unwrap();
+        let s = ScopeId::new();
+        let k = ScopeKey::generate();
+        ks.put(s, &k).unwrap();
+        assert_eq!(ks.get(s).unwrap().unwrap().0, k.0);
+        ks.delete(s).unwrap();
+        assert!(ks.get(s).unwrap().is_none());
     }
 
     #[test]

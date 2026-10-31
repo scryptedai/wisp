@@ -1,7 +1,7 @@
 //! Long help and root `after_help` (contracts point to `wisp doc`).
 
 pub const ROOT_LONG_ABOUT: &str = "\
-Local-first differential OKF store: section-level changesets, encrypted payloads, agent-friendly JSON.
+Local-first differential OKF store: section-level changesets, plain cold payloads by default (`init --encrypt` for GDPR crypto-shred), agent-friendly JSON.
 
 Contracts (exit codes, targets, what success does not prove): run `wisp doc cli` or `wisp doc list`.\n\
 With --json, stdout is one envelope {ok, command, data|error}; see `wisp doc cli`.";

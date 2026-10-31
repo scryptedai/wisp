@@ -116,7 +116,7 @@ On disk (§15): `.wisp/manifest.toml`, `.wisp/ledger.db`, `.wisp/payloads/ab/<id
 
 ## Keys
 
-The keystore unlocks from, in order: `WISP_MASTER_KEY` (64 hex chars; CI), `--passphrase` (Argon2id, m=64 MiB, t=3, p=1), or `.wisp/keys/master.key` (created at `init`, mode 0600). `wisp backup --with-keys <dir>` writes the keystore to a separate destination; keep its retention short (§10.6).
+Encrypted repositories (`wisp init --encrypt`) unlock the keystore from, in order: `WISP_MASTER_KEY` (64 hex chars; CI), `--passphrase` (Argon2id, m=64 MiB, t=3, p=1), or `.wisp/keys/master.key` (created at `init --encrypt`, mode 0600). Plain repositories (default `wisp init`) have no master key; `--passphrase` and `WISP_MASTER_KEY` do not apply. `wisp backup --with-keys <dir>` writes the keystore to a separate destination; keep its retention short (§10.6).
 
 ## Status
 

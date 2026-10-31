@@ -134,6 +134,18 @@ impl Repository {
         let profile = wisp_profile::by_version(profile_version).ok_or_else(|| {
             WispError::usage(format!("unknown OKF profile version {profile_version}"))
         })?;
+        if !options.encrypt {
+            if unlock.passphrase.is_some() {
+                return Err(WispError::usage(
+                    "passphrase unlock requires `wisp init --encrypt`",
+                ));
+            }
+            if MasterKey::from_env()?.is_some() {
+                return Err(WispError::usage(
+                    "WISP_MASTER_KEY is only for encrypted repositories; use `wisp init --encrypt`",
+                ));
+            }
+        }
         std::fs::create_dir_all(wisp_dir.join("keys"))?;
         std::fs::create_dir_all(wisp_dir.join("payloads"))?;
         std::fs::create_dir_all(wisp_dir.join("cache"))?;
@@ -147,16 +159,6 @@ impl Repository {
         let storage = if options.encrypt {
             PayloadStorage::Encrypted
         } else {
-            if unlock.passphrase.is_some() {
-                return Err(WispError::usage(
-                    "passphrase unlock requires `wisp init --encrypt`",
-                ));
-            }
-            if MasterKey::from_env()?.is_some() {
-                return Err(WispError::usage(
-                    "WISP_MASTER_KEY is only for encrypted repositories; use `wisp init --encrypt`",
-                ));
-            }
             PayloadStorage::Plain
         };
         let keystore = if storage == PayloadStorage::Encrypted {

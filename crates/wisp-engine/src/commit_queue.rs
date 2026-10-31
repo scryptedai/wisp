@@ -467,6 +467,7 @@ pub fn submit_via_socket(
 }
 
 /// Map a commit.sock line object to apply output or a typed [`WispError`].
+#[cfg_attr(not(unix), allow(dead_code))]
 pub(crate) fn parse_commit_socket_response(v: Value) -> Result<Value, WispError> {
     if v.get("ok").and_then(|x| x.as_bool()) == Some(true) {
         Ok(v.get("data").cloned().unwrap_or(Value::Null))

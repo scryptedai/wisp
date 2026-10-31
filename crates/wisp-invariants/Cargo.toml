@@ -13,6 +13,7 @@ semantic = ["wisp-engine/semantic"]
 
 [dependencies]
 wisp-corpus = { workspace = true }
+wisp-crypto = { workspace = true }
 wisp-engine = { workspace = true }
 wisp-html = { workspace = true }
 wisp-model = { workspace = true }

@@ -117,6 +117,35 @@ fn manifest_without_storage_field_is_encrypted_legacy() {
         .is_none());
 }
 
+#[test]
+fn plain_init_rejects_passphrase_without_creating_wisp() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    let unlock = Unlock {
+        passphrase: Some("hunter2".into()),
+    };
+    let err = match Repository::init(root, "0.2", &unlock) {
+        Ok(_) => panic!("expected init to reject passphrase on plain init"),
+        Err(e) => e,
+    };
+    assert!(!root.join(".wisp").exists());
+    assert!(err.message.contains("passphrase"));
+}
+
+#[test]
+fn read_payload_file_rejects_plain_bytes_in_encrypted_mode() {
+    let plain = wisp_crypto::store_payload_plain(wisp_model::PayloadKind::Section, b"x");
+    let err = wisp_crypto::read_payload_file(
+        true,
+        None,
+        wisp_model::PayloadId::new(),
+        wisp_model::ScopeId::new(),
+        &plain,
+    )
+    .unwrap_err();
+    assert!(err.message.contains("plain file"));
+}
+
 fn walk_payloads(dir: &Path, f: &mut dyn FnMut(&[u8])) {
     if !dir.is_dir() {
         return;

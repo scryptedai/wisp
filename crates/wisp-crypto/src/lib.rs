@@ -130,7 +130,7 @@ pub fn store_payload_plain(kind: PayloadKind, plaintext: &[u8]) -> Vec<u8> {
     out
 }
 
-/// Read the kind tag from a payload file without decrypting (encrypted v1 only).
+/// Read the kind tag from a payload file without decrypting (encrypted v1 or plain v2).
 pub fn payload_kind(bytes: &[u8]) -> Result<PayloadKind, WispError> {
     if bytes.len() < 6 || &bytes[..4] != PAYLOAD_MAGIC {
         return Err(WispError::integrity("payload: bad magic"));
@@ -177,7 +177,14 @@ pub fn read_payload_file(
         return Err(WispError::integrity("payload: bad magic"));
     }
     match bytes[4] {
-        PAYLOAD_VERSION_PLAIN => read_payload_plain(bytes),
+        PAYLOAD_VERSION_PLAIN => {
+            if encrypted {
+                return Err(WispError::integrity(
+                    "payload: plain file in an encrypted repository",
+                ));
+            }
+            read_payload_plain(bytes)
+        }
         PAYLOAD_VERSION => {
             if !encrypted {
                 return Err(WispError::integrity(
@@ -216,7 +223,19 @@ pub fn decrypt_payload(
     scope: ScopeId,
     bytes: &[u8],
 ) -> Result<(PayloadKind, Vec<u8>), WispError> {
-    let kind = payload_kind(bytes)?;
+    if bytes.len() < 6 || &bytes[..4] != PAYLOAD_MAGIC {
+        return Err(WispError::integrity("payload: bad magic"));
+    }
+    if bytes[4] != PAYLOAD_VERSION {
+        return Err(WispError::integrity(format!(
+            "payload: expected encrypted version {PAYLOAD_VERSION}"
+        )));
+    }
+    if bytes.len() < 30 {
+        return Err(WispError::integrity("payload: truncated"));
+    }
+    let kind = PayloadKind::from_u8(bytes[5])
+        .ok_or_else(|| WispError::integrity("payload: unknown kind"))?;
     let nonce = &bytes[6..30];
     let ct = &bytes[30..];
     let cipher = XChaCha20Poly1305::new(k_enc.into());
@@ -273,6 +292,14 @@ mod tests {
             read_payload_file(false, None, PayloadId::new(), ScopeId::new(), &bytes).unwrap();
         assert_eq!(kind, PayloadKind::Section);
         assert_eq!(pt, b"hello");
+    }
+
+    #[test]
+    fn decrypt_payload_rejects_plain_format() {
+        let plain = store_payload_plain(PayloadKind::Section, b"hi");
+        let enc = ScopeKey::generate().enc_key(RepoId::new());
+        let err = decrypt_payload(&enc, PayloadId::new(), ScopeId::new(), &plain).unwrap_err();
+        assert!(err.message.contains("encrypted version"));
     }
 
     #[test]

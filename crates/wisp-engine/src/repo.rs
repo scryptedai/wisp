@@ -379,9 +379,11 @@ impl Repository {
     pub fn repo_id(&self) -> RepoId {
         self.manifest.repo.id
     }
+    /// Cold storage mode from `manifest.toml` (`repo.storage`).
     pub fn payload_storage(&self) -> PayloadStorage {
         PayloadStorage::from_manifest_field(self.manifest.repo.storage)
     }
+    /// Shorthand for `payload_storage() == Encrypted`.
     pub fn payloads_encrypted(&self) -> bool {
         self.payload_storage() == PayloadStorage::Encrypted
     }

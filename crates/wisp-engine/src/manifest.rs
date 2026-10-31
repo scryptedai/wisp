@@ -62,6 +62,7 @@ impl PayloadStorage {
     }
 }
 
+/// Options for `Repository::init_with` / `wisp init`.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct InitOptions {
     /// When true, create an encrypted repository (master key + ciphertext payloads).

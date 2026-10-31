@@ -143,6 +143,7 @@ impl Keystore {
         })
     }
 
+    /// True when scope keys are stored without a master-key wrap (`Keystore::open_plain`).
     pub fn is_plain(&self) -> bool {
         self.plain
     }

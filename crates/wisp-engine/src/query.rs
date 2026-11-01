@@ -713,7 +713,12 @@ pub fn switch(repo: &mut Repository, name: &str, discard: bool) -> Result<Value>
 
 /// The ref checked out in the main working tree.
 pub fn current_ref(repo: &Repository) -> String {
-    checkout::CheckoutIndex::load(&repo.wisp_dir.join("checkout.idx"))
+    current_ref_wisp_dir(&repo.wisp_dir)
+}
+
+/// Checked-out ref from `checkout.idx` without opening the ledger.
+pub fn current_ref_wisp_dir(wisp_dir: &std::path::Path) -> String {
+    checkout::CheckoutIndex::load(&wisp_dir.join("checkout.idx"))
         .ok()
         .flatten()
         .map(|i| i.ref_name)
@@ -1466,21 +1471,23 @@ pub fn config(repo: &mut Repository, key: &str, value: Option<&str>) -> Result<V
             repo.manifest.save(&repo.wisp_dir.join("manifest.toml"))?;
             Ok(json!({ "commit.retries": repo.manifest.commit.retries }))
         }
-        ("queue.enabled", None) => Ok(json!({ "queue.enabled": repo.manifest.queue.enabled })),
-        ("queue.enabled", Some(v)) => {
-            repo.manifest.queue.enabled = v == "true" || v == "1";
+        ("runtime.enabled", None) => {
+            Ok(json!({ "runtime.enabled": repo.manifest.runtime.enabled }))
+        }
+        ("runtime.enabled", Some(v)) => {
+            repo.manifest.runtime.enabled = v == "true" || v == "1";
             repo.manifest.save(&repo.wisp_dir.join("manifest.toml"))?;
-            Ok(json!({ "queue.enabled": repo.manifest.queue.enabled }))
+            Ok(json!({ "runtime.enabled": repo.manifest.runtime.enabled }))
         }
-        ("queue.timeout_ms", None) => {
-            Ok(json!({ "queue.timeout_ms": repo.manifest.queue.timeout_ms }))
+        ("runtime.timeout_ms", None) => {
+            Ok(json!({ "runtime.timeout_ms": repo.manifest.runtime.timeout_ms }))
         }
-        ("queue.timeout_ms", Some(v)) => {
-            repo.manifest.queue.timeout_ms = v
+        ("runtime.timeout_ms", Some(v)) => {
+            repo.manifest.runtime.timeout_ms = v
                 .parse()
                 .map_err(|_| WispError::usage("integer expected"))?;
             repo.manifest.save(&repo.wisp_dir.join("manifest.toml"))?;
-            Ok(json!({ "queue.timeout_ms": repo.manifest.queue.timeout_ms }))
+            Ok(json!({ "runtime.timeout_ms": repo.manifest.runtime.timeout_ms }))
         }
         ("materialize.enabled", None) => {
             Ok(json!({ "materialize.enabled": repo.manifest.materialize.enabled }))

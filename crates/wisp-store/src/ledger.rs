@@ -283,7 +283,7 @@ impl Ledger {
                         || f.code == rusqlite::ErrorCode::DatabaseLocked =>
                 {
                     WispError::write_timeout(
-                        "write queue timeout",
+                        "SQLite busy on ledger write lock",
                         wisp_model::WriteTimeoutDetails {
                             lock: "ledger".into(),
                             phase: "ledger.begin_immediate".into(),

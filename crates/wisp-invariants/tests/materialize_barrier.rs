@@ -20,6 +20,7 @@ fn init_repo(materialize_enabled: bool) -> (tempfile::TempDir, std::path::PathBu
     Repository::init(&root, "0.2", &unlock()).unwrap();
     let mut repo = Repository::open(&root, &unlock()).unwrap();
     repo.manifest.materialize.enabled = materialize_enabled;
+    repo.manifest.materialize.tick_ms = 3_600_000;
     repo.manifest
         .save(&root.join(".wisp/manifest.toml"))
         .unwrap();

@@ -58,20 +58,39 @@ On
 refresh
 .Va base_version
 from hot and retry until success or the attempt budget is exhausted.
-.It Cm queue Fl -serve
-Run the bundle commit queue writer on
-.Pa .wisp/commit.sock .
+.It Cm runtime Fl -serve
+Run the agent store on
+.Pa .wisp/runtime.sock
+(one process: read cache, RPCs, and serialized
+.Cm apply
+on a writer thread).
+There is no
+.Cm queue Fl -serve
+command.
 Enable with
-.Va queue.enabled
+.Va runtime.enabled
 in
 .Pa manifest.toml
 (or
-.Cm wisp config set queue.enabled true )
-before headless
-.Cm apply
-uses the socket.
+.Cm wisp config set runtime.enabled true ) .
+Headless
+.Cm cat ,
+.Cm pack ,
+.Cm apply ,
+and related commands use the socket and do not open
+.Pa ledger.db
+directly.
+Human actor names
+.Pq Cm human:\&
+prefix
+may still open the ledger for
+.Cm record ,
+.Cm status ,
+and other admin commands when
+.Va runtime.allow_human_direct
+is true (default).
 See
-.Cm wisp doc commit-queue .
+.Cm wisp doc runtime .
 .It Cm materialize
 Flush the async worktree materialize queue.
 .Fl -wait
@@ -130,6 +149,8 @@ Integrity / fsck failure.
 Key unavailable.
 .It Dv 10
 Erasure recovery pending; reopen or complete recovery.
+.It Dv 11
+Runtime apply writer deadline (retryable).
 .El
 .Pp
 Details:
@@ -206,8 +227,9 @@ or
 .Cm encrypted ,
 .Va commit.busy_timeout_ms ,
 .Va commit.retries ,
-.Va queue.enabled ,
-.Va queue.timeout_ms ,
+.Va runtime.enabled ,
+.Va runtime.timeout_ms ,
+.Va runtime.allow_human_direct ,
 .Va materialize.enabled ,
 .Va materialize.tick_ms .
 .El

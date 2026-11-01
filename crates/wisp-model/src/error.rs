@@ -19,7 +19,7 @@ pub enum ExitCode {
     Integrity = 8,
     KeyUnavailable = 9,
     ErasePending = 10,
-    QueueTimeout = 11,
+    RuntimeTimeout = 11,
 }
 
 impl ExitCode {
@@ -39,7 +39,7 @@ impl ExitCode {
             ExitCode::Integrity => "integrity",
             ExitCode::KeyUnavailable => "key_unavailable",
             ExitCode::ErasePending => "erase_pending",
-            ExitCode::QueueTimeout => "queue_timeout",
+            ExitCode::RuntimeTimeout => "runtime_timeout",
         }
     }
 
@@ -57,7 +57,7 @@ impl ExitCode {
             "integrity" => ExitCode::Integrity,
             "key_unavailable" => ExitCode::KeyUnavailable,
             "erase_pending" => ExitCode::ErasePending,
-            "queue_timeout" => ExitCode::QueueTimeout,
+            "runtime_timeout" => ExitCode::RuntimeTimeout,
             _ => return None,
         })
     }
@@ -141,17 +141,27 @@ impl WispError {
         )
         .with_details(serde_json::json!({ "not_implemented": what }))
     }
-    /// True for exit 7 (`write_timeout`) and exit 11 (`queue_timeout`).
+    /// True for exit 7 (`write_timeout`) and exit 11 only when details allow retry.
     pub fn is_retryable(&self) -> bool {
-        self.code == ExitCode::WriteTimeout || self.code == ExitCode::QueueTimeout
+        if self.code == ExitCode::WriteTimeout {
+            return true;
+        }
+        if self.code == ExitCode::RuntimeTimeout {
+            return self
+                .details
+                .get("retryable")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false);
+        }
+        false
     }
 
-    /// Job waited too long in the bundle commit queue (retryable).
-    pub fn queue_timeout(msg: impl Into<String>, details: Value) -> Self {
-        Self::new(ExitCode::QueueTimeout, msg).with_details(details)
+    /// Runtime apply writer deadline elapsed (`details.retryable` set by the writer).
+    pub fn runtime_timeout(msg: impl Into<String>, details: Value) -> Self {
+        Self::new(ExitCode::RuntimeTimeout, msg).with_details(details)
     }
 
-    /// Parse `{code, message, details?}` from a commit-queue socket `error` object or CLI JSON.
+    /// Parse `{code, message, details?}` from runtime socket or CLI JSON error objects.
     pub fn from_json_value(v: &Value) -> std::result::Result<Self, Self> {
         let code_str = v
             .get("code")

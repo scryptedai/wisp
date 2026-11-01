@@ -20,7 +20,7 @@ pub struct Manifest {
     #[serde(default)]
     pub commit: CommitSection,
     #[serde(default)]
-    pub queue: CommitQueueSection,
+    pub runtime: RuntimeSection,
     #[serde(default)]
     pub materialize: MaterializeSection,
     #[serde(default)]
@@ -108,26 +108,30 @@ impl Default for CommitSection {
     }
 }
 
-/// Bundle-local commit queue (`docs/CONCURRENCY.md`).
+/// Long-lived agent store (`.wisp/runtime.sock`; `docs/RUNTIME.md`).
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct CommitQueueSection {
-    /// When true, headless clients submit via the commit queue instead of opening the ledger directly.
+#[serde(default)]
+pub struct RuntimeSection {
+    /// When true, agent CLIs use the runtime socket and do not open SQLite directly.
     pub enabled: bool,
-    /// Max time a client waits for the writer to finish a submitted job (ms).
+    /// Max time a client waits for an apply RPC (ms).
     pub timeout_ms: u64,
-    /// Writer drain window for autobatch coalescing (µs).
+    /// Writer coalesce window for disjoint same-actor ops (µs).
     pub coalesce_window_us: u64,
-    /// Merge disjoint single-op batches in a drain window (same actor).
+    /// When true, merge disjoint same-actor ops in the writer coalesce window.
     pub coalesce: bool,
+    /// When true, `human:*` CLI actors may open the repo for admin commands while runtime is up.
+    pub allow_human_direct: bool,
 }
 
-impl Default for CommitQueueSection {
+impl Default for RuntimeSection {
     fn default() -> Self {
-        CommitQueueSection {
+        RuntimeSection {
             enabled: false,
             timeout_ms: 120_000,
             coalesce_window_us: 500,
             coalesce: true,
+            allow_human_direct: true,
         }
     }
 }
@@ -386,7 +390,7 @@ impl Manifest {
             },
             identity: IdentitySection::default(),
             commit: CommitSection::default(),
-            queue: CommitQueueSection::default(),
+            runtime: RuntimeSection::default(),
             materialize: MaterializeSection::default(),
             render: RenderSection::default(),
             config: ConfigSection::default(),
@@ -487,5 +491,14 @@ mod tests {
         let back: Manifest = toml::from_str(&s).unwrap();
         assert_eq!(back.policies.len(), 4);
         assert_eq!(back.identity.key, "wisp_id");
+    }
+
+    #[test]
+    fn partial_runtime_table_uses_defaults() {
+        let r: RuntimeSection = toml::from_str("enabled = true\n").unwrap();
+        assert!(r.enabled);
+        assert_eq!(r.timeout_ms, 120_000);
+        assert!(r.coalesce);
+        assert!(r.allow_human_direct);
     }
 }

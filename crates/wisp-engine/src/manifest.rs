@@ -110,6 +110,7 @@ impl Default for CommitSection {
 
 /// Long-lived agent store (`.wisp/runtime.sock`; `docs/RUNTIME.md`).
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(default)]
 pub struct RuntimeSection {
     /// When true, agent CLIs use the runtime socket and do not open SQLite directly.
     pub enabled: bool,
@@ -120,12 +121,7 @@ pub struct RuntimeSection {
     /// When true, merge disjoint same-actor ops in the writer coalesce window.
     pub coalesce: bool,
     /// When true, `human:*` CLI actors may open the repo for admin commands while runtime is up.
-    #[serde(default = "default_true")]
     pub allow_human_direct: bool,
-}
-
-fn default_true() -> bool {
-    true
 }
 
 impl Default for RuntimeSection {
@@ -495,5 +491,14 @@ mod tests {
         let back: Manifest = toml::from_str(&s).unwrap();
         assert_eq!(back.policies.len(), 4);
         assert_eq!(back.identity.key, "wisp_id");
+    }
+
+    #[test]
+    fn partial_runtime_table_uses_defaults() {
+        let r: RuntimeSection = toml::from_str("enabled = true\n").unwrap();
+        assert!(r.enabled);
+        assert_eq!(r.timeout_ms, 120_000);
+        assert!(r.coalesce);
+        assert!(r.allow_human_direct);
     }
 }

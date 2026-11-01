@@ -27,11 +27,11 @@ pub struct RuntimeHandle {
 }
 
 impl RuntimeHandle {
-    /// Wait until `.wisp/runtime.sock` exists or the worker thread exits.
+    /// Wait until `.wisp/runtime.sock` accepts connections or the worker thread exits.
     pub fn wait_ready(&self, timeout: Duration) -> Result<(), WispError> {
         let deadline = std::time::Instant::now() + timeout;
         loop {
-            if self.sock_path.is_file() {
+            if runtime_sock_ready(&self.sock_path) {
                 return Ok(());
             }
             if self
@@ -132,6 +132,18 @@ impl RuntimeServer {
     }
 }
 
+#[cfg(unix)]
+fn runtime_sock_ready(path: &std::path::Path) -> bool {
+    use std::os::unix::net::UnixStream;
+    UnixStream::connect(path).is_ok()
+}
+
+#[cfg(not(unix))]
+fn runtime_sock_ready(_path: &std::path::Path) -> bool {
+    false
+}
+
+#[cfg(unix)]
 struct Shared {
     repo: Arc<Mutex<Repository>>,
     cache: Arc<RwLock<SnapshotCache>>,
@@ -200,6 +212,7 @@ fn handle_client(stream: std::os::unix::net::UnixStream, state: Arc<Shared>) {
     }
 }
 
+#[cfg(unix)]
 fn dispatch(req: RuntimeRequest, state: &Arc<Shared>) -> RuntimeResponse {
     match req.cmd.as_str() {
         "ping" => {
@@ -260,6 +273,7 @@ fn dispatch(req: RuntimeRequest, state: &Arc<Shared>) -> RuntimeResponse {
     }
 }
 
+#[cfg(unix)]
 fn handle_cat(
     state: &Arc<Shared>,
     ref_name: &str,
@@ -314,6 +328,7 @@ fn handle_cat(
     }
 }
 
+#[cfg(unix)]
 fn stamp_cat_hit(v: &mut Value, seq: u64, head: Option<&str>) {
     if let Some(obj) = v.as_object_mut() {
         obj.insert("seq".into(), json!(seq));
@@ -324,6 +339,7 @@ fn stamp_cat_hit(v: &mut Value, seq: u64, head: Option<&str>) {
     }
 }
 
+#[cfg(unix)]
 fn try_repo_read(state: &Arc<Shared>) -> Result<std::sync::MutexGuard<'_, Repository>, WispError> {
     match state.repo.try_lock() {
         Ok(g) => Ok(g),
@@ -342,6 +358,7 @@ fn try_repo_read(state: &Arc<Shared>) -> Result<std::sync::MutexGuard<'_, Reposi
     }
 }
 
+#[cfg(unix)]
 fn handle_pack(state: &Arc<Shared>, args: Value) -> RuntimeResponse {
     let ref_name = args
         .get("ref")
@@ -365,61 +382,73 @@ fn handle_pack(state: &Arc<Shared>, args: Value) -> RuntimeResponse {
     let body = args.get("body").and_then(|v| v.as_bool()).unwrap_or(true);
     let key = SnapshotCache::pack_key(&ref_name, &paths, budget);
     let seq = state.cache.read().expect("cache").seq;
+    let head_now = head_of(state, &ref_name);
     if since_seq == Some(seq) && !body {
         return RuntimeResponse::ok(
             "pack",
-            json!({ "fresh": false, "seq": seq, "head": head_of(state, &ref_name) }),
+            json!({ "fresh": false, "seq": seq, "head": head_now }),
         );
     }
     if let Some(since) = since_seq {
         if since < seq {
-            if let Ok(cache) = state.cache.read() {
-                if let Some(delta) = cache.pack_delta_since(&ref_name, &paths, budget, since, seq) {
-                    let head = head_of(state, &ref_name);
-                    if body {
-                        if let Some(hit) = cache.get_pack(&key) {
+            let delta = state
+                .cache
+                .read()
+                .expect("cache")
+                .pack_delta_since(&ref_name, &paths, budget, since, seq);
+            if let Some(delta) = delta {
+                let head = head_of(state, &ref_name);
+                if body {
+                    let hit = state
+                        .cache
+                        .read()
+                        .expect("cache")
+                        .get_pack(&key)
+                        .and_then(|hit| {
                             if hit.seq == seq {
-                                let mut out = hit.value.clone();
-                                drop(cache);
-                                stamp_pack(&mut out, seq, head.as_deref(), true, Some(&delta));
-                                return RuntimeResponse::ok("pack", out);
+                                Some(hit.value.clone())
+                            } else {
+                                None
                             }
-                        }
-                    } else {
-                        return RuntimeResponse::ok(
-                            "pack",
-                            json!({
-                                "fresh": true,
-                                "seq": seq,
-                                "head": head,
-                                "delta": delta,
-                            }),
-                        );
+                        });
+                    if let Some(mut out) = hit {
+                        stamp_pack(&mut out, seq, head.as_deref(), true, Some(&delta));
+                        return RuntimeResponse::ok("pack", out);
                     }
+                } else {
+                    return RuntimeResponse::ok(
+                        "pack",
+                        json!({
+                            "fresh": true,
+                            "seq": seq,
+                            "head": head,
+                            "delta": delta,
+                        }),
+                    );
                 }
             }
         }
     }
-    if let Ok(cache) = state.cache.read() {
-        if let Some(hit) = cache.get_pack(&key) {
+    if let Some(mut out) = state
+        .cache
+        .read()
+        .expect("cache")
+        .get_pack(&key)
+        .and_then(|hit| {
             if hit.seq == seq {
-                let mut out = hit.value.clone();
-                stamp_pack(
-                    &mut out,
-                    seq,
-                    head_of(state, &ref_name).as_deref(),
-                    false,
-                    None,
-                );
-                if !body {
-                    if let Some(obj) = out.as_object_mut() {
-                        obj.remove("text");
-                    }
-                }
-                return RuntimeResponse::ok("pack", out);
+                Some(hit.value.clone())
+            } else {
+                None
             }
+        })
+    {
+        stamp_pack(&mut out, seq, head_now.as_deref(), false, None);
+        if !body {
+            strip_pack_bodies(&mut out);
         }
+        return RuntimeResponse::ok("pack", out);
     }
+    let seq_before = seq;
     let mut repo = match try_repo_read(state) {
         Ok(g) => g,
         Err(e) => return runtime_err("pack", e),
@@ -428,19 +457,19 @@ fn handle_pack(state: &Arc<Shared>, args: Value) -> RuntimeResponse {
         Ok(mut v) => {
             let head = repo.head(&ref_name).ok().flatten().map(|h| h.to_string());
             drop(repo);
-            let seq = state.cache.read().expect("cache").seq;
-            state.cache.write().expect("cache").put_pack(
-                key,
-                seq,
-                paths.clone(),
-                budget,
-                v.clone(),
-            );
-            stamp_pack(&mut v, seq, head.as_deref(), true, None);
+            let seq_after = state.cache.read().expect("cache").seq;
+            if seq_after == seq_before {
+                state.cache.write().expect("cache").put_pack(
+                    key,
+                    seq_after,
+                    paths.clone(),
+                    budget,
+                    v.clone(),
+                );
+            }
+            stamp_pack(&mut v, seq_after, head.as_deref(), true, None);
             if !body {
-                if let Some(obj) = v.as_object_mut() {
-                    obj.remove("text");
-                }
+                strip_pack_bodies(&mut v);
             }
             RuntimeResponse::ok("pack", v)
         }
@@ -448,6 +477,7 @@ fn handle_pack(state: &Arc<Shared>, args: Value) -> RuntimeResponse {
     }
 }
 
+#[cfg(unix)]
 fn head_of(state: &Arc<Shared>, ref_name: &str) -> Option<String> {
     if let Ok(cache) = state.cache.read() {
         if let Some(h) = cache.head(ref_name) {
@@ -462,6 +492,7 @@ fn head_of(state: &Arc<Shared>, ref_name: &str) -> Option<String> {
         .map(|h| h.to_string())
 }
 
+#[cfg(unix)]
 fn stamp_pack(v: &mut Value, seq: u64, head: Option<&str>, fresh: bool, delta: Option<&Value>) {
     if let Some(obj) = v.as_object_mut() {
         obj.insert("seq".into(), json!(seq));
@@ -475,6 +506,22 @@ fn stamp_pack(v: &mut Value, seq: u64, head: Option<&str>, fresh: bool, delta: O
     }
 }
 
+#[cfg(unix)]
+fn strip_pack_bodies(v: &mut Value) {
+    if let Some(concepts) = v.get_mut("concepts").and_then(|x| x.as_array_mut()) {
+        for c in concepts {
+            if let Some(sections) = c.get_mut("sections").and_then(|x| x.as_array_mut()) {
+                for s in sections {
+                    if let Some(obj) = s.as_object_mut() {
+                        obj.remove("text");
+                    }
+                }
+            }
+        }
+    }
+}
+
+#[cfg(unix)]
 fn handle_apply(state: &Arc<Shared>, args: Value, timeout_ms: Option<u64>) -> RuntimeResponse {
     let batch: ApplyBatch = match serde_json::from_value(args) {
         Ok(b) => b,
@@ -493,6 +540,7 @@ fn handle_apply(state: &Arc<Shared>, args: Value, timeout_ms: Option<u64>) -> Ru
     }
 }
 
+#[cfg(unix)]
 fn handle_search(state: &Arc<Shared>, args: Value) -> RuntimeResponse {
     let ref_name = args
         .get("ref")
@@ -556,6 +604,7 @@ fn handle_search(state: &Arc<Shared>, args: Value) -> RuntimeResponse {
     }
 }
 
+#[cfg(unix)]
 fn handle_why(state: &Arc<Shared>, args: Value) -> RuntimeResponse {
     let ref_name = args
         .get("ref")
@@ -588,6 +637,7 @@ fn handle_why(state: &Arc<Shared>, args: Value) -> RuntimeResponse {
     }
 }
 
+#[cfg(unix)]
 fn handle_impact(state: &Arc<Shared>, args: Value) -> RuntimeResponse {
     let ref_name = args
         .get("ref")
@@ -620,6 +670,7 @@ fn handle_impact(state: &Arc<Shared>, args: Value) -> RuntimeResponse {
     }
 }
 
+#[cfg(unix)]
 fn handle_tokens(state: &Arc<Shared>, args: Value) -> RuntimeResponse {
     let ref_name = args
         .get("ref")
@@ -651,6 +702,7 @@ fn handle_tokens(state: &Arc<Shared>, args: Value) -> RuntimeResponse {
     }
 }
 
+#[cfg(unix)]
 fn handle_feed(state: &Arc<Shared>, args: Value) -> RuntimeResponse {
     let since = args.get("since_seq").and_then(|v| v.as_i64()).unwrap_or(0);
     let repo = match try_repo_read(state) {
@@ -675,11 +727,13 @@ fn handle_feed(state: &Arc<Shared>, args: Value) -> RuntimeResponse {
     }
 }
 
+#[cfg(unix)]
 fn snapshot_meta(repo: &Repository, ref_name: &str) -> Result<(u64, Option<String>), WispError> {
     let head = repo.head(ref_name)?.map(|h| h.to_string());
     Ok((0, head))
 }
 
+#[cfg(unix)]
 fn runtime_err(cmd: &str, e: WispError) -> RuntimeResponse {
     RuntimeResponse::err(
         cmd,

@@ -34,7 +34,7 @@ pub struct ApplyBatch {
     pub inputs_complete: bool,
 }
 
-#[derive(Clone, Debug, Default, Deserialize, Serialize)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Deserialize, Serialize)]
 pub struct ApplyInput {
     pub concept: String,
     #[serde(default)]
@@ -43,7 +43,7 @@ pub struct ApplyInput {
     pub at: Option<ChangesetId>,
 }
 
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
 pub struct ApplyAssert {
     pub path: String,
     #[serde(default)]

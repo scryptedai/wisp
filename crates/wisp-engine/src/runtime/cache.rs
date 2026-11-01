@@ -160,8 +160,14 @@ impl SnapshotCache {
                 k.starts_with(&format!("{prefix}{c}"))
             })
         });
-        self.searches
-            .retain(|k, _| k.starts_with(&format!("{ref_name}:search:")));
+        let search_prefix = format!("{ref_name}:search:");
+        self.searches.retain(|k, _| !k.starts_with(&search_prefix));
+    }
+
+    /// Drop all search cache entries for a ref (append writes change index-visible text).
+    pub fn invalidate_search_for_ref(&mut self, ref_name: &str) {
+        let search_prefix = format!("{ref_name}:search:");
+        self.searches.retain(|k, _| !k.starts_with(&search_prefix));
     }
 
     /// Drop all pack cache entries for a ref.
@@ -343,4 +349,29 @@ fn patch_section_in_pack_value(v: &mut Value, patch: &AppendPatch) -> bool {
         return true;
     }
     true
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn invalidate_paths_drops_search_for_written_ref_only() {
+        let mut c = SnapshotCache::default();
+        c.put_search(
+            "main:search:hybrid:10:local_only=false:q".into(),
+            json!({ "hits": [] }),
+        );
+        c.put_search(
+            "other:search:hybrid:10:local_only=false:q".into(),
+            json!({ "hits": [] }),
+        );
+        c.invalidate_paths("main", &["notes/a.md".into()]);
+        assert!(c
+            .get_search("main:search:hybrid:10:local_only=false:q")
+            .is_none());
+        assert!(c
+            .get_search("other:search:hybrid:10:local_only=false:q")
+            .is_some());
+    }
 }

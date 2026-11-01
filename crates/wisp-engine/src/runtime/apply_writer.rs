@@ -6,6 +6,7 @@ use crate::repo::{Repository, MAIN_REF};
 use crate::runtime::cache::{AppendPatch, PublishEvent, SnapshotCache};
 use serde_json::{json, Value};
 use std::collections::HashSet;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{self, Receiver, Sender, SyncSender};
 use std::sync::{Arc, Mutex, RwLock};
 use std::thread::{self, JoinHandle};
@@ -23,6 +24,7 @@ struct ApplyJob {
     default_ref: Option<String>,
     deadline: Instant,
     reply: SyncSender<Result<Value, WispError>>,
+    started: Arc<AtomicBool>,
 }
 
 #[derive(Clone)]
@@ -57,26 +59,31 @@ impl ApplyWriter {
         timeout_ms: u64,
     ) -> Result<Value, WispError> {
         let (reply_tx, reply_rx) = mpsc::sync_channel(1);
+        let started = Arc::new(AtomicBool::new(false));
         let job = ApplyJob {
             batch,
             default_ref: default_ref.map(|s| s.to_string()),
             deadline: Instant::now() + Duration::from_millis(timeout_ms.max(1)),
             reply: reply_tx,
+            started: Arc::clone(&started),
         };
         self.tx
             .send(job)
             .map_err(|_| WispError::internal("runtime apply channel closed"))?;
-        reply_rx
-            .recv_timeout(Duration::from_millis(timeout_ms.max(1)))
-            .map_err(|_| {
-                WispError::runtime_timeout(
+        match reply_rx.recv_timeout(Duration::from_millis(timeout_ms.max(1))) {
+            Ok(r) => r,
+            Err(_) => {
+                let retryable = !started.load(Ordering::Acquire);
+                Err(WispError::runtime_timeout(
                     "runtime apply deadline elapsed",
                     json!({
                         "code": "runtime_timeout",
-                        "retryable": true,
+                        "retryable": retryable,
+                        "outcome": if retryable { "queued" } else { "unknown" },
                     }),
-                )
-            })?
+                ))
+            }
+        }
     }
 }
 
@@ -118,7 +125,11 @@ fn run_jobs(
         if Instant::now() >= jobs[i].deadline {
             let _ = jobs[i].reply.send(Err(WispError::runtime_timeout(
                 "runtime apply deadline elapsed before writer started job",
-                json!({ "code": "runtime_timeout", "retryable": true }),
+                json!({
+                    "code": "runtime_timeout",
+                    "retryable": true,
+                    "outcome": "queued",
+                }),
             )));
             i += 1;
             continue;
@@ -145,6 +156,9 @@ fn run_jobs(
                 continue;
             }
         };
+        for j in 0..consumed {
+            jobs[i + j].started.store(true, Ordering::Release);
+        }
         match execute_unit(&mut repo, &units) {
             Ok(full) => {
                 let touched: Vec<String> = units
@@ -165,6 +179,7 @@ fn run_jobs(
                     }
                     let publish = if append_only_batch(&units) && !patches.is_empty() {
                         if c.try_patch_appends(ref_name, &patches, seq) {
+                            c.invalidate_search_for_ref(ref_name);
                             patches
                                 .iter()
                                 .map(|p| PublishEvent::Append(p.clone()))
@@ -204,7 +219,9 @@ fn coalesce_slice(jobs: &[ApplyJob]) -> (Vec<PendingUnit>, usize) {
     if jobs.is_empty() {
         return (vec![], 0);
     }
-    let first_actor = jobs[0].batch.actor.clone();
+    let first = &jobs[0];
+    let first_actor = first.batch.actor.clone();
+    let first_ref = effective_ref(first);
     let mut sections: HashSet<SectionId> = HashSet::new();
     let mut merged_ops: Vec<ApplyOp> = Vec::new();
     let mut consumed = 0usize;
@@ -212,11 +229,17 @@ fn coalesce_slice(jobs: &[ApplyJob]) -> (Vec<PendingUnit>, usize) {
         if job.batch.ops.len() != 1 {
             break;
         }
+        if !batches_coalesce_compatible(first, job) {
+            break;
+        }
         let op = &job.batch.ops[0];
         if !coalesce_op_eligible(op) {
             break;
         }
         if job.batch.actor != first_actor {
+            break;
+        }
+        if effective_ref(job) != first_ref {
             break;
         }
         let sec = match op.section {
@@ -248,6 +271,24 @@ fn coalesce_slice(jobs: &[ApplyJob]) -> (Vec<PendingUnit>, usize) {
         }],
         consumed,
     )
+}
+
+fn effective_ref(job: &ApplyJob) -> String {
+    job.batch
+        .r#ref
+        .clone()
+        .or_else(|| job.default_ref.clone())
+        .unwrap_or_else(|| MAIN_REF.to_string())
+}
+
+fn batches_coalesce_compatible(first: &ApplyJob, job: &ApplyJob) -> bool {
+    first.batch.base == job.batch.base
+        && first.batch.message == job.batch.message
+        && first.batch.inputs == job.batch.inputs
+        && first.batch.assert == job.batch.assert
+        && first.batch.assert_head == job.batch.assert_head
+        && first.batch.inputs_complete == job.batch.inputs_complete
+        && first.default_ref == job.default_ref
 }
 
 fn coalesce_op_eligible(op: &ApplyOp) -> bool {

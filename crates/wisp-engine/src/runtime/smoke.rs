@@ -11,6 +11,7 @@ fn unlock() -> Unlock {
 
 #[test]
 fn runtime_ping_and_apply_smoke() {
+    let _env = runtime::test_env_lock();
     let dir = tempfile::tempdir().unwrap();
     let root = dir.path();
     std::env::set_var("WISP_RUNTIME_DIRECT", "1");

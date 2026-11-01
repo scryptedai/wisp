@@ -116,9 +116,10 @@ pub enum Command {
     #[command(
         long_about = "One process per bundle owns ledger, hot, an in-memory read cache, and a single apply writer thread. \
 Agent fleets set [runtime] enabled = true and run `wisp runtime --serve` before workers. \
-`wisp cat`, `pack`, `search`, `apply`, `why`, `impact`, `tokens`, and `feed` use the socket when runtime is enabled. \
-There is no separate queue command. \
-`human:*` actors may still open the repo for admin commands when runtime.allow_human_direct is true (default). \
+Reads and writes use `.wisp/runtime.sock` for `cat`, `pack`, `search`, `apply`, `why`, `impact`, `tokens`, and `feed`, \
+and for headless write verbs routed through apply (`update`, `add-section`, `remove-section`, `set`, `unset`, `create`, \
+`verify`, `lifecycle`, `source add`, `source rm`). \
+`human:*` actors may open the repo for admin commands when runtime.allow_human_direct is true (default). \
 See docs/RUNTIME.md."
     )]
     Runtime {

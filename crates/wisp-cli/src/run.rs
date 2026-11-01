@@ -43,6 +43,15 @@ fn load_manifest(cli: &Cli) -> Result<(PathBuf, wisp_engine::manifest::Manifest)
 
 fn apply_via_cli(cli: &Cli, mut batch: ApplyBatch, default_ref: Option<&str>) -> Result<Value> {
     let (root, manifest) = load_manifest(cli)?;
+    let resolved_default = match default_ref {
+        Some(r) => Some(r.to_string()),
+        None => batch.r#ref.clone().or_else(|| {
+            Some(wisp_engine::query::current_ref_wisp_dir(
+                &root.join(".wisp"),
+            ))
+        }),
+    };
+    let default_ref = resolved_default.as_deref();
     if manifest.runtime.enabled {
         wisp_engine::runtime::guard_direct_open(&manifest, Some(&actor_from_cli(cli, &manifest)))?;
         if batch.actor.is_none() {
@@ -98,7 +107,7 @@ fn batch_for_flags(cli: &Cli, w: &WriteFlags, mut op: ApplyOp) -> Result<ApplyBa
             .map(|i| wisp_engine::headless::parse_input_spec(i))
             .collect::<Result<Vec<_>>>()?;
         return Ok(ApplyBatch {
-            r#ref: w.r#ref.clone().or(Some(wisp_engine::MAIN_REF.into())),
+            r#ref: Some(default_apply_ref(&_root, w)),
             base: None,
             actor: Some(actor_from_cli(cli, &manifest)),
             message: w.message.clone(),
@@ -118,10 +127,27 @@ fn actor_of(cli: &Cli, repo: &Repository) -> String {
 }
 
 fn actor_from_cli(cli: &Cli, manifest: &wisp_engine::manifest::Manifest) -> String {
-    cli.actor
+    if let Some(a) = &cli.actor {
+        return a.clone();
+    }
+    if let Ok(a) = std::env::var("WISP_ACTOR") {
+        if !a.trim().is_empty() {
+            return a;
+        }
+    }
+    if let Some(a) = &manifest.config.actor {
+        return a.clone();
+    }
+    let user = std::env::var("USER")
+        .or_else(|_| std::env::var("USERNAME"))
+        .unwrap_or_else(|_| "user".into());
+    format!("human:{user}")
+}
+
+fn default_apply_ref(root: &std::path::Path, w: &WriteFlags) -> String {
+    w.r#ref
         .clone()
-        .or(manifest.config.actor.clone())
-        .unwrap_or_else(|| "human:agent".into())
+        .unwrap_or_else(|| wisp_engine::query::current_ref_wisp_dir(&root.join(".wisp")))
 }
 
 fn ref_of(repo: &Repository, explicit: &Option<String>) -> String {
@@ -1343,6 +1369,16 @@ pub fn run(cli: Cli) -> CliResult {
                             println!("{}", serde_json::to_string(e).unwrap_or_default());
                         }
                     }
+                    let n = v
+                        .get("events")
+                        .and_then(|e| e.as_array())
+                        .map(|a| a.len())
+                        .unwrap_or(0);
+                    return Ok(Output {
+                        data: json!({ "events": n }),
+                        human: Some(String::new()),
+                        exit: ExitCode::Success,
+                    });
                 }
                 return Ok(Output::json(v));
             }

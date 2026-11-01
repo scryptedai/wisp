@@ -6,8 +6,16 @@ use serde_json::{json, Value};
 use std::cell::Cell;
 use std::io::{BufRead, BufWriter, Write};
 use std::path::Path;
+use std::sync::Mutex;
 use std::time::Duration;
 use wisp_model::WispError;
+
+static TEST_ENV_LOCK: Mutex<()> = Mutex::new(());
+
+/// Serialize integration tests that mutate process environment variables.
+pub fn test_env_lock() -> std::sync::MutexGuard<'static, ()> {
+    TEST_ENV_LOCK.lock().expect("test env lock")
+}
 
 thread_local! {
     static RUNTIME_SERVE_THREAD: Cell<bool> = const { Cell::new(false) };
@@ -62,7 +70,7 @@ fn call_unix(wisp_dir: &Path, req: RuntimeRequest, timeout: Duration) -> Result<
     let stream = UnixStream::connect(&sock)
         .map_err(|e| WispError::usage(format!("runtime.sock connect: {e}")))?;
     stream
-        .set_read_timeout(Some(timeout))
+        .set_read_timeout(Some(timeout.saturating_add(Duration::from_secs(2))))
         .map_err(|e| WispError::internal(format!("runtime.sock: {e}")))?;
     let mut w = BufWriter::new(&stream);
     writeln!(

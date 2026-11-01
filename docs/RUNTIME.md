@@ -20,7 +20,13 @@ coalesce = true
 
 Start the runtime before agents. A client with `enabled = true` and no socket **fails** (exit 2). There is no fallback that opens the ledger from an agent process.
 
+**Platform:** `wisp runtime --serve` requires Unix domain sockets (Linux, macOS, and other Unix). On other platforms the command exits with usage.
+
 The serve process holds **one apply writer thread** (serialized commits, optional same-actor coalesce) and serves **reads from cache** without opening SQLite in agent processes.
+
+## `seq` and restarts
+
+`seq` (and `runtime_seq` on `feed`) is a **per-process publish counter**. It starts at **0** when the runtime starts. Clients must not reuse a `since_seq` from before a restart: the same numeric `seq` after restart refers to a different snapshot.
 
 ## Protocol
 
@@ -67,4 +73,4 @@ cargo test -p wisp-invariants --test battery_runtime -- --nocapture
 WISP_RUNTIME_BATTERY=1 cargo test -p wisp-invariants --test battery_runtime -- --ignored --nocapture --test-threads=1
 ```
 
-Edit scenarios in `contrib/battery-runtime/cases.toml` only.
+Edit scenarios in `contrib/battery-runtime/cases.toml` and implement them in `crates/wisp-invariants/tests/battery_runtime.rs`.

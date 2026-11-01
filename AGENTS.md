@@ -75,7 +75,7 @@ Exit-7 adversarial battery: edit **`contrib/battery-exit7-adversarial/cases.toml
 
 OKF v0.2 compliance (reserved paths, checkout `sources`, validate findings): **`crates/wisp-invariants/tests/okf_02_compliance.rs`**.
 
-Runtime acceptance battery: edit **`contrib/battery-runtime/cases.toml` only**; runner `wisp-invariants/tests/battery_runtime.rs` (`WISP_RUNTIME_BATTERY=1` for heavy cases). See `contrib/battery-runtime/README.md` and **`docs/RUNTIME.md`**.
+Runtime acceptance battery: edit **`contrib/battery-runtime/cases.toml`** and the matching Rust cases in **`crates/wisp-invariants/tests/battery_runtime.rs`** (`WISP_RUNTIME_BATTERY=1` for heavy cases). See `contrib/battery-runtime/README.md` and **`docs/RUNTIME.md`**.
 
 ## Coding norms
 

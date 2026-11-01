@@ -141,12 +141,22 @@ impl WispError {
         )
         .with_details(serde_json::json!({ "not_implemented": what }))
     }
-    /// True for exit 7 (`write_timeout`) and exit 11 (`runtime_timeout`).
+    /// True for exit 7 (`write_timeout`) and exit 11 only when details allow retry.
     pub fn is_retryable(&self) -> bool {
-        self.code == ExitCode::WriteTimeout || self.code == ExitCode::RuntimeTimeout
+        if self.code == ExitCode::WriteTimeout {
+            return true;
+        }
+        if self.code == ExitCode::RuntimeTimeout {
+            return self
+                .details
+                .get("retryable")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false);
+        }
+        false
     }
 
-    /// Runtime apply writer deadline elapsed (retryable).
+    /// Runtime apply writer deadline elapsed (`details.retryable` set by the writer).
     pub fn runtime_timeout(msg: impl Into<String>, details: Value) -> Self {
         Self::new(ExitCode::RuntimeTimeout, msg).with_details(details)
     }

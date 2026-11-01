@@ -51,7 +51,7 @@ Full replace still uses `update_section`. Mixing blind append with full replace 
 |------|---------|--------|
 | **3** | Optimistic conflict (section, FM, path, …) | Refresh base, retry or merge policy |
 | **7** | SQLite busy (retryable) | Backoff; read `error.details` (`lock`, `phase`, `busy_timeout_ms`, `commit_attempt`, `hint`) — [`docs/CLI.md`](CLI.md#exit-7-write_timeout-details); manifest `commit.retries` also applies in-engine |
-| **11** | Runtime apply timeout (retryable) | Resubmit or increase `[runtime] timeout_ms`; ensure `wisp runtime --serve` is running — [`docs/RUNTIME.md`](RUNTIME.md) |
+| **11** | Runtime apply timeout | Do **not** blindly resubmit append/prepend; read `error.details.retryable` and `outcome`. When `retryable` is false the batch may have committed. Increase `[runtime] timeout_ms` or ensure `wisp runtime --serve` is running — [`docs/RUNTIME.md`](RUNTIME.md) |
 | 4 | Refused (policy / generated file) | Fix op or use `record --adopt-generated` for humans |
 | 0 | Success | — |
 

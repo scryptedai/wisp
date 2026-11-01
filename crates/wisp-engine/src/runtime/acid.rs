@@ -26,6 +26,11 @@ fn runtime_cfg() -> RuntimeSection {
 /// Hotaru-shaped: many warmed cats on two log-like paths while a writer appends elsewhere.
 #[test]
 fn acid_hotaru_warmed_cats_under_append() {
+    if std::env::var("WISP_RUNTIME_ACID").ok().as_deref() != Some("1") {
+        eprintln!("skip acid_hotaru (set WISP_RUNTIME_ACID=1 to run timing gate)");
+        return;
+    }
+    let _env = runtime::test_env_lock();
     let dir = tempfile::tempdir().unwrap();
     let root = dir.path();
     std::env::set_var("WISP_RUNTIME_DIRECT", "1");

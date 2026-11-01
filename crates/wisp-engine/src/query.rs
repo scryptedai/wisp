@@ -713,7 +713,12 @@ pub fn switch(repo: &mut Repository, name: &str, discard: bool) -> Result<Value>
 
 /// The ref checked out in the main working tree.
 pub fn current_ref(repo: &Repository) -> String {
-    checkout::CheckoutIndex::load(&repo.wisp_dir.join("checkout.idx"))
+    current_ref_wisp_dir(&repo.wisp_dir)
+}
+
+/// Checked-out ref from `checkout.idx` without opening the ledger.
+pub fn current_ref_wisp_dir(wisp_dir: &std::path::Path) -> String {
+    checkout::CheckoutIndex::load(&wisp_dir.join("checkout.idx"))
         .ok()
         .flatten()
         .map(|i| i.ref_name)

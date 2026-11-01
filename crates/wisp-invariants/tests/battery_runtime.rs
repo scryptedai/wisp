@@ -51,6 +51,7 @@ fn runtime_cfg() -> RuntimeSection {
 
 #[test]
 fn battery_runtime_misconfigured_no_socket() {
+    let _env = runtime::test_env_lock();
     let dir = tempfile::tempdir().unwrap();
     let root = dir.path();
     std::env::set_var("WISP_RUNTIME_DIRECT", "1");
@@ -78,6 +79,7 @@ fn battery_runtime_misconfigured_no_socket() {
 
 #[test]
 fn battery_runtime_apply_success_has_head() {
+    let _env = runtime::test_env_lock();
     let dir = tempfile::tempdir().unwrap();
     let root = dir.path();
     std::env::set_var("WISP_RUNTIME_DIRECT", "1");
@@ -116,6 +118,7 @@ fn battery_runtime_apply_success_has_head() {
 
 #[test]
 fn battery_runtime_feed_after_apply() {
+    let _env = runtime::test_env_lock();
     let dir = tempfile::tempdir().unwrap();
     let root = dir.path();
     std::env::set_var("WISP_RUNTIME_DIRECT", "1");
@@ -162,6 +165,7 @@ fn battery_runtime_feed_after_apply() {
 
 #[test]
 fn battery_runtime_apply_failure_no_head() {
+    let _env = runtime::test_env_lock();
     let dir = tempfile::tempdir().unwrap();
     let root = dir.path();
     std::env::set_var("WISP_RUNTIME_DIRECT", "1");

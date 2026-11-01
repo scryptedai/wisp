@@ -12,6 +12,7 @@ use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
 use wisp_model::{concept_path_of, SectionId, WispError};
 
+/// Dedicated apply drain thread owned by the runtime store.
 pub struct ApplyWriter {
     tx: Sender<ApplyJob>,
     join: Mutex<Option<JoinHandle<()>>>,
@@ -31,6 +32,7 @@ struct PendingUnit {
 }
 
 impl ApplyWriter {
+    /// Start the writer loop on a background thread.
     pub fn spawn(
         repo: Arc<Mutex<Repository>>,
         config: RuntimeSection,
@@ -47,6 +49,7 @@ impl ApplyWriter {
         }
     }
 
+    /// Enqueue one apply batch and block until it completes or the deadline passes.
     pub fn submit(
         &self,
         batch: ApplyBatch,

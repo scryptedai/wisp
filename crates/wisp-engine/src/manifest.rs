@@ -117,6 +117,7 @@ pub struct RuntimeSection {
     pub timeout_ms: u64,
     /// Writer coalesce window for disjoint same-actor ops (µs).
     pub coalesce_window_us: u64,
+    /// When true, merge disjoint same-actor ops in the writer coalesce window.
     pub coalesce: bool,
     /// When true, `human:*` CLI actors may open the repo for admin commands while runtime is up.
     #[serde(default = "default_true")]

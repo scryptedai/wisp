@@ -6,6 +6,7 @@ use std::collections::HashMap;
 use wisp_model::{concept_path_of, SectionId};
 
 #[derive(Debug, Clone)]
+/// One append/prepend fragment applied to cached cat/pack payloads.
 pub struct AppendPatch {
     pub concept_path: String,
     pub section: SectionId,
@@ -14,12 +15,14 @@ pub struct AppendPatch {
 }
 
 #[derive(Debug, Clone)]
+/// Cache invalidation or append patch recorded at a runtime seq bump.
 pub enum PublishEvent {
     Append(AppendPatch),
     Invalidate,
 }
 
 #[derive(Debug, Clone, Default)]
+/// Published read snapshot (seq, heads, cat/pack/search keys).
 pub struct SnapshotCache {
     pub seq: u64,
     /// Published ref heads (updated on every successful apply).
@@ -32,6 +35,7 @@ pub struct SnapshotCache {
 }
 
 #[derive(Debug, Clone)]
+/// Cached pack JSON at a particular runtime seq.
 pub struct PackEntry {
     pub seq: u64,
     pub paths: Vec<String>,
@@ -40,25 +44,30 @@ pub struct PackEntry {
 }
 
 impl SnapshotCache {
+    /// Increment and return the runtime publish seq.
     pub fn bump_seq(&mut self) -> u64 {
         self.seq = self.seq.saturating_add(1);
         self.seq
     }
 
+    /// Record the ref head after a successful apply.
     pub fn set_head(&mut self, ref_name: &str, head: &str) {
         self.heads.insert(ref_name.to_string(), head.to_string());
     }
 
+    /// Published head for a ref, if known.
     pub fn head(&self, ref_name: &str) -> Option<String> {
         self.heads.get(ref_name).cloned()
     }
 
+    /// Seed head from store on startup when present.
     pub fn seed_head(&mut self, ref_name: &str, head: Option<String>) {
         if let Some(h) = head {
             self.set_head(ref_name, &h);
         }
     }
 
+    /// Append publish log entries for pack delta and invalidation.
     pub fn record_publish(&mut self, seq: u64, events: Vec<PublishEvent>) {
         if events.is_empty() {
             return;
@@ -71,6 +80,7 @@ impl SnapshotCache {
         }
     }
 
+    /// Cache key for a cat RPC at head or pinned version.
     pub fn cat_key(ref_name: &str, path: &str, version: Option<&str>) -> String {
         match version {
             Some(v) => format!("{ref_name}:{path}@{v}"),
@@ -78,12 +88,14 @@ impl SnapshotCache {
         }
     }
 
+    /// Cache key for a pack RPC (paths sorted for stability).
     pub fn pack_key(ref_name: &str, paths: &[String], budget: Option<usize>) -> String {
         let mut p = paths.to_vec();
         p.sort();
         format!("{ref_name}:pack:{}:{budget:?}", p.join(","))
     }
 
+    /// Cache key for a search RPC.
     pub fn search_key(
         ref_name: &str,
         query: &str,
@@ -94,18 +106,22 @@ impl SnapshotCache {
         format!("{ref_name}:search:{mode}:{k}:local_only={local_only}:{query}")
     }
 
+    /// Lookup cached cat JSON.
     pub fn get_cat(&self, key: &str) -> Option<&Value> {
         self.cats.get(key)
     }
 
+    /// Store cat JSON at the current seq.
     pub fn put_cat(&mut self, key: String, value: Value) {
         self.cats.insert(key, value);
     }
 
+    /// Lookup cached pack entry.
     pub fn get_pack(&self, key: &str) -> Option<&PackEntry> {
         self.packs.get(key)
     }
 
+    /// Store pack JSON and metadata at the current seq.
     pub fn put_pack(
         &mut self,
         key: String,
@@ -125,14 +141,17 @@ impl SnapshotCache {
         );
     }
 
+    /// Lookup cached search JSON.
     pub fn get_search(&self, key: &str) -> Option<&Value> {
         self.searches.get(key)
     }
 
+    /// Store search JSON at the current seq.
     pub fn put_search(&mut self, key: String, value: Value) {
         self.searches.insert(key, value);
     }
 
+    /// Drop cat/search keys touched by changed concept paths.
     pub fn invalidate_paths(&mut self, ref_name: &str, paths: &[String]) {
         let prefix = format!("{ref_name}:");
         self.cats.retain(|k, _| {
@@ -145,6 +164,7 @@ impl SnapshotCache {
             .retain(|k, _| k.starts_with(&format!("{ref_name}:search:")));
     }
 
+    /// Drop all pack cache entries for a ref.
     pub fn invalidate_pack_prefix(&mut self, ref_name: &str) {
         let prefix = format!("{ref_name}:pack:");
         self.packs.retain(|k, _| !k.starts_with(&prefix));

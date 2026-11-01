@@ -17,6 +17,7 @@ use std::time::Duration;
 use wisp_model::{ChangeId, WispError, WriteTimeoutDetails};
 use wisp_store::Ledger;
 
+/// Entry point for `wisp runtime --serve` and test harnesses.
 pub struct RuntimeServer;
 
 /// Background runtime for tests and embedded use.
@@ -106,6 +107,7 @@ impl RuntimeServer {
         accept_loop(root, unlock, config, None)
     }
 
+    /// Stub on non-Unix hosts (runtime requires domain sockets).
     #[cfg(not(unix))]
     pub fn spawn(
         _root: PathBuf,
@@ -117,6 +119,7 @@ impl RuntimeServer {
         ))
     }
 
+    /// Stub on non-Unix hosts (runtime requires domain sockets).
     #[cfg(not(unix))]
     pub fn serve_blocking(
         _root: PathBuf,

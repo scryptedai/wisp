@@ -27,6 +27,7 @@ pub struct RuntimeResponse {
 }
 
 impl RuntimeResponse {
+    /// Success envelope for one RPC.
     pub fn ok(command: &str, data: Value) -> Self {
         RuntimeResponse {
             ok: true,
@@ -36,6 +37,7 @@ impl RuntimeResponse {
         }
     }
 
+    /// Failure envelope carrying a CLI-shaped error object.
     pub fn err(command: &str, error: Value) -> Self {
         RuntimeResponse {
             ok: false,

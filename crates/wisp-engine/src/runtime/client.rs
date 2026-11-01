@@ -22,6 +22,7 @@ fn runtime_serve_thread() -> bool {
     RUNTIME_SERVE_THREAD.with(|c| c.get())
 }
 
+/// Socket file name under `.wisp/` (`runtime.sock`).
 pub const RUNTIME_SOCK: &str = "runtime.sock";
 
 /// Fail fast when `[runtime] enabled` and the store is not listening.
@@ -37,6 +38,7 @@ pub fn require_socket(wisp_dir: &Path) -> Result<(), WispError> {
     .with_details(json!({ "code": "runtime_unavailable" })))
 }
 
+/// Send one JSON-line RPC and return the success payload.
 pub fn call(wisp_dir: &Path, req: RuntimeRequest, timeout: Duration) -> Result<Value, WispError> {
     require_socket(wisp_dir)?;
     #[cfg(unix)]
@@ -182,6 +184,7 @@ pub fn rpc_pack(
     )
 }
 
+/// Build a `search` RPC.
 pub fn rpc_search(
     wisp_dir: &Path,
     actor: &str,
@@ -212,6 +215,7 @@ pub fn rpc_search(
     )
 }
 
+/// Build a `why` RPC.
 pub fn rpc_why(
     wisp_dir: &Path,
     actor: &str,
@@ -232,6 +236,7 @@ pub fn rpc_why(
     )
 }
 
+/// Build an `impact` RPC.
 pub fn rpc_impact(
     wisp_dir: &Path,
     actor: &str,
@@ -252,6 +257,7 @@ pub fn rpc_impact(
     )
 }
 
+/// Build a `tokens` RPC.
 pub fn rpc_tokens(
     wisp_dir: &Path,
     actor: &str,
@@ -271,6 +277,7 @@ pub fn rpc_tokens(
     )
 }
 
+/// Build a `feed` RPC (ledger events since seq).
 pub fn rpc_feed(
     wisp_dir: &Path,
     actor: &str,
@@ -294,12 +301,14 @@ pub fn agents_use_runtime(manifest: &crate::manifest::Manifest) -> bool {
     manifest.runtime.enabled
 }
 
+/// True when this process may open SQLite (runtime off, serve thread, or override).
 pub fn direct_repo_open_allowed(manifest: &crate::manifest::Manifest) -> bool {
     !manifest.runtime.enabled
         || runtime_serve_thread()
         || std::env::var("WISP_RUNTIME_DIRECT").ok().as_deref() == Some("1")
 }
 
+/// Reject agent direct opens when runtime is enabled (except allowed humans).
 pub fn guard_direct_open(
     manifest: &crate::manifest::Manifest,
     actor: Option<&str>,
@@ -316,6 +325,7 @@ pub fn guard_direct_open(
     .with_details(json!({ "code": "runtime_direct_open_forbidden" })))
 }
 
+/// Open the repo or fail when runtime forbids direct SQLite access.
 pub fn open_repo_or_misconfigured(
     root: &Path,
     unlock: &Unlock,

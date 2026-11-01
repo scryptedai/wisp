@@ -75,9 +75,7 @@ Exit-7 adversarial battery: edit **`contrib/battery-exit7-adversarial/cases.toml
 
 OKF v0.2 compliance (reserved paths, checkout `sources`, validate findings): **`crates/wisp-invariants/tests/okf_02_compliance.rs`**.
 
-Commit queue battery: edit **`contrib/battery-commit-queue/cases.toml` only**; runners `battery_commit_queue.rs` and `battery_commit_queue_swarm` (`WISP_COMMIT_QUEUE_BATTERY=1`). See `contrib/battery-commit-queue/README.md` and **`docs/COMMIT-QUEUE.md`**.
-
-Queue apply JSON envelope (socket `ok:false` → client `Err`): **`crates/wisp-invariants/tests/queue_apply_envelope.rs`**.
+Runtime acceptance battery: edit **`contrib/battery-runtime/cases.toml` only**; runner `wisp-invariants/tests/battery_runtime.rs` (`WISP_RUNTIME_BATTERY=1` for heavy cases). See `contrib/battery-runtime/README.md` and **`docs/RUNTIME.md`**.
 
 ## Coding norms
 

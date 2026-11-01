@@ -22,13 +22,13 @@ pub(crate) fn sql_err(e: rusqlite::Error) -> WispError {
                 || f.code == rusqlite::ErrorCode::DatabaseLocked
             {
                 WispError::write_timeout(
-                    "write queue timeout",
+                    "SQLite busy during ledger or hot access",
                     WriteTimeoutDetails {
                         lock: "ledger".into(),
                         phase: "sqlite".into(),
                         sqlite: Some(format!("{:?}", f.code)),
                         hint: Some(
-                            "SQLite busy during a ledger or hot statement; treat as write queue contention."
+                            "SQLite busy during a ledger or hot statement; retry with backoff."
                                 .into(),
                         ),
                         ..Default::default()

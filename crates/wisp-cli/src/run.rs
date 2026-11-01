@@ -22,11 +22,106 @@ fn open(cli: &Cli) -> Result<Repository> {
     let root = Repository::discover(&start).ok_or_else(|| {
         WispError::not_found(format!("no .wisp/ found at or above {}", start.display()))
     })?;
+    let manifest = wisp_engine::manifest::Manifest::load(&root.join(".wisp/manifest.toml"))?;
+    let actor = actor_from_cli(cli, &manifest);
+    wisp_engine::runtime::guard_direct_open(&manifest, Some(&actor))?;
     Repository::open(&root, &unlock(cli))
+}
+
+fn bundle_root(cli: &Cli) -> Result<PathBuf> {
+    let start = cli.repo.clone().unwrap_or(std::env::current_dir()?);
+    Repository::discover(&start).ok_or_else(|| {
+        WispError::not_found(format!("no .wisp/ found at or above {}", start.display()))
+    })
+}
+
+fn load_manifest(cli: &Cli) -> Result<(PathBuf, wisp_engine::manifest::Manifest)> {
+    let root = bundle_root(cli)?;
+    let manifest = wisp_engine::manifest::Manifest::load(&root.join(".wisp/manifest.toml"))?;
+    Ok((root, manifest))
+}
+
+fn apply_via_cli(cli: &Cli, mut batch: ApplyBatch, default_ref: Option<&str>) -> Result<Value> {
+    let (root, manifest) = load_manifest(cli)?;
+    if manifest.runtime.enabled {
+        wisp_engine::runtime::guard_direct_open(&manifest, Some(&actor_from_cli(cli, &manifest)))?;
+        if batch.actor.is_none() {
+            batch.actor = Some(actor_from_cli(cli, &manifest));
+        }
+        return wisp_engine::runtime::rpc_apply(
+            &root.join(".wisp"),
+            batch.actor.as_deref().unwrap_or("human:agent"),
+            serde_json::to_value(&batch)?,
+            default_ref,
+            manifest.runtime.timeout_ms,
+        );
+    }
+    let mut repo = open(cli)?;
+    if batch.actor.is_none() {
+        batch.actor = Some(actor_of(cli, &repo));
+    }
+    wisp_engine::headless::apply(&mut repo, batch, default_ref)
+}
+
+fn batch_for_flags(cli: &Cli, w: &WriteFlags, mut op: ApplyOp) -> Result<ApplyBatch> {
+    let (_root, manifest) = load_manifest(cli)?;
+    if manifest.runtime.enabled {
+        wisp_engine::runtime::guard_direct_open(&manifest, Some(&actor_from_cli(cli, &manifest)))?;
+        op.base_version = w.base.clone();
+        op.note = w.note.clone();
+        let mut asserts = Vec::new();
+        for a in &w.asserts {
+            let (target, version) = a
+                .rsplit_once('@')
+                .ok_or_else(|| WispError::usage("--assert takes <path>[#section]@<version>"))?;
+            let (path, section) = match target.split_once('#') {
+                Some((p, s)) => (
+                    p.to_string(),
+                    Some(
+                        s.parse::<SectionId>()
+                            .map_err(|_| WispError::usage("bad section id in --assert"))?,
+                    ),
+                ),
+                None => (target.to_string(), None),
+            };
+            asserts.push(wisp_engine::headless::ApplyAssert {
+                path,
+                section,
+                version: version
+                    .parse()
+                    .map_err(|_| WispError::usage("bad version in --assert"))?,
+            });
+        }
+        let inputs = w
+            .inputs
+            .iter()
+            .map(|i| wisp_engine::headless::parse_input_spec(i))
+            .collect::<Result<Vec<_>>>()?;
+        return Ok(ApplyBatch {
+            r#ref: w.r#ref.clone().or(Some(wisp_engine::MAIN_REF.into())),
+            base: None,
+            actor: Some(actor_from_cli(cli, &manifest)),
+            message: w.message.clone(),
+            ops: vec![op],
+            inputs,
+            assert: asserts,
+            assert_head: w.assert_head.as_deref().map(parse_cs).transpose()?,
+            inputs_complete: w.inputs_complete,
+        });
+    }
+    let repo = open(cli)?;
+    batch_for(cli, &repo, w, op)
 }
 
 fn actor_of(cli: &Cli, repo: &Repository) -> String {
     cli.actor.clone().unwrap_or_else(|| repo.default_actor())
+}
+
+fn actor_from_cli(cli: &Cli, manifest: &wisp_engine::manifest::Manifest) -> String {
+    cli.actor
+        .clone()
+        .or(manifest.config.actor.clone())
+        .unwrap_or_else(|| "human:agent".into())
 }
 
 fn ref_of(repo: &Repository, explicit: &Option<String>) -> String {
@@ -513,23 +608,23 @@ pub fn run(cli: Cli) -> CliResult {
             let human = status_human(&s);
             Ok(Output::text(serde_json::to_value(&s)?, human))
         }
-        Command::Queue { serve } => {
+        Command::Runtime { serve } => {
             if !*serve {
-                return Err(WispError::usage("queue requires --serve"));
+                return Err(WispError::usage("runtime requires --serve"));
             }
+            let root = bundle_root(&cli)?;
             let unlock = unlock(&cli);
-            let mut repo = open(&cli)?;
-            let cfg = repo.manifest.queue.clone();
-            repo.manifest.queue.enabled = true;
+            wisp_engine::runtime::set_runtime_serve_thread(true);
+            let mut repo = Repository::open(&root, &unlock)?;
+            let cfg = repo.manifest.runtime.clone();
+            repo.manifest.runtime.enabled = true;
             repo.manifest.save(&repo.wisp_dir.join("manifest.toml"))?;
-            let _queue = wisp_engine::CommitQueue::bind_unix(&repo.wisp_dir, unlock, cfg)?;
             eprintln!(
-                "wisp commit queue listening on {}/commit.sock",
+                "wisp runtime listening on {}/runtime.sock",
                 repo.wisp_dir.display()
             );
-            loop {
-                std::thread::sleep(std::time::Duration::from_secs(3600));
-            }
+            wisp_engine::runtime::RuntimeServer::serve_blocking(root, unlock, cfg)?;
+            Ok(Output::json(json!({ "runtime": "stopped" })))
         }
         Command::Materialize { wait } => {
             let mut repo = open(&cli)?;
@@ -726,20 +821,53 @@ pub fn run(cli: Cli) -> CliResult {
             depth,
             r#ref,
         } => {
-            let mut repo = open(&cli)?;
-            let ref_name = ref_of(&repo, r#ref);
-            Ok(Output::json(query::why(
-                &mut repo, &ref_name, target, *depth,
-            )?))
+            let (root, manifest) = load_manifest(&cli)?;
+            let ref_name = r#ref
+                .clone()
+                .unwrap_or_else(|| wisp_engine::MAIN_REF.to_string());
+            let v = if manifest.runtime.enabled {
+                let actor = actor_from_cli(&cli, &manifest);
+                wisp_engine::runtime::guard_direct_open(&manifest, Some(&actor))?;
+                wisp_engine::runtime::rpc_why(
+                    &root.join(".wisp"),
+                    &actor,
+                    &ref_name,
+                    target,
+                    *depth,
+                    manifest.runtime.timeout_ms,
+                )?
+            } else {
+                let mut repo = open(&cli)?;
+                let ref_name = ref_of(&repo, r#ref);
+                query::why(&mut repo, &ref_name, target, *depth)?
+            };
+            Ok(Output::json(v))
         }
         Command::Impact {
             target,
             depth,
             r#ref,
         } => {
-            let mut repo = open(&cli)?;
-            let ref_name = ref_of(&repo, r#ref);
-            let v = wisp_engine::impact::impact(&mut repo, &ref_name, target, *depth)?;
+            let (root, manifest) = load_manifest(&cli)?;
+            let ref_name = r#ref
+                .clone()
+                .unwrap_or_else(|| wisp_engine::MAIN_REF.to_string());
+            let v = if manifest.runtime.enabled {
+                let actor = actor_from_cli(&cli, &manifest);
+                wisp_engine::runtime::guard_direct_open(&manifest, Some(&actor))?;
+                wisp_engine::runtime::rpc_impact(
+                    &root.join(".wisp"),
+                    &actor,
+                    &ref_name,
+                    target,
+                    *depth,
+                    manifest.runtime.timeout_ms,
+                )?
+            } else {
+                let mut repo = open(&cli)?;
+                let ref_name = ref_of(&repo, r#ref);
+                wisp_engine::impact::impact(&mut repo, &ref_name, target, *depth)?
+            };
             let human = impact_human(&v);
             Ok(Output::text(v, human))
         }
@@ -748,16 +876,35 @@ pub fn run(cli: Cli) -> CliResult {
             version,
             r#ref,
         } => {
-            let mut repo = open(&cli)?;
-            let ref_name = ref_of(&repo, r#ref);
-            let v = version
-                .as_deref()
-                .map(|s| {
-                    s.parse::<ChangeId>()
-                        .map_err(|_| WispError::usage("bad version"))
-                })
-                .transpose()?;
-            let out = wisp_engine::headless::cat(&mut repo, &ref_name, target, v)?;
+            let root = bundle_root(&cli)?;
+            let manifest =
+                wisp_engine::manifest::Manifest::load(&root.join(".wisp/manifest.toml"))?;
+            let out = if manifest.runtime.enabled {
+                let actor = actor_from_cli(&cli, &manifest);
+                wisp_engine::runtime::guard_direct_open(&manifest, Some(&actor))?;
+                let ref_name = r#ref
+                    .clone()
+                    .unwrap_or_else(|| wisp_engine::MAIN_REF.to_string());
+                wisp_engine::runtime::rpc_cat(
+                    &root.join(".wisp"),
+                    &actor,
+                    &ref_name,
+                    target,
+                    version.as_deref(),
+                    manifest.runtime.timeout_ms,
+                )?
+            } else {
+                let mut repo = open(&cli)?;
+                let ref_name = ref_of(&repo, r#ref);
+                let v = version
+                    .as_deref()
+                    .map(|s| {
+                        s.parse::<ChangeId>()
+                            .map_err(|_| WispError::usage("bad version"))
+                    })
+                    .transpose()?;
+                wisp_engine::headless::cat(&mut repo, &ref_name, target, v)?
+            };
             let human = out
                 .get("content")
                 .and_then(|c| c.as_str())
@@ -794,16 +941,13 @@ pub fn run(cli: Cli) -> CliResult {
         } => set_status(&cli, path, status, r#ref),
         Command::Deprecate { path, r#ref } => set_status(&cli, path, "deprecated", r#ref),
         Command::Verify { path, r#ref } => {
-            let mut repo = open(&cli)?;
             let op = empty_op("verify", path);
             let w = WriteFlags {
                 r#ref: r#ref.clone(),
                 ..Default::default()
             };
-            let b = batch_for(&cli, &repo, &w, op)?;
-            Ok(Output::json(wisp_engine::headless::apply(
-                &mut repo, b, None,
-            )?))
+            let b = batch_for_flags(&cli, &w, op)?;
+            Ok(Output::json(apply_via_cli(&cli, b, None)?))
         }
         Command::Retract {
             path,
@@ -952,10 +1096,8 @@ pub fn run(cli: Cli) -> CliResult {
                         r#ref: Some(ref_name),
                         ..Default::default()
                     };
-                    let b = batch_for(&cli, &repo, &w, op)?;
-                    Ok(Output::json(wisp_engine::headless::apply(
-                        &mut repo, b, None,
-                    )?))
+                    let b = batch_for_flags(&cli, &w, op)?;
+                    Ok(Output::json(apply_via_cli(&cli, b, None)?))
                 }
                 SourceCmd::Rm { path, id, r#ref } => {
                     let mut op = empty_op("source_remove", path);
@@ -964,10 +1106,8 @@ pub fn run(cli: Cli) -> CliResult {
                         r#ref: r#ref.clone(),
                         ..Default::default()
                     };
-                    let b = batch_for(&cli, &repo, &w, op)?;
-                    Ok(Output::json(wisp_engine::headless::apply(
-                        &mut repo, b, None,
-                    )?))
+                    let b = batch_for_flags(&cli, &w, op)?;
+                    Ok(Output::json(apply_via_cli(&cli, b, None)?))
                 }
                 SourceCmd::Ls { path, r#ref } => {
                     let ref_name = ref_of(&repo, r#ref);
@@ -1187,6 +1327,25 @@ pub fn run(cli: Cli) -> CliResult {
             Ok(Output::json(out))
         }
         Command::Feed { since } => {
+            let (root, manifest) = load_manifest(&cli)?;
+            if manifest.runtime.enabled {
+                let actor = actor_from_cli(&cli, &manifest);
+                wisp_engine::runtime::guard_direct_open(&manifest, Some(&actor))?;
+                let v = wisp_engine::runtime::rpc_feed(
+                    &root.join(".wisp"),
+                    &actor,
+                    *since,
+                    manifest.runtime.timeout_ms,
+                )?;
+                if !cli.json {
+                    if let Some(events) = v.get("events").and_then(|e| e.as_array()) {
+                        for e in events {
+                            println!("{}", serde_json::to_string(e).unwrap_or_default());
+                        }
+                    }
+                }
+                return Ok(Output::json(v));
+            }
             let repo = open(&cli)?;
             let events = query::feed(&repo, *since)?;
             // Streaming command: one JSON object per line regardless of --json.
@@ -1209,13 +1368,33 @@ pub fn run(cli: Cli) -> CliResult {
             r#ref,
         } => {
             let _ = codec;
-            let mut repo = open(&cli)?;
-            let ref_name = ref_of(&repo, r#ref);
-            let params = wisp_engine::search::SearchParams {
-                threshold: *threshold,
-                local_only: *local_only,
+            let (root, manifest) = load_manifest(&cli)?;
+            let ref_name = r#ref
+                .clone()
+                .unwrap_or_else(|| wisp_engine::MAIN_REF.to_string());
+            let v = if manifest.runtime.enabled {
+                let actor = actor_from_cli(&cli, &manifest);
+                wisp_engine::runtime::guard_direct_open(&manifest, Some(&actor))?;
+                wisp_engine::runtime::rpc_search(
+                    &root.join(".wisp"),
+                    &actor,
+                    &ref_name,
+                    q,
+                    mode,
+                    *k,
+                    *local_only,
+                    threshold.map(|t| t as f64),
+                    manifest.runtime.timeout_ms,
+                )?
+            } else {
+                let mut repo = open(&cli)?;
+                let ref_name = ref_of(&repo, r#ref);
+                let params = wisp_engine::search::SearchParams {
+                    threshold: *threshold,
+                    local_only: *local_only,
+                };
+                query::search_with_params(&mut repo, &ref_name, q, mode, *k, &params)?
             };
-            let v = query::search_with_params(&mut repo, &ref_name, q, mode, *k, &params)?;
             let human = v["results"]
                 .as_array()
                 .map(|rs| {
@@ -1242,9 +1421,30 @@ pub fn run(cli: Cli) -> CliResult {
             r#ref,
         } => {
             let _ = codec;
-            let mut repo = open(&cli)?;
-            let ref_name = ref_of(&repo, r#ref);
-            let v = query::pack(&mut repo, &ref_name, paths, *budget)?;
+            let root = bundle_root(&cli)?;
+            let manifest =
+                wisp_engine::manifest::Manifest::load(&root.join(".wisp/manifest.toml"))?;
+            let ref_name = r#ref
+                .clone()
+                .unwrap_or_else(|| wisp_engine::MAIN_REF.to_string());
+            let v = if manifest.runtime.enabled {
+                let actor = actor_from_cli(&cli, &manifest);
+                wisp_engine::runtime::guard_direct_open(&manifest, Some(&actor))?;
+                wisp_engine::runtime::rpc_pack(
+                    &root.join(".wisp"),
+                    &actor,
+                    &ref_name,
+                    paths,
+                    *budget,
+                    None,
+                    true,
+                    manifest.runtime.timeout_ms,
+                )?
+            } else {
+                let mut repo = open(&cli)?;
+                let ref_name = ref_of(&repo, r#ref);
+                query::pack(&mut repo, &ref_name, paths, *budget)?
+            };
             Ok(Output {
                 human: Some(serde_json::to_string(&v).unwrap_or_default()),
                 data: v,
@@ -1252,9 +1452,26 @@ pub fn run(cli: Cli) -> CliResult {
             })
         }
         Command::Tokens { target, r#ref } => {
-            let mut repo = open(&cli)?;
-            let ref_name = ref_of(&repo, r#ref);
-            Ok(Output::json(query::tokens(&mut repo, &ref_name, target)?))
+            let (root, manifest) = load_manifest(&cli)?;
+            let ref_name = r#ref
+                .clone()
+                .unwrap_or_else(|| wisp_engine::MAIN_REF.to_string());
+            let v = if manifest.runtime.enabled {
+                let actor = actor_from_cli(&cli, &manifest);
+                wisp_engine::runtime::guard_direct_open(&manifest, Some(&actor))?;
+                wisp_engine::runtime::rpc_tokens(
+                    &root.join(".wisp"),
+                    &actor,
+                    &ref_name,
+                    target,
+                    manifest.runtime.timeout_ms,
+                )?
+            } else {
+                let mut repo = open(&cli)?;
+                let ref_name = ref_of(&repo, r#ref);
+                query::tokens(&mut repo, &ref_name, target)?
+            };
+            Ok(Output::json(v))
         }
         Command::Codec { action, id } => {
             let mut repo = open(&cli)?;
@@ -1356,17 +1573,14 @@ pub fn run(cli: Cli) -> CliResult {
             content_file,
             stdin,
         } => {
-            let mut repo = open(&cli)?;
             let (path, section) = split_target(target);
             let mut op = empty_op("update_section", &path);
             op.section = section;
             op.heading = heading.clone();
             op.level = *level;
             op.content = read_content(content.clone(), content_file.clone(), *stdin)?;
-            let b = batch_for(&cli, &repo, w, op)?;
-            Ok(Output::json(wisp_engine::headless::apply(
-                &mut repo, b, None,
-            )?))
+            let b = batch_for_flags(&cli, w, op)?;
+            Ok(Output::json(apply_via_cli(&cli, b, None)?))
         }
         Command::AddSection {
             path,
@@ -1378,26 +1592,20 @@ pub fn run(cli: Cli) -> CliResult {
             content_file,
             stdin,
         } => {
-            let mut repo = open(&cli)?;
             let mut op = empty_op("add_section", path);
             op.after = after.clone();
             op.heading = Some(heading.clone());
             op.level = Some(*level);
             op.content = read_content(content.clone(), content_file.clone(), *stdin)?;
-            let b = batch_for(&cli, &repo, w, op)?;
-            Ok(Output::json(wisp_engine::headless::apply(
-                &mut repo, b, None,
-            )?))
+            let b = batch_for_flags(&cli, w, op)?;
+            Ok(Output::json(apply_via_cli(&cli, b, None)?))
         }
         Command::RemoveSection { target, w } => {
-            let mut repo = open(&cli)?;
             let (path, section) = split_target(target);
             let mut op = empty_op("remove_section", &path);
             op.section = section;
-            let b = batch_for(&cli, &repo, w, op)?;
-            Ok(Output::json(wisp_engine::headless::apply(
-                &mut repo, b, None,
-            )?))
+            let b = batch_for_flags(&cli, w, op)?;
+            Ok(Output::json(apply_via_cli(&cli, b, None)?))
         }
         Command::Set {
             path,
@@ -1405,25 +1613,19 @@ pub fn run(cli: Cli) -> CliResult {
             value,
             w,
         } => {
-            let mut repo = open(&cli)?;
             let v: Value =
                 serde_json::from_str(value).unwrap_or_else(|_| Value::String(value.clone()));
             let mut op = empty_op("set_key", path);
             op.key = Some(key.clone());
             op.value = Some(v);
-            let b = batch_for(&cli, &repo, w, op)?;
-            Ok(Output::json(wisp_engine::headless::apply(
-                &mut repo, b, None,
-            )?))
+            let b = batch_for_flags(&cli, w, op)?;
+            Ok(Output::json(apply_via_cli(&cli, b, None)?))
         }
         Command::Unset { path, key, w } => {
-            let mut repo = open(&cli)?;
             let mut op = empty_op("unset_key", path);
             op.key = Some(key.clone());
-            let b = batch_for(&cli, &repo, w, op)?;
-            Ok(Output::json(wisp_engine::headless::apply(
-                &mut repo, b, None,
-            )?))
+            let b = batch_for_flags(&cli, w, op)?;
+            Ok(Output::json(apply_via_cli(&cli, b, None)?))
         }
         Command::Create {
             path,
@@ -1433,7 +1635,6 @@ pub fn run(cli: Cli) -> CliResult {
             content,
             w,
         } => {
-            let mut repo = open(&cli)?;
             let mut op = empty_op("create_concept", path);
             op.r#type = Some(r#type.clone());
             if let Some(f) = frontmatter_file {
@@ -1442,17 +1643,17 @@ pub fn run(cli: Cli) -> CliResult {
                 op.frontmatter = Some(serde_json::to_value(yv)?);
             }
             op.content = read_content(content.clone(), content_file.clone(), false)?;
-            let b = batch_for(&cli, &repo, w, op)?;
-            Ok(Output::json(wisp_engine::headless::apply(
-                &mut repo, b, None,
-            )?))
+            let b = batch_for_flags(&cli, w, op)?;
+            Ok(Output::json(apply_via_cli(&cli, b, None)?))
         }
         Command::Apply {
             file,
             r#ref,
             resolve,
         } => {
-            let mut repo = open(&cli)?;
+            let root = bundle_root(&cli)?;
+            let wisp_dir = root.join(".wisp");
+            let manifest = wisp_engine::manifest::Manifest::load(&wisp_dir.join("manifest.toml"))?;
             let text = match file {
                 Some(f) => std::fs::read_to_string(f)?,
                 None => {
@@ -1463,6 +1664,30 @@ pub fn run(cli: Cli) -> CliResult {
             };
             let mut batch: ApplyBatch =
                 serde_json::from_str(&text).map_err(|e| WispError::usage(format!("apply: {e}")))?;
+            let default_ref = batch
+                .r#ref
+                .clone()
+                .or(r#ref.clone())
+                .unwrap_or_else(|| wisp_engine::MAIN_REF.to_string());
+            if manifest.runtime.enabled {
+                if *resolve {
+                    return Err(WispError::usage(
+                        "apply --resolve is not supported when runtime.enabled; use direct apply ops",
+                    ));
+                }
+                if batch.actor.is_none() {
+                    batch.actor = Some(actor_from_cli(&cli, &manifest));
+                }
+                let out = wisp_engine::runtime::rpc_apply(
+                    &wisp_dir,
+                    batch.actor.as_deref().unwrap_or("human:agent"),
+                    serde_json::to_value(&batch)?,
+                    Some(&default_ref),
+                    manifest.runtime.timeout_ms,
+                )?;
+                return Ok(Output::json(out));
+            }
+            let mut repo = open(&cli)?;
             if batch.actor.is_none() {
                 batch.actor = Some(actor_of(&cli, &repo));
             }
@@ -1490,8 +1715,8 @@ pub fn run(cli: Cli) -> CliResult {
                 }
                 Ok(Output::json(out))
             } else {
-                Ok(Output::json(wisp_engine::headless::apply(
-                    &mut repo,
+                Ok(Output::json(apply_via_cli(
+                    &cli,
                     batch,
                     Some(&default_ref),
                 )?))
@@ -1501,17 +1726,14 @@ pub fn run(cli: Cli) -> CliResult {
 }
 
 fn set_status(cli: &Cli, path: &str, status: &str, r#ref: &Option<String>) -> CliResult {
-    let mut repo = open(cli)?;
     let mut op = empty_op("set_status", path);
     op.value = Some(json!(status));
     let w = WriteFlags {
         r#ref: r#ref.clone(),
         ..Default::default()
     };
-    let b = batch_for(cli, &repo, &w, op)?;
-    Ok(Output::json(wisp_engine::headless::apply(
-        &mut repo, b, None,
-    )?))
+    let b = batch_for_flags(cli, &w, op)?;
+    Ok(Output::json(apply_via_cli(cli, b, None)?))
 }
 
 fn plural(n: usize, word: &str) -> String {

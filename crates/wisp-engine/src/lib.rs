@@ -6,7 +6,6 @@ pub mod cache;
 pub mod checkout;
 pub mod cold_flush;
 pub mod commit;
-pub mod commit_queue;
 pub mod erase;
 pub mod headless;
 pub mod html_export;
@@ -19,6 +18,7 @@ pub mod publish;
 pub mod query;
 pub mod record;
 pub mod repo;
+pub mod runtime;
 pub mod search;
 pub mod signing;
 pub mod snapshot;
@@ -26,7 +26,6 @@ pub mod timing;
 pub mod vector;
 pub mod worktree;
 
-pub use commit_queue::CommitQueue;
 pub use manifest::{InitOptions, PayloadStorage};
 pub use repo::{Repository, Unlock, MAIN_REF};
 

@@ -12,9 +12,9 @@ Contract for **local or co-located agents** committing to one wisp bundle. Human
 
 Do not treat the working tree as authoritative immediately after `apply` unless you barrier (below).
 
-## Commit queue (fleets)
+## Runtime (fleets)
 
-When many agents share one bundle, set **`[queue] enabled = true`** and run **`wisp queue --serve`**. Agents then use normal `wisp apply` / `headless::apply` (submit, await JSON). **Exit 11** → retry; **exit 3** → refresh bases. Default is off (direct ledger). **[COMMIT-QUEUE.md](COMMIT-QUEUE.md)**.
+When many agents share one bundle, set **`[runtime] enabled = true`** and run **`wisp runtime --serve`**. Agents use **`wisp cat`**, **`wisp pack`**, **`wisp apply`**, and related commands over **`.wisp/runtime.sock`** (no direct SQLite). **Exit 3** → refresh bases. **[RUNTIME.md](RUNTIME.md)**.
 
 ## Two write modes
 
@@ -51,7 +51,7 @@ Full replace still uses `update_section`. Mixing blind append with full replace 
 |------|---------|--------|
 | **3** | Optimistic conflict (section, FM, path, …) | Refresh base, retry or merge policy |
 | **7** | SQLite busy (retryable) | Backoff; read `error.details` (`lock`, `phase`, `busy_timeout_ms`, `commit_attempt`, `hint`) — [`docs/CLI.md`](CLI.md#exit-7-write_timeout-details); manifest `commit.retries` also applies in-engine |
-| **11** | Commit queue timeout (retryable) | Resubmit or increase `[queue] timeout_ms`; use the bundle commit queue so agents do not contend on `ledger.db` directly — [`docs/CONCURRENCY.md`](CONCURRENCY.md) |
+| **11** | Runtime apply timeout (retryable) | Resubmit or increase `[runtime] timeout_ms`; ensure `wisp runtime --serve` is running — [`docs/RUNTIME.md`](RUNTIME.md) |
 | 4 | Refused (policy / generated file) | Fix op or use `record --adopt-generated` for humans |
 | 0 | Success | — |
 

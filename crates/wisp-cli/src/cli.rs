@@ -112,14 +112,16 @@ pub enum Command {
     },
     /// Changed, new, missing, and non-conformant files; pending erasures
     Status,
-    /// Bundle-local commit queue writer (`.wisp/commit.sock`; enable with queue.enabled)
+    /// Agent runtime store (`.wisp/runtime.sock`; enable with runtime.enabled)
     #[command(
-        long_about = "Off by default. Set [queue] enabled = true (wisp config set queue.enabled \
-true) so headless apply submits to commit.sock instead of opening ledger.db directly. Run one \
-writer per bundle: wisp queue --serve. Clients block until the job completes or queue_timeout \
-(exit 11). See docs/COMMIT-QUEUE.md."
+        long_about = "One process per bundle owns ledger, hot, an in-memory read cache, and a single apply writer thread. \
+Agent fleets set [runtime] enabled = true and run `wisp runtime --serve` before workers. \
+`wisp cat`, `pack`, `search`, `apply`, `why`, `impact`, `tokens`, and `feed` use the socket when runtime is enabled. \
+There is no separate queue command. \
+`human:*` actors may still open the repo for admin commands when runtime.allow_human_direct is true (default). \
+See docs/RUNTIME.md."
     )]
-    Queue {
+    Runtime {
         /// Block and serve until interrupted
         #[arg(long)]
         serve: bool,
@@ -703,7 +705,7 @@ impl Command {
             Command::Init { .. } => "init",
             Command::Import { .. } => "import",
             Command::Status => "status",
-            Command::Queue { .. } => "queue",
+            Command::Runtime { .. } => "runtime",
             Command::Materialize { .. } => "materialize",
             Command::Diff { .. } => "diff",
             Command::Record { .. } => "record",

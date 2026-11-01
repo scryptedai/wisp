@@ -20,7 +20,7 @@ pub struct Manifest {
     #[serde(default)]
     pub commit: CommitSection,
     #[serde(default)]
-    pub queue: CommitQueueSection,
+    pub runtime: RuntimeSection,
     #[serde(default)]
     pub materialize: MaterializeSection,
     #[serde(default)]
@@ -108,26 +108,33 @@ impl Default for CommitSection {
     }
 }
 
-/// Bundle-local commit queue (`docs/CONCURRENCY.md`).
+/// Long-lived agent store (`.wisp/runtime.sock`; `docs/RUNTIME.md`).
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct CommitQueueSection {
-    /// When true, headless clients submit via the commit queue instead of opening the ledger directly.
+pub struct RuntimeSection {
+    /// When true, agent CLIs use the runtime socket and do not open SQLite directly.
     pub enabled: bool,
-    /// Max time a client waits for the writer to finish a submitted job (ms).
+    /// Max time a client waits for an apply RPC (ms).
     pub timeout_ms: u64,
-    /// Writer drain window for autobatch coalescing (µs).
+    /// Writer coalesce window for disjoint same-actor ops (µs).
     pub coalesce_window_us: u64,
-    /// Merge disjoint single-op batches in a drain window (same actor).
     pub coalesce: bool,
+    /// When true, `human:*` CLI actors may open the repo for admin commands while runtime is up.
+    #[serde(default = "default_true")]
+    pub allow_human_direct: bool,
 }
 
-impl Default for CommitQueueSection {
+fn default_true() -> bool {
+    true
+}
+
+impl Default for RuntimeSection {
     fn default() -> Self {
-        CommitQueueSection {
+        RuntimeSection {
             enabled: false,
             timeout_ms: 120_000,
             coalesce_window_us: 500,
             coalesce: true,
+            allow_human_direct: true,
         }
     }
 }
@@ -386,7 +393,7 @@ impl Manifest {
             },
             identity: IdentitySection::default(),
             commit: CommitSection::default(),
-            queue: CommitQueueSection::default(),
+            runtime: RuntimeSection::default(),
             materialize: MaterializeSection::default(),
             render: RenderSection::default(),
             config: ConfigSection::default(),

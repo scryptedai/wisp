@@ -1,0 +1,23 @@
+[[case]]
+id = "misconfigured_no_socket"
+description = "runtime.enabled without serve: cat fails without opening SQLite"
+
+[[case]]
+id = "apply_success_has_head"
+description = "apply RPC success returns head; failure has no head"
+
+[[case]]
+id = "idle_cat_p99"
+description = "1000 cat RPCs of one path with runtime up; p99 under 2ms (heavy gate)"
+
+[[case]]
+id = "warm_pack_hits"
+description = "32 clients same paths; first builds pack, rest cache hit (heavy gate)"
+
+[[case]]
+id = "append_delta_pack"
+description = "append on one section; pack returns fresh seq and updated text (heavy gate)"
+
+[[case]]
+id = "hotaru_warmed_cats"
+description = "32 cache-hit cats during writer load; zero exit 7, p99 gate (engine acid test)"

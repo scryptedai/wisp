@@ -7,7 +7,6 @@ use crate::payloads::*;
 use crate::repo::{Repository, MAIN_REF};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
-use std::time::Duration;
 use wisp_model::*;
 use wisp_store::{Hot, Ledger};
 
@@ -566,31 +565,35 @@ pub use crate::apply_resolve::{
     apply_with_resolve, patch_batch_from_conflicts, ApplyResolvePolicy, ApplyResolveStats,
 };
 
-/// `wisp apply`: one batch, one changeset. Routes through the commit queue when `[queue] enabled` is true.
+/// `wisp apply`: one batch, one changeset. Routes through the runtime when `[runtime] enabled` is true.
 pub fn apply(repo: &mut Repository, batch: ApplyBatch, default_ref: Option<&str>) -> Result<Value> {
-    if repo.manifest.queue.enabled {
-        return apply_via_queue(repo, batch, default_ref);
+    if repo.manifest.runtime.enabled {
+        return apply_via_runtime(repo, batch, default_ref);
     }
     apply_direct(repo, batch, default_ref)
 }
 
-/// Commit on this `Repository` handle (ledger writer path; bypasses the queue).
+fn apply_via_runtime(
+    repo: &Repository,
+    batch: ApplyBatch,
+    default_ref: Option<&str>,
+) -> Result<Value> {
+    let timeout_ms = repo.manifest.runtime.timeout_ms.max(1);
+    let actor = batch
+        .actor
+        .clone()
+        .unwrap_or_else(|| "process:agent".into());
+    let v = serde_json::to_value(&batch)?;
+    crate::runtime::rpc_apply(&repo.wisp_dir, &actor, v, default_ref, timeout_ms)
+}
+
+/// Commit on this `Repository` handle (ledger writer path).
 pub fn apply_direct(
     repo: &mut Repository,
     batch: ApplyBatch,
     default_ref: Option<&str>,
 ) -> Result<Value> {
     crate::timing::phase("apply.total", || apply_inner(repo, batch, default_ref))
-}
-
-/// Submit to `.wisp/commit.sock` and block until the writer returns (or queue timeout).
-pub fn apply_via_queue(
-    repo: &Repository,
-    batch: ApplyBatch,
-    default_ref: Option<&str>,
-) -> Result<Value> {
-    let timeout = Duration::from_millis(repo.manifest.queue.timeout_ms.max(1));
-    crate::commit_queue::submit_via_socket(&repo.wisp_dir, batch, default_ref, timeout)
 }
 
 fn apply_inner(
